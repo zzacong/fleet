@@ -1,0 +1,21 @@
+{
+  "name": "skillctl-opentui",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/main.tsx",
+    "cli": "bun run src/cli.ts",
+    "bench": "bun run src/main.tsx --bench"
+  },
+  "dependencies": {
+    "@opentui/core": "0.5.9",
+    "@opentui/react": "0.5.9",
+    "commander": "^15.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.0",
+    "@types/react": "^19.2.0",
+    "typescript": "^7.0.2"
+  }
+}
