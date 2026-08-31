@@ -13,6 +13,13 @@ type Provenance struct {
 	Source string `json:"source"`
 	// SourceType is the source kind, e.g. "github".
 	SourceType string `json:"sourceType"`
+	// SkillPath is the skill folder's path within the source repo, e.g.
+	// "skills/engineering/tdd/SKILL.md". The update check locates the
+	// folder in the repo tree with it.
+	SkillPath string `json:"skillPath"`
+	// Ref is the branch or tag the skill was installed from, empty for the
+	// default branch.
+	Ref string `json:"ref"`
 	// Hash is the skillFolderHash recorded at install/update time.
 	Hash string `json:"skillFolderHash"`
 	// InstalledAt and UpdatedAt are RFC 3339 timestamps.

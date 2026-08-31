@@ -41,6 +41,9 @@ func TestReadLockfileParsesProvenance(t *testing.T) {
 	if p.SourceType != "github" {
 		t.Errorf("SourceType = %q", p.SourceType)
 	}
+	if p.SkillPath != "skills/engineering/tdd/SKILL.md" {
+		t.Errorf("SkillPath = %q", p.SkillPath)
+	}
 	if p.Hash != "85f3ba59f22c16de988e36b781ae46d0d9098f94" {
 		t.Errorf("Hash = %q", p.Hash)
 	}
@@ -49,6 +52,32 @@ func TestReadLockfileParsesProvenance(t *testing.T) {
 	}
 	if p.UpdatedAt != "2026-08-21T06:17:32.238Z" {
 		t.Errorf("UpdatedAt = %q", p.UpdatedAt)
+	}
+}
+
+func TestReadLockfileParsesPinnedRef(t *testing.T) {
+	// A skill installed from a branch or tag records the ref; the update
+	// check must compare against that ref's tree, not the default branch.
+	path := filepath.Join(t.TempDir(), ".skill-lock.json")
+	body := `{"version": 3, "skills": {
+	  "tdd": {
+	    "source": "mattpocock/skills",
+	    "sourceType": "github",
+	    "skillPath": "skills/tdd/SKILL.md",
+	    "skillFolderHash": "aaa111",
+	    "ref": "v1.2.3"
+	  }
+	}}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	lock, err := ReadLockfile(path)
+	if err != nil {
+		t.Fatalf("ReadLockfile() error = %v", err)
+	}
+	if got := lock["tdd"].Ref; got != "v1.2.3" {
+		t.Errorf("Ref = %q, want %q", got, "v1.2.3")
 	}
 }
 

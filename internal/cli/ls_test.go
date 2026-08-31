@@ -2,12 +2,14 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/zacong/fleet/internal/outdated"
 	"github.com/zacong/fleet/internal/paths"
 )
 
@@ -106,16 +108,221 @@ func writeSkillDir(t *testing.T, store, dir, description string) {
 
 func runLs(t *testing.T, p *paths.Paths, args ...string) string {
 	t.Helper()
-	out := &bytes.Buffer{}
-	root := NewRoot(p)
-	root.SetOut(out)
-	root.SetErr(&bytes.Buffer{})
-	root.SetArgs(append([]string{"skill", "ls"}, args...))
-	t.Cleanup(func() { stdoutTTY = func() bool { return false } })
-	if err := root.Execute(); err != nil {
+	out, _, err := runLsCapture(t, p, &fakeTrees{}, args...)
+	if err != nil {
 		t.Fatalf("fleet skill ls %v: error = %v", args, err)
 	}
-	return out.String()
+	return out
+}
+
+// runLsCheck runs ls with a scripted tree client, returning stdout and
+// stderr separately so tests can assert on warnings.
+func runLsCapture(t *testing.T, p *paths.Paths, trees *fakeTrees, args ...string) (string, string, error) {
+	t.Helper()
+	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
+	prev := newTreeClient
+	newTreeClient = func(*paths.Paths) outdated.TreeClient { return trees }
+	t.Cleanup(func() { newTreeClient = prev })
+	root := NewRoot(p)
+	root.SetOut(out)
+	root.SetErr(errOut)
+	root.SetArgs(append([]string{"skill", "ls"}, args...))
+	t.Cleanup(func() { stdoutTTY = func() bool { return false } })
+	err := root.Execute()
+	return out.String(), errOut.String(), err
+}
+
+// fakeTrees is the stubbed GitHub API seam for the ls command. It records
+// every call and answers from a scripted map keyed "owner/repo@ref"; an
+// unscripted repo answers an empty tree.
+type fakeTrees struct {
+	calls []string
+	trees map[string]outdated.TreeResponse
+	errs  map[string]error
+}
+
+func (f *fakeTrees) FetchTree(_ context.Context, owner, repo, ref, _ string) (outdated.TreeResponse, error) {
+	key := owner + "/" + repo + "@" + ref
+	f.calls = append(f.calls, key)
+	if err := f.errs[key]; err != nil {
+		return outdated.TreeResponse{}, err
+	}
+	return f.trees[key], nil
+}
+
+// scriptTree answers owner/repo@ref with the given folder tree SHA.
+func (f *fakeTrees) scriptTree(key string, entries ...outdated.TreeEntry) {
+	if f.trees == nil {
+		f.trees = map[string]outdated.TreeResponse{}
+	}
+	f.trees[key] = outdated.TreeResponse{Entries: entries}
+}
+
+// writeLockWithSkillPaths replaces fakeHome's lockfile with one whose
+// GitHub entries record skillPath, the field the update check needs.
+func writeLockWithSkillPaths(t *testing.T, p *paths.Paths) {
+	t.Helper()
+	lock := `{"version": 3, "skills": {
+		"tdd": {
+			"source": "mattpocock/skills",
+			"sourceType": "github",
+			"skillPath": "skills/engineering/tdd/SKILL.md",
+			"skillFolderHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		},
+		"git-helper": {
+			"source": "mattpocock/skills",
+			"sourceType": "github",
+			"skillPath": "skills/engineering/git-helper/SKILL.md",
+			"skillFolderHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		},
+		"deploy-vercel": {
+			"source": "vercel/agent-skills",
+			"sourceType": "github",
+			"skillPath": "skills/deploy-vercel/SKILL.md",
+			"skillFolderHash": "cccccccccccccccccccccccccccccccccccccccc"
+		}
+	}}`
+	if err := os.WriteFile(p.SkillLock(), []byte(lock), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLsTableShowsTheUpdateMarker(t *testing.T) {
+	p := fakeHome(t)
+	writeLockWithSkillPaths(t, p)
+	trees := &fakeTrees{}
+	// tdd is current, git-helper has moved upstream, deploy-vercel is
+	// current; the custom skill my-notes is never checked.
+	trees.scriptTree("mattpocock/skills@",
+		outdated.TreeEntry{Path: "skills/engineering/tdd", Type: "tree", SHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		outdated.TreeEntry{Path: "skills/engineering/git-helper", Type: "tree", SHA: "dddddddddddddddddddddddddddddddddddddddd"},
+	)
+	trees.scriptTree("vercel/agent-skills@",
+		outdated.TreeEntry{Path: "skills/deploy-vercel", Type: "tree", SHA: "cccccccccccccccccccccccccccccccccccccccc"},
+	)
+
+	out, _, _ := runLsCapture(t, p, trees)
+
+	if !strings.Contains(out, "UPDATE") {
+		t.Errorf("table missing the UPDATE column:\n%s", out)
+	}
+	if row := tableRow(t, out, "git-helper"); !strings.Contains(row, "↑") {
+		t.Errorf("git-helper row should carry the update-available marker: %q", row)
+	}
+	if row := tableRow(t, out, "tdd"); !strings.Contains(row, "✓") {
+		t.Errorf("tdd row should be marked current: %q", row)
+	}
+	if row := tableRow(t, out, "deploy-vercel"); !strings.Contains(row, "✓") {
+		t.Errorf("deploy-vercel row should be marked current: %q", row)
+	}
+	if row := tableRow(t, out, "my-notes"); !strings.Contains(row, "?") {
+		t.Errorf("custom skills are unknown, not checked: %q", row)
+	}
+	if len(trees.calls) != 2 {
+		t.Errorf("two source repos, two API calls, calls = %v", trees.calls)
+	}
+}
+
+func TestLsJSONCarriesTriStateOutdated(t *testing.T) {
+	p := fakeHome(t)
+	writeLockWithSkillPaths(t, p)
+	trees := &fakeTrees{}
+	trees.scriptTree("mattpocock/skills@",
+		outdated.TreeEntry{Path: "skills/engineering/tdd", Type: "tree", SHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		outdated.TreeEntry{Path: "skills/engineering/git-helper", Type: "tree", SHA: "dddddddddddddddddddddddddddddddddddddddd"},
+	)
+	trees.scriptTree("vercel/agent-skills@",
+		outdated.TreeEntry{Path: "skills/deploy-vercel", Type: "tree", SHA: "cccccccccccccccccccccccccccccccccccccccc"},
+	)
+
+	out, _, _ := runLsCapture(t, p, trees, "--json")
+
+	var report struct {
+		Skills []map[string]json.RawMessage `json:"skills"`
+	}
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("--json output is not valid JSON: %v\n%s", err, out)
+	}
+
+	// The tri-state is structurally clean: true = outdated, false =
+	// current, null = unknown (custom, non-GitHub, or failed check). The
+	// field is present for every skill, never omitted.
+	want := map[string]string{
+		"my-notes":      "null",
+		"git-helper":    "true",
+		"tdd":           "false",
+		"deploy-vercel": "false",
+	}
+	seen := map[string]bool{}
+	for _, s := range report.Skills {
+		var name string
+		if err := json.Unmarshal(s["name"], &name); err != nil {
+			t.Fatalf("skill without a name: %v", err)
+		}
+		raw, ok := s["outdated"]
+		if !ok {
+			t.Errorf("skill %s has no outdated field; every skill must carry the tri-state", name)
+			continue
+		}
+		if got := strings.TrimSpace(string(raw)); got != want[name] {
+			t.Errorf("%s outdated = %s, want %s", name, got, want[name])
+		}
+		seen[name] = true
+	}
+	for name := range want {
+		if !seen[name] {
+			t.Errorf("skill %s missing from JSON", name)
+		}
+	}
+}
+
+func TestLsDegradesGracefullyWhenTheAPICannotBeReached(t *testing.T) {
+	p := fakeHome(t)
+	writeLockWithSkillPaths(t, p)
+	trees := &fakeTrees{errs: map[string]error{
+		"mattpocock/skills@":   context.DeadlineExceeded,
+		"vercel/agent-skills@": context.DeadlineExceeded,
+	}}
+
+	out, errOut, err := runLsCapture(t, p, trees)
+
+	// The failure is visible on stderr but never fatal: the command exits
+	// 0 and the table still renders with every badge unknown.
+	if err != nil {
+		t.Fatalf("a failed update check must not fail the command: %v", err)
+	}
+	for _, repo := range []string{"mattpocock/skills", "vercel/agent-skills"} {
+		if !strings.Contains(errOut, repo) {
+			t.Errorf("stderr should name the failed repo %s:\n%s", repo, errOut)
+		}
+	}
+	for _, name := range []string{"tdd", "git-helper", "deploy-vercel"} {
+		if row := tableRow(t, out, name); !strings.Contains(row, "?") {
+			t.Errorf("%s should show the unknown badge on API failure: %q", name, row)
+		}
+	}
+
+	jsonOut, _, _ := runLsCapture(t, p, trees, "--json")
+	if !strings.Contains(jsonOut, `"outdated": null`) {
+		t.Errorf("--json should mark every skill unknown on API failure:\n%s", jsonOut)
+	}
+	if strings.Contains(jsonOut, `"outdated": true`) {
+		t.Errorf("--json must not claim any skill is outdated when the check failed:\n%s", jsonOut)
+	}
+}
+
+func TestLsSkipsTheCheckWhenNothingIsCheckable(t *testing.T) {
+	p := fakeHome(t)
+	if err := os.Remove(p.SkillLock()); err != nil {
+		t.Fatal(err)
+	}
+	trees := &fakeTrees{}
+
+	_, _, _ = runLsCapture(t, p, trees)
+
+	if len(trees.calls) != 0 {
+		t.Errorf("a home with only custom skills must not touch the API, calls = %v", trees.calls)
+	}
 }
 
 func TestLsTableShowsTheFullPicture(t *testing.T) {

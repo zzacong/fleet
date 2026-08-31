@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -12,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zacong/fleet/internal/harness"
+	"github.com/zacong/fleet/internal/outdated"
 	"github.com/zacong/fleet/internal/paths"
 	"github.com/zacong/fleet/internal/scan"
 )
@@ -31,6 +34,11 @@ type skillRow struct {
 	UpdatedAt   string            `json:"updatedAt,omitempty"`
 	Description string            `json:"description,omitempty"`
 	States      map[string]string `json:"states"`
+	// Outdated is the tri-state update badge: true = update available,
+	// false = current, null = unknown (custom skills, non-GitHub sources,
+	// and failed checks are unknown — fleet never guesses). Always present
+	// in the JSON so scripts can rely on the key.
+	Outdated *bool `json:"outdated"`
 }
 
 // lsReport is the full picture: the installed harnesses found on this
@@ -47,7 +55,11 @@ func newSkillLsCmd(p *paths.Paths) *cobra.Command {
 		Use:   "ls",
 		Short: "List every skill and where it is active",
 		Long: "List every skill in the canonical store, marked custom or installed and grouped by source repo, with a per-harness on/off column for each installed harness.\n" +
-			"\nSync runs first: the state file is projected into each harness config, and entries fleet doesn't recognize are reported on stderr, never touched.",
+			"\nSync runs first: the state file is projected into each harness config, and entries fleet doesn't recognize are reported on stderr, never touched.\n" +
+			"\n" +
+			"UPDATE marks skills whose source repo has moved on: ↑ update available, ✓ current, ? unknown. Fleet checks the skills CLI lockfile's recorded hash against GitHub's current tree hash for the skill folder — one API call per source repo, cached for an hour so repeated runs don't hammer the API. Custom skills and non-GitHub sources are always ?, never guessed; a failed check degrades to ? without failing the command.\n" +
+			"\n" +
+			"--json carries the same badge as the tri-state \"outdated\" field: true = update available, false = current, null = unknown.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Sync runs on every command: converge the harness configs
@@ -57,9 +69,14 @@ func newSkillLsCmd(p *paths.Paths) *cobra.Command {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			report, err := buildReport(p)
+			report, warnings, err := buildReport(cmd.Context(), p)
 			if err != nil {
 				return err
+			}
+			for _, w := range warnings {
+				// Best-effort visibility: a stderr write failure must
+				// not fail a command whose real output already succeeded.
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "warning:", w)
 			}
 			if asJSON {
 				return printJSON(out, report)
@@ -73,16 +90,25 @@ func newSkillLsCmd(p *paths.Paths) *cobra.Command {
 	return cmd
 }
 
+// newTreeClient builds the update-check client: the real GitHub API behind
+// the persistent TTL cache in fleet's config dir. Tests swap it for a
+// scripted stub.
+var newTreeClient = func(p *paths.Paths) outdated.TreeClient {
+	return outdated.NewCachingClient(outdated.NewHTTPClient(""), filepath.Join(p.FleetConfigDir(), "tree-cache.json"))
+}
+
 // buildReport scans the canonical store and every installed harness's own
-// config. It reads only; nothing is written anywhere.
-func buildReport(p *paths.Paths) (*lsReport, error) {
+// config, then classifies each installed skill's update state. It writes
+// only fleet's own cache; nothing else is touched. Check failures come
+// back as warnings, not errors.
+func buildReport(ctx context.Context, p *paths.Paths) (*lsReport, []string, error) {
 	skills, err := scan.ScanStore(p.SkillsStore())
 	if err != nil {
-		return nil, fmt.Errorf("scan canonical store: %w", err)
+		return nil, nil, fmt.Errorf("scan canonical store: %w", err)
 	}
 	lock, err := scan.ReadLockfile(p.SkillLock())
 	if err != nil {
-		return nil, fmt.Errorf("read skills lockfile: %w", err)
+		return nil, nil, fmt.Errorf("read skills lockfile: %w", err)
 	}
 
 	var installed []harness.Adapter
@@ -100,7 +126,7 @@ func buildReport(p *paths.Paths) (*lsReport, error) {
 	for i, a := range installed {
 		read, err := a.Read(names)
 		if err != nil {
-			return nil, fmt.Errorf("read %s config: %w", a.Harness(), err)
+			return nil, nil, fmt.Errorf("read %s config: %w", a.Harness(), err)
 		}
 		reads[i] = read
 	}
@@ -109,6 +135,25 @@ func buildReport(p *paths.Paths) (*lsReport, error) {
 	for i, a := range installed {
 		harnessNames[i] = string(a.Harness())
 	}
+
+	// One update check for every skill in the store, grouped inside the
+	// checker: installed skills carry their lockfile provenance, customs
+	// stay the zero entry (unknown by definition, no API call).
+	entries := make(map[string]outdated.Entry, len(skills))
+	for _, s := range skills {
+		if prov, ok := lock[s.Dir]; ok {
+			entries[s.Dir] = outdated.Entry{
+				Source:     prov.Source,
+				SourceType: prov.SourceType,
+				SkillPath:  prov.SkillPath,
+				Ref:        prov.Ref,
+				Hash:       prov.Hash,
+			}
+		} else {
+			entries[s.Dir] = outdated.Entry{}
+		}
+	}
+	check := outdated.Check(ctx, newTreeClient(p), entries)
 
 	rows := make([]skillRow, len(skills))
 	for i, s := range skills {
@@ -125,6 +170,7 @@ func buildReport(p *paths.Paths) (*lsReport, error) {
 			Name:        s.Name,
 			Description: s.Description,
 			States:      states,
+			Outdated:    outdatedPtr(check.Statuses[s.Dir]),
 		}
 		if prov, ok := lock[s.Dir]; ok {
 			row.Source = prov.Source
@@ -150,7 +196,22 @@ func buildReport(p *paths.Paths) (*lsReport, error) {
 		return rows[i].Name < rows[j].Name
 	})
 
-	return &lsReport{Harnesses: harnessNames, Skills: rows}, nil
+	return &lsReport{Harnesses: harnessNames, Skills: rows}, check.Warnings, nil
+}
+
+// outdatedPtr renders the tri-state for JSON: outdated true, current
+// false, unknown null.
+func outdatedPtr(s outdated.Status) *bool {
+	var v bool
+	switch s {
+	case outdated.StatusOutdated:
+		v = true
+	case outdated.StatusCurrent:
+		v = false
+	default:
+		return nil
+	}
+	return &v
 }
 
 func printJSON(out io.Writer, report *lsReport) error {
@@ -167,20 +228,28 @@ func printTable(out io.Writer, report *lsReport, header bool) error {
 
 	if header {
 		custom := 0
+		stale := 0
 		for _, row := range report.Skills {
 			if row.Custom {
 				custom++
 			}
+			if row.Outdated != nil && *row.Outdated {
+				stale++
+			}
 		}
-		if _, err := fmt.Fprintf(out, "fleet · %d skills · %d installed · %d custom\n\n",
-			len(report.Skills), len(report.Skills)-custom, custom); err != nil {
+		summary := fmt.Sprintf("fleet · %d skills · %d installed · %d custom",
+			len(report.Skills), len(report.Skills)-custom, custom)
+		if stale > 0 {
+			summary += fmt.Sprintf(" · %d update%s", stale, plural(stale))
+		}
+		if _, err := fmt.Fprintf(out, "%s\n\n", summary); err != nil {
 			return err
 		}
 	}
 
 	tw := tabwriter.NewWriter(out, 2, 4, 2, ' ', 0)
 
-	cells := []string{"NAME", "ORIGIN", "SOURCE", "DESCRIPTION"}
+	cells := []string{"NAME", "ORIGIN", "SOURCE", "UPDATE", "DESCRIPTION"}
 	for _, h := range report.Harnesses {
 		cells = append(cells, strings.ToUpper(h))
 	}
@@ -195,7 +264,7 @@ func printTable(out io.Writer, report *lsReport, header bool) error {
 			origin = "custom"
 			source = "-"
 		}
-		cells := []string{row.Name, origin, source, truncate(row.Description, descriptionCap)}
+		cells := []string{row.Name, origin, source, tableOutdated(row.Outdated), truncate(row.Description, descriptionCap)}
 		for _, h := range report.Harnesses {
 			cells = append(cells, tableState(row.States[h]))
 		}
@@ -204,6 +273,28 @@ func printTable(out io.Writer, report *lsReport, header bool) error {
 		}
 	}
 	return tw.Flush()
+}
+
+// tableOutdated renders the tri-state badge for the table: ↑ update
+// available, ✓ current, ? unknown (custom skills, non-GitHub sources, and
+// failed checks — fleet never guesses).
+func tableOutdated(outdated *bool) string {
+	switch {
+	case outdated == nil:
+		return "?"
+	case *outdated:
+		return "↑"
+	default:
+		return "✓"
+	}
+}
+
+// plural suffixes a count in the summary line.
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 // tableState renders a state for the table; absent skills get a bare dash.

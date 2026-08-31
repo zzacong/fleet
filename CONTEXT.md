@@ -24,6 +24,10 @@ _Avoid_: managed skill
 A skill written by the user; no lockfile entry. Lives in the fleet repo's `skills/` directory and is discovered directly by harnesses.
 _Avoid_: local skill, hand-written skill
 
+**Outdated badge**:
+The tri-state update marker per skill: outdated (the source repo's current tree hash differs from the lockfile's `skillFolderHash`), current, or unknown. Fleet checks GitHub directly — one call per source repo, cached under fleet's config dir — and reports unknown for custom skills and non-GitHub sources rather than guessing. The skills CLI is not involved (`check` there is an alias of `update`).
+_Avoid_: stale marker, version check
+
 **Enable / Disable**:
 A per-skill, per-harness state. Disabling writes that harness's own "off" setting (a config entry); the skill's files always stay in the canonical store.
 _Avoid_: uninstall, hide, mute
