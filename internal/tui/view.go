@@ -307,6 +307,9 @@ func (m model) hasStaged(skill, harnessName string) bool {
 }
 
 func (m model) noticeLine() string {
+	if m.phase == phaseUpdating {
+		return styDim.Render("updating all skills…")
+	}
 	if m.phase == phaseRefreshing {
 		return styDim.Render("refreshing…")
 	}
@@ -325,7 +328,7 @@ func (m model) noticeLine() string {
 }
 
 func (m model) footer() string {
-	return styDim.Render("space toggle   ←/→ harness   enter apply staged   / filter   r refresh   ? help   q quit")
+	return styDim.Render("space toggle   ←/→ harness   enter apply staged   u update all   / filter   r refresh   ? help   q quit")
 }
 
 func (m model) helpOverlay() string {
@@ -336,6 +339,7 @@ func (m model) helpOverlay() string {
 		"h / l, ← / →   move harness column",
 		"space          stage/unstage the selected cell",
 		"enter          apply staged changes (state file, then sync)",
+		"u              update all installed skills (skills update, then sync)",
 		"esc            discard staged, clear filter, or close this help",
 		"/              focus filter",
 		"r              refresh",

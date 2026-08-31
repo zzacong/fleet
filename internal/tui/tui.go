@@ -1,9 +1,11 @@
 // Package tui is fleet's interactive face: a skill × harness matrix over
 // the same core the CLI verbs drive. Staged toggles apply through the
 // state file and sync (internal/toggle — the exact code `fleet skill
-// on/off` runs); the matrix renders a snapshot (internal/snapshot — the
-// exact code `fleet skill ls` renders). Nothing here reads or writes
-// harness configs directly: it is a face on the core, not a second brain.
+// on/off` runs); `u` runs the wrapped update-all (internal/skillscli then
+// sync — the exact code `fleet skill update` runs); the matrix renders a
+// snapshot (internal/snapshot — the exact code `fleet skill ls` renders).
+// Nothing here reads or writes harness configs directly: it is a face on
+// the core, not a second brain.
 package tui
 
 import (
@@ -45,6 +47,7 @@ type phase int
 const (
 	phaseIdle phase = iota
 	phaseRefreshing
+	phaseUpdating
 )
 
 // cellKey is one staged change: a skill in one harness.
@@ -225,6 +228,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case snapshotMsg:
 		return m.applySnapshot(msg)
 
+	case updateMsg:
+		return m.applyUpdate(msg)
+
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
@@ -358,6 +364,16 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// While the update-all runs, the keys that would race it — another
+	// update, a refresh, a staged apply — wait for idle. Navigation, the
+	// filter, staging, help, and quit still work.
+	if m.phase == phaseUpdating {
+		switch key {
+		case "u", "r", "enter":
+			return m, nil
+		}
+	}
+
 	switch key {
 	case "q":
 		return m, tea.Quit
@@ -380,6 +396,8 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.stage()
 	case "enter":
 		return m.applyStaged()
+	case "u":
+		return m, startUpdate(&m)
 	case "r":
 		return m, startRefresh(&m, "refreshed")
 	case "?":

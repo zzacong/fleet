@@ -108,6 +108,7 @@ var (
 	keyRight = tea.KeyPressMsg{Code: tea.KeyRight}
 	keySlash = tea.KeyPressMsg{Code: '/'}
 	keyR     = tea.KeyPressMsg{Code: 'r'}
+	keyU     = tea.KeyPressMsg{Code: 'u'}
 )
 
 func sendKey(m model, k tea.KeyPressMsg) model {

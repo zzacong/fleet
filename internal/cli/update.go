@@ -81,12 +81,7 @@ func printUpdateReport(out io.Writer, p *paths.Paths) error {
 	if err != nil {
 		return fmt.Errorf("read skills lockfile: %w", err)
 	}
-	installed := 0
-	for _, s := range skills {
-		if _, ok := lock[s.Dir]; ok {
-			installed++
-		}
-	}
+	installed := scan.CountInstalled(skills, lock)
 	line := fmt.Sprintf("%d skill%s in %s (%d installed, %d custom)",
 		len(skills), plural(len(skills)), p.SkillsStore(), installed, len(skills)-installed)
 	if _, err := fmt.Fprintln(out, line); err != nil {

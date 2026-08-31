@@ -14,19 +14,22 @@ Opens the skill × harness matrix: one row per skill, one column per installed h
 
 Keys:
 
-| Key               | Action                                                  |
-| ----------------- | ------------------------------------------------------- |
-| `j` / `k`, arrows | move the skill cursor                                   |
-| `h` / `l`, arrows | move the harness column                                 |
-| `space`           | stage or unstage the selected cell                      |
-| `enter`           | apply staged changes                                    |
-| `esc`             | discard staged changes, clear the filter, or close help |
-| `/`               | filter by name or description                           |
-| `r`               | refresh                                                 |
-| `?`               | help overlay                                            |
-| `q`, `ctrl+c`     | quit (`q` is text while the filter holds input)         |
+| Key               | Action                                                      |
+| ----------------- | ----------------------------------------------------------- |
+| `j` / `k`, arrows | move the skill cursor                                       |
+| `h` / `l`, arrows | move the harness column                                     |
+| `space`           | stage or unstage the selected cell                          |
+| `enter`           | apply staged changes                                        |
+| `u`               | update all installed skills (wrapped skills CLI, then sync) |
+| `esc`             | discard staged changes, clear the filter, or close help     |
+| `/`               | filter by name or description                               |
+| `r`               | refresh                                                     |
+| `?`               | help overlay                                                |
+| `q`, `ctrl+c`     | quit (`q` is text while the filter holds input)             |
 
 Cells read `●` on, `○` off, `-` absent. Columns for Cursor and Bob render faint with a `!` in the header: they have no per-skill off switch, so toggles there are no-ops.
+
+`u` is the one-key update-all: it runs the same wrapped `skills update -g -y` the [update verb](#fleet-skill-update) runs, then sync, then reloads the matrix so the new badges and states show. A busy line takes over while it runs, the outcome notice reports fleet's own post-run state — the store scan and lockfile, never the skills CLI's prose — and a failed run shows the CLI's captured output raw.
 
 The hero banner appears on launch only. `fleet --quiet` (or `-q`) keeps the matrix without it. With piped output fleet never enters the TUI: it prints the same listing as `fleet skill ls` instead, so `fleet | grep tdd` does what you mean.
 

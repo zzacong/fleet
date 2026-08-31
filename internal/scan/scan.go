@@ -23,6 +23,19 @@ type Skill struct {
 	Description string
 }
 
+// CountInstalled returns how many of the scanned skills have provenance
+// in the lockfile — the installed count in the update report. The rest
+// are custom: present in a store, absent from the lock.
+func CountInstalled(skills []Skill, lock map[string]Provenance) int {
+	installed := 0
+	for _, s := range skills {
+		if _, ok := lock[s.Dir]; ok {
+			installed++
+		}
+	}
+	return installed
+}
+
 // ScanStore lists every skill directory (immediate child of store containing
 // a SKILL.md) with its name and description. Dot directories, plain files,
 // and directories without a SKILL.md are skipped. A missing store is not an
