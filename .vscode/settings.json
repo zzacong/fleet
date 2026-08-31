@@ -1,0 +1,7 @@
+{
+  "editor.defaultFormatter": "oxc.oxc-vscode",
+  "editor.formatOnSave": true,
+  "[go]": {
+    "editor.defaultFormatter": "golang.go"
+  }
+}
