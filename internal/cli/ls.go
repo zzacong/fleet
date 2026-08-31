@@ -54,7 +54,7 @@ func newSkillLsCmd(p *paths.Paths) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ls",
 		Short: "List every skill and where it is active",
-		Long: "List every skill in the canonical store, marked custom or installed and grouped by source repo, with a per-harness on/off column for each installed harness.\n" +
+		Long: "List every skill — the canonical store's, plus the fleet repo's custom skills when run inside the repo — marked custom or installed and grouped by source repo, with a per-harness on/off column for each installed harness.\n" +
 			"\nSync runs first: the state file is projected into each harness config, and entries fleet doesn't recognize are reported on stderr, never touched.\n" +
 			"\n" +
 			"UPDATE marks skills whose source repo has moved on: ↑ update available, ✓ current, ? unknown. Fleet checks the skills CLI lockfile's recorded hash against GitHub's current tree hash for the skill folder — one API call per source repo, cached for an hour so repeated runs don't hammer the API. Custom skills and non-GitHub sources are always ?, never guessed; a failed check degrades to ? without failing the command.\n" +
@@ -97,14 +97,38 @@ var newTreeClient = func(p *paths.Paths) outdated.TreeClient {
 	return outdated.NewCachingClient(outdated.NewHTTPClient(""), filepath.Join(p.FleetConfigDir(), "tree-cache.json"))
 }
 
-// buildReport scans the canonical store and every installed harness's own
-// config, then classifies each installed skill's update state. It writes
-// only fleet's own cache; nothing else is touched. Check failures come
-// back as warnings, not errors.
+// buildReport scans the canonical store and the fleet repo's custom
+// skills, then every installed harness's own config, and classifies each
+// installed skill's update state. It writes only fleet's own cache;
+// nothing else is touched. Check failures come back as warnings, not
+// errors.
 func buildReport(ctx context.Context, p *paths.Paths) (*lsReport, []string, error) {
-	skills, err := scan.ScanStore(p.SkillsStore())
+	storeSkills, err := scan.ScanStore(p.SkillsStore())
 	if err != nil {
 		return nil, nil, fmt.Errorf("scan canonical store: %w", err)
+	}
+	// Repo customs join the list; custom means lives in the repo. A name
+	// present in both places reports once, from the canonical store — the
+	// double-visibility is drift for doctor to flag, not ls's job.
+	repoNames := map[string]bool{}
+	skills := storeSkills
+	if p.Repo != "" {
+		repoSkills, err := scan.ScanStore(p.RepoSkills())
+		if err != nil {
+			return nil, nil, fmt.Errorf("scan repo skills: %w", err)
+		}
+		seen := make(map[string]bool, len(storeSkills))
+		for _, s := range storeSkills {
+			seen[s.Name] = true
+		}
+		for _, s := range repoSkills {
+			if seen[s.Name] {
+				continue
+			}
+			seen[s.Name] = true
+			repoNames[s.Name] = true
+			skills = append(skills, s)
+		}
 	}
 	lock, err := scan.ReadLockfile(p.SkillLock())
 	if err != nil {
@@ -138,9 +162,15 @@ func buildReport(ctx context.Context, p *paths.Paths) (*lsReport, []string, erro
 
 	// One update check for every skill in the store, grouped inside the
 	// checker: installed skills carry their lockfile provenance, customs
-	// stay the zero entry (unknown by definition, no API call).
+	// stay the zero entry (unknown by definition, no API call). Repo
+	// customs are skipped entirely — a lingering lock entry from a
+	// pre-adoption install must not make fleet check (or misreport) a
+	// skill that now lives in the repo.
 	entries := make(map[string]outdated.Entry, len(skills))
 	for _, s := range skills {
+		if repoNames[s.Name] {
+			continue
+		}
 		if prov, ok := lock[s.Dir]; ok {
 			entries[s.Dir] = outdated.Entry{
 				Source:     prov.Source,
@@ -172,7 +202,12 @@ func buildReport(ctx context.Context, p *paths.Paths) (*lsReport, []string, erro
 			States:      states,
 			Outdated:    outdatedPtr(check.Statuses[s.Dir]),
 		}
-		if prov, ok := lock[s.Dir]; ok {
+		if repoNames[s.Name] {
+			// Custom by definition: it lives in the repo, unversioned by
+			// the skills CLI. A lingering lock entry under the same
+			// directory name is stale provenance, not provenance.
+			row.Custom = true
+		} else if prov, ok := lock[s.Dir]; ok {
 			row.Source = prov.Source
 			row.SourceType = prov.SourceType
 			row.Hash = prov.Hash

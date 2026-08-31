@@ -563,6 +563,85 @@ func TestLsWithEmptyHomeReportsNoSkills(t *testing.T) {
 	}
 }
 
+func TestLsMarksRepoCustomsAndPrefersTheStoreOnNameClashes(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	repo := filepath.Join(t.TempDir(), "repo")
+	p := paths.WithRepo(home, repo)
+
+	// A repo skill that was never adopted by fleet (hand-placed), and an
+	// adopted skill whose lockfile entry lingers from its pre-adoption
+	// install (the store copy moved away with it).
+	writeSkillDir(t, p.RepoSkills(), "my-notes", "Personal note-taking conventions.")
+	writeSkillDir(t, p.RepoSkills(), "tdd", "Forked and adopted.")
+	if err := os.MkdirAll(p.AgentsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.SkillLock(), []byte(`{"version": 3, "skills": {
+		"tdd": {"source": "mattpocock/skills", "sourceType": "github", "skillFolderHash": "aaa111"}
+	}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{p.OpenCodeDir(), p.BobDir()} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	out, _, _ := runLsCapture(t, p, &fakeTrees{}, "--json")
+	var report struct {
+		Skills []struct {
+			Name     string            `json:"name"`
+			Custom   bool              `json:"custom"`
+			Source   string            `json:"source"`
+			States   map[string]string `json:"states"`
+			Outdated *bool             `json:"outdated"`
+		} `json:"skills"`
+	}
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("bad JSON: %v\n%s", err, out)
+	}
+
+	byName := map[string]struct {
+		custom bool
+		source string
+	}{}
+	names := []string{}
+	for _, s := range report.Skills {
+		byName[s.Name] = struct {
+			custom bool
+			source string
+		}{s.Custom, s.Source}
+		names = append(names, s.Name)
+	}
+	if len(names) != 2 {
+		t.Fatalf("skills = %v, want one row per name (clash deduped)", names)
+	}
+	if c := byName["my-notes"]; !c.custom || c.source != "" {
+		t.Errorf("my-notes = %+v, want custom with no source", c)
+	}
+	// The lingering lock entry is stale provenance: the repo copy is
+	// custom, and no API call is spent on it.
+	if c := byName["tdd"]; !c.custom || c.source != "" {
+		t.Errorf("tdd = %+v, want custom with no source despite the stale lock entry", c)
+	}
+
+	// A name present in both places reports once, from the canonical store.
+	writeSkillDir(t, p.SkillsStore(), "clash", "The live copy lives here.")
+	writeSkillDir(t, p.RepoSkills(), "clash", "The live copy lives here.")
+	out, _, _ = runLsCapture(t, p, &fakeTrees{}, "--json")
+	if strings.Count(out, `"name": "clash"`) != 1 {
+		t.Errorf("a name in both places must report once:\n%s", out)
+	}
+}
+
+func TestLsSkipsRepoScanOutsideARepo(t *testing.T) {
+	p := fakeHome(t) // built with paths.New: no repo bound
+	out := runLs(t, p)
+	if !strings.Contains(out, "my-notes") {
+		t.Errorf("ls outside a repo should still list the store:\n%s", out)
+	}
+}
+
 func TestLsFailsOnBrokenHarnessConfig(t *testing.T) {
 	p := fakeHome(t)
 	if err := os.WriteFile(p.OpenCodeConfig(), []byte("{oops"), 0o644); err != nil {

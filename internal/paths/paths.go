@@ -1,7 +1,8 @@
-// Package paths derives every filesystem location fleet reads from a single
-// injected home root. Adapters and commands never call os.UserHomeDir()
-// themselves; they receive a *Paths built with New (tests, sandboxes) or
-// FromEnv (the real binary, honoring FLEET_HOME).
+// Package paths derives every filesystem location fleet reads from a
+// single injected home root, plus the fleet repo root that owns custom
+// skills. Adapters and commands never call os.UserHomeDir() themselves;
+// they receive a *Paths built with New (tests, sandboxes) or FromEnv (the
+// real binary, honoring FLEET_HOME).
 package paths
 
 import (
@@ -15,6 +16,10 @@ type Paths struct {
 	// binary; tests pass a fake home so nothing outside the project (or a
 	// t.TempDir) is ever touched.
 	Home string
+	// Repo is the fleet repo root whose skills/ directory holds custom
+	// skills. FLEET_REPO overrides it for the real binary; empty when none
+	// was found — commands that need the repo say so instead of guessing.
+	Repo string
 }
 
 // New builds Paths under an explicit home root.
@@ -22,17 +27,56 @@ func New(home string) *Paths {
 	return &Paths{Home: home}
 }
 
+// WithRepo builds Paths under an explicit home and repo root (tests and
+// callers that already know where the repo is).
+func WithRepo(home, repo string) *Paths {
+	return &Paths{Home: home, Repo: repo}
+}
+
 // FromEnv resolves the home root for the real binary: FLEET_HOME when set,
-// otherwise the user's home directory.
+// otherwise the user's home directory. The repo root comes from FLEET_REPO,
+// or from walking up from the working directory to the nearest .git.
 func FromEnv() (*Paths, error) {
+	var p *Paths
 	if root := os.Getenv("FLEET_HOME"); root != "" {
-		return New(root), nil
+		p = New(root)
+	} else {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, err
+		}
+		p = New(home)
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
+
+	if root := os.Getenv("FLEET_REPO"); root != "" {
+		abs, err := filepath.Abs(root)
+		if err != nil {
+			return nil, err
+		}
+		p.Repo = abs
+	} else if wd, err := os.Getwd(); err == nil {
+		// An unreadable working directory only means no repo discovery;
+		// commands that need the repo report that themselves.
+		p.Repo = DiscoverRepo(wd)
 	}
-	return New(home), nil
+	return p, nil
+}
+
+// DiscoverRepo walks up from startDir to the filesystem root and returns
+// the first directory containing .git — a directory in a normal checkout,
+// a file in a git worktree. Empty when none is found.
+func DiscoverRepo(startDir string) string {
+	dir := startDir
+	for {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
 }
 
 func join(p *Paths, elems ...string) string {
@@ -55,10 +99,11 @@ func (p *Paths) OpenCodeConfig() string { return join(p, ".config", "opencode", 
 func (p *Paths) PiDir() string      { return join(p, ".pi") }
 func (p *Paths) PiSettings() string { return join(p, ".pi", "agent", "settings.json") }
 
-// codex (TOML config).
+// codex (TOML config; skills arrive natively or through links).
 
 func (p *Paths) CodexDir() string    { return join(p, ".codex") }
 func (p *Paths) CodexConfig() string { return join(p, ".codex", "config.toml") }
+func (p *Paths) CodexSkills() string { return join(p, ".codex", "skills") }
 
 // claude code (strict JSON settings; skills arrive through links).
 
@@ -80,3 +125,15 @@ func (p *Paths) BobSkills() string { return join(p, ".bob", "skills") }
 
 func (p *Paths) FleetConfigDir() string { return join(p, ".config", "fleet") }
 func (p *Paths) FleetStateFile() string { return join(p, ".config", "fleet", "state.json") }
+
+// The fleet repo (custom skills).
+
+// RepoSkills is the repo's skills/ directory, where custom skills live and
+// stay versioned. Empty when no repo is bound; callers must check and say
+// so rather than deriving paths from an empty root.
+func (p *Paths) RepoSkills() string {
+	if p.Repo == "" {
+		return ""
+	}
+	return filepath.Join(p.Repo, "skills")
+}
