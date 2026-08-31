@@ -1,6 +1,6 @@
 # Command reference
 
-Fleet has one binary and one command family. Bare `fleet` opens the interactive matrix; everything scripted lives under `fleet skill`. Sync is not a verb — it runs inside every command (see [Sync is not a verb](#sync-is-not-a-verb)).
+Fleet has one binary and one command family. Bare `fleet` opens the interactive matrix; everything scripted lives under `fleet skill`. Sync runs inside every command, and `fleet skill sync` is that machinery as an explicit verb (see [Sync](#sync)).
 
 Examples were run against a sandbox home (`FLEET_HOME=$(mktemp -d)`) with two skills: `tdd`, installed from a source repo, and `git-helper`, a custom skill. Paths are shortened to `~` for readability.
 
@@ -199,6 +199,25 @@ pi: "git-helper" is disabled in the pi config, but fleet's state has it enabled
 
 Doctor never runs ambient sync — the point is to show what sync _would_ do before it does it.
 
+## fleet skill sync
+
+```sh
+fleet skill sync
+```
+
+The explicit form of the sync that runs on every fleet command: converge harness configs with the state file now, as a scriptable step. The scenario is a hand-run `skills update` — it re-creates the per-agent symlinks and may resurrect enablement; sync repairs both and prints one line per fix:
+
+```sh
+$ fleet skill sync
+sync: opencode: removed redundant link "tdd" — opencode scans the canonical store natively — this link double-covers the skill
+sync: opencode: disabled "tdd" (was on)
+```
+
+- The report goes to stdout, one line per fix, in sync's own order: link removals first, then enablement changes and flags.
+- Nothing to repair is not an error: sync is idempotent, so a converged home prints nothing and exits 0.
+- Unknown entries and manual edits are reported and left as is — doctor explains them, and its conflict prompts are how a kept edit becomes state.
+- The state file is never edited.
+
 ## fleet skill update
 
 ```sh
@@ -248,9 +267,9 @@ fleet version 31d13e4
 
 Release builds stamp the version at build time; `go install` builds report `dev`.
 
-## Sync is not a verb
+## Sync
 
-Sync runs on every fleet command and after every wrapped `skills` call, so there is nothing to invoke. Its decision rules are short and [documented in full](undo.md#how-sync-decides-what-to-touch):
+Sync runs on every fleet command and after every wrapped `skills` call, and [`fleet skill sync`](#fleet-skill-sync) runs the same machinery on demand. Its decision rules are short and [documented in full](undo.md#how-sync-decides-what-to-touch):
 
 1. Load the state file fresh.
 2. Remove redundant links: symlinks into the canonical store in harnesses that scan it natively. Never claude's; never anything else in those dirs.

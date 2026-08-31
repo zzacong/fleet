@@ -92,7 +92,7 @@ Two optional interfaces extend the seam for custom skills:
 
 ## Sync
 
-`sync.Run` reads the state file fresh, then: remove redundant links (symlinks provably resolving into the canonical store in harnesses that scan it natively — never claude code, never non-symlinks, never links pointing elsewhere), then project one off-entry per recorded disable into each installed writable harness. Unrecognized entries are flagged, not touched. The state file is never edited. The full decision list lives in [undo and escape hatches](undo.md#how-sync-decides-what-to-touch).
+`sync.Run` reads the state file fresh, then: remove redundant links (symlinks provably resolving into the canonical store in harnesses that scan it natively — never claude code, never non-symlinks, never links pointing elsewhere), then project one off-entry per recorded disable into each installed writable harness. Unrecognized entries are flagged, not touched. The state file is never edited. Every command runs this ambiently, and `fleet skill sync` exposes the same run as an explicit verb. The full decision list lives in [undo and escape hatches](undo.md#how-sync-decides-what-to-touch).
 
 ## Doctor
 

@@ -17,11 +17,12 @@ Fleet survives this by construction:
 - the state file records intent, and nothing the skills CLI does erases it
 - skills stay in the canonical store, where the skills CLI expects them
 
-What you will see afterwards is sync at work. A hand-run `skills update` re-creates the per-agent symlinks and may resurrect enablement; the next fleet command (any of them — sync runs on every command) re-removes the redundant links and re-applies the recorded disables, printing one line per fix:
+What you will see afterwards is sync at work. A hand-run `skills update` re-creates the per-agent symlinks and may resurrect enablement; the next fleet command (any of them — sync runs on every command) re-removes the redundant links and re-applies the recorded disables, printing one line per fix. To converge on demand instead of waiting for the next command, `fleet skill sync` is that repair as a verb:
 
 ```sh
-$ fleet skill ls > /dev/null
+$ fleet skill sync
 sync: opencode: removed redundant link "tdd" — opencode scans the canonical store natively — this link double-covers the skill
+sync: opencode: disabled "tdd" (was on)
 ```
 
 `skills check` exists but is an undocumented alias of `update`; fleet doesn't use it.
