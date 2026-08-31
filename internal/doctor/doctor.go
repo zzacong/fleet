@@ -10,6 +10,7 @@ package doctor
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/zacong/fleet/internal/harness"
@@ -41,6 +42,14 @@ const (
 	// KindBrokenConfig: a config file that doesn't parse; sync will fail
 	// on it until it's fixed.
 	KindBrokenConfig Kind = "broken-config"
+	// KindDoublePresence: a skill name that exists in both the canonical
+	// store and the repo's skills/ dir — the harnesses that read both
+	// would see it twice. Only the user's hands can remove a copy.
+	KindDoublePresence Kind = "double-presence"
+	// KindStaleLock: a skills CLI lockfile entry for a skill that now
+	// lives in the repo — the skills CLI would keep trying to update it.
+	// Fleet reads the lockfile only; it never writes it.
+	KindStaleLock Kind = "stale-lock"
 )
 
 // Finding is one observed problem that has no interactive resolution: it
@@ -125,6 +134,14 @@ func Analyze(p *paths.Paths) (Report, error) {
 	}
 	rep.Findings = append(rep.Findings, findings...)
 	rep.Conflicts = conflicts
+
+	// Customs: the repo's skills/ dir against the canonical store and the
+	// skills CLI lockfile.
+	repoFindings, err := analyzeRepoSkills(p)
+	if err != nil {
+		return Report{}, err
+	}
+	rep.Findings = append(rep.Findings, repoFindings...)
 
 	return rep, nil
 }
@@ -262,6 +279,61 @@ func analyzeConfigs(p *paths.Paths) ([]Conflict, []Finding, error) {
 		}
 	}
 	return conflicts, findings, nil
+}
+
+// analyzeRepoSkills cross-checks the fleet repo's skills/ dir against the
+// canonical store and the skills CLI lockfile. A name present in both
+// places is double visibility — opencode and pi read the store and the
+// wired repo path, so they would see the skill twice. A lock entry for a
+// repo skill is stale provenance from before its adoption: the skills CLI
+// keys updates by it and would keep touching a skill that moved. Both
+// need the user's hands; fleet never deletes a copy or edits the lockfile.
+// Without a repo there are no customs and nothing to check.
+func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
+	if p.RepoSkills() == "" {
+		return nil, nil
+	}
+	storeSkills, err := scan.ScanStore(p.SkillsStore())
+	if err != nil {
+		return nil, fmt.Errorf("scan canonical store: %w", err)
+	}
+	repoSkills, err := scan.ScanStore(p.RepoSkills())
+	if err != nil {
+		return nil, fmt.Errorf("scan repo skills: %w", err)
+	}
+	lock, err := scan.ReadLockfile(p.SkillLock())
+	if err != nil {
+		return nil, fmt.Errorf("read skills lockfile: %w", err)
+	}
+
+	// Names are the identity the harnesses see (ls dedupes on them too),
+	// so a double presence is a name match, wherever each copy's
+	// directory sits.
+	storeDirs := make(map[string]string, len(storeSkills))
+	for _, s := range storeSkills {
+		storeDirs[s.Name] = s.Dir
+	}
+
+	var findings []Finding
+	for _, s := range repoSkills {
+		if dir, ok := storeDirs[s.Name]; ok {
+			findings = append(findings, Finding{
+				Kind:  KindDoublePresence,
+				Skill: s.Name,
+				Message: fmt.Sprintf("%q exists in both the canonical store (%s) and the repo skills dir (%s) — opencode and pi would see it twice, and one copy's rules may shadow the other — remove one of the copies by hand",
+					s.Name, filepath.Join(p.SkillsStore(), dir), filepath.Join(p.RepoSkills(), s.Dir)),
+			})
+		}
+		if _, ok := lock[s.Dir]; ok {
+			findings = append(findings, Finding{
+				Kind:  KindStaleLock,
+				Skill: s.Name,
+				Message: fmt.Sprintf("%q lives in the repo skills dir (%s), but the skills lockfile (%s) still carries its install entry — the entry's source and hash describe a skill that moved out of the canonical store, so the skills CLI will keep trying to update it — remove the entry by hand; fleet never writes the lockfile",
+					s.Name, filepath.Join(p.RepoSkills(), s.Dir), p.SkillLock()),
+			})
+		}
+	}
+	return findings, nil
 }
 
 // Resolve applies the chosen resolution for one conflict. keep records the

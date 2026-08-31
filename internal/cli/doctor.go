@@ -24,8 +24,9 @@ func newSkillDoctorCmd(p *paths.Paths) *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
 		Short: "Report what's wrong: drift, redundant links, broken links, unknown entries, manual edits",
-		Long: "Inspect every installed harness and the canonical store, and report what is wrong: " +
+		Long: "Inspect every installed harness, the canonical store, and the fleet repo's skills, and report what is wrong: " +
 			"redundant per-agent links, broken symlinks, unknown entries in skills dirs, " +
+			"a skill name present in both the store and the repo, stale lockfile entries for adopted skills, " +
 			"missing directories, and manual config edits that disagree with the state file.\n\n" +
 			"Doctor is read-only: it reports without changing anything, so you see what sync would " +
 			"do before sync does it (sync runs on every other command). Manual-edit disagreements " +
@@ -63,6 +64,8 @@ var findingSections = []struct {
 	{doctor.KindUnknownEntry, "unknown entries (reported, never touched)"},
 	{doctor.KindManualEdit, "manual edits fleet can't manage"},
 	{doctor.KindDrift, "state drift"},
+	{doctor.KindDoublePresence, "double presence (store and repo)"},
+	{doctor.KindStaleLock, "stale lockfile entries (fleet never writes the lockfile)"},
 	{doctor.KindMissingDir, "missing directories"},
 	{doctor.KindBrokenConfig, "unreadable configs"},
 }
@@ -249,6 +252,10 @@ func findingLabel(kind doctor.Kind, n int) string {
 		return pluralized("manual edit", n)
 	case doctor.KindDrift:
 		return pluralized("drift finding", n)
+	case doctor.KindDoublePresence:
+		return pluralized("double-presence finding", n)
+	case doctor.KindStaleLock:
+		return pluralized("stale lockfile entry", n)
 	case doctor.KindMissingDir:
 		if n == 1 {
 			return "missing directory"

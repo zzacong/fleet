@@ -186,6 +186,41 @@ func TestDoctorReportsRedundantLinks(t *testing.T) {
 	}
 }
 
+func TestDoctorFlagsAdoptionFollowups(t *testing.T) {
+	// Ticket 03's doctor follow-ups: the store copy came back while the
+	// adopted repo copy stayed, and the lockfile still carries the
+	// pre-adoption install entry.
+	p := doctorHome(t)
+	p.Repo = filepath.Join(t.TempDir(), "repo")
+	writeSkillDir(t, p.RepoSkills(), "tdd", "Red-green-refactor workflow.")
+	lock := `{"skills": {"tdd": {"source": "mattpocock/skills", "sourceType": "github", "skillFolderHash": "abc123"}}}`
+	if err := os.WriteFile(p.SkillLock(), []byte(lock), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runDoctor(t, p, "")
+
+	if !strings.Contains(out, "double presence (store and repo):") || !strings.Contains(out, `"tdd" exists in both`) {
+		t.Errorf("output missing the double-presence finding:\n%s", out)
+	}
+	if !strings.Contains(out, "stale lockfile entries (fleet never writes the lockfile):") {
+		t.Errorf("output missing the stale-lock section:\n%s", out)
+	}
+	if !strings.Contains(out, "1 double-presence finding, 1 stale lockfile entry") {
+		t.Errorf("output missing the count summary:\n%s", out)
+	}
+	// Read-only: the lockfile is untouched and both copies stay put.
+	if body := readFile(t, p.SkillLock()); body != lock {
+		t.Errorf("doctor modified the lockfile:\n%s", body)
+	}
+	if _, err := os.Stat(filepath.Join(p.SkillsStore(), "tdd")); err != nil {
+		t.Errorf("store copy disturbed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(p.RepoSkills(), "tdd")); err != nil {
+		t.Errorf("repo copy disturbed: %v", err)
+	}
+}
+
 func TestDoctorSyncAfterReportLeavesHomeClean(t *testing.T) {
 	// Doctor says what it would change; sync does it. Both paths green in
 	// a fake home: report → resolve → sync (on the next command) → clean.

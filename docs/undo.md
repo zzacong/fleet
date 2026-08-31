@@ -83,4 +83,9 @@ Adoption moves a skill directory into the repo and wires it in. Reversing it is 
    ```
 2. Remove the wiring and links if you want them gone: the repo path entry in opencode's and pi's configs, and the per-harness symlinks named after the skill in `~/.codex/skills`, `~/.claude/skills`, `~/.cursor/skills`, `~/.bob/skills`.
 
-Doctor reports any leftovers as unknown entries and never deletes them. Once the skill is back in the store, the skills CLI and fleet treat it like any other installed (or custom, if it has no lock entry) skill.
+Doctor reports any leftovers as unknown entries and never deletes them. It also flags the two things an adoption leaves behind that nothing else reports:
+
+- The skills CLI lockfile still carries the skill's install entry while the skill lives in the repo, so the CLI keeps trying to update a skill that moved. Remove the entry from `~/.agents/.skill-lock.json` by hand; fleet reads the lockfile and never writes it.
+- If the store copy comes back while the repo copy remains — a half-finished move in either direction — opencode and pi would see the skill twice. Doctor flags the double presence; remove one of the copies by hand.
+
+Once the skill is back in the store, the skills CLI and fleet treat it like any other installed (or custom, if it has no lock entry) skill.

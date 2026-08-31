@@ -172,13 +172,15 @@ bob: linked "git-helper" → ~/Developer/fleet/skills/git-helper
 fleet skill doctor
 ```
 
-The read-only report of what's wrong. It inspects every installed harness and the canonical store, and reports:
+The read-only report of what's wrong. It inspects every installed harness, the canonical store, and the repo's `skills/` directory, and reports:
 
 - **redundant links** — per-agent symlinks into the canonical store in harnesses that scan it natively; sync removes them on the next command
 - **broken symlinks** — targets missing or looping
 - **unknown entries** — anything else in a skills dir; reported, never touched
 - **manual edits fleet can't manage** — pattern or blanket rules that disable a skill
 - **state drift** — state and config disagreeing in ways sync will resolve
+- **double presence** — a skill name that exists in both the canonical store and the repo's `skills/` dir, so opencode and pi would see it twice and one copy's rules may shadow the other; remove one of the copies by hand
+- **stale lockfile entries** — the skills CLI's lockfile still carries the install entry of a skill that was adopted into the repo, so the skills CLI keeps trying to update a skill that moved; remove the entry by hand — fleet reads the lockfile and never writes it
 - **missing directories** and **unreadable configs**
 
 ```sh

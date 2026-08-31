@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/zacong/fleet/internal/harness"
 	"github.com/zacong/fleet/internal/paths"
+	"github.com/zacong/fleet/internal/scan"
 	"github.com/zacong/fleet/internal/state"
 )
 
@@ -63,6 +65,41 @@ func symlink(t *testing.T, target, link string) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// fakeRepo binds a fake repo root to p and returns it. The repo's
+// skills/ dir is not created unless the test does it.
+func fakeRepo(t *testing.T, p *paths.Paths) string {
+	t.Helper()
+	p.Repo = filepath.Join(t.TempDir(), "repo")
+	return p.Repo
+}
+
+// repoSkill writes a skill into the repo's skills/ dir, mirroring
+// storeSkill.
+func repoSkill(t *testing.T, p *paths.Paths, name string) {
+	t.Helper()
+	dir := filepath.Join(p.RepoSkills(), name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	md := "---\nname: " + name + "\ndescription: test skill " + name + "\n---\n\nbody\n"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(md), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeLock writes a skills CLI lockfile with the given provenance
+// entries, keyed by directory name.
+func writeLock(t *testing.T, p *paths.Paths, lock map[string]scan.Provenance) {
+	t.Helper()
+	body, err := json.Marshal(struct {
+		Skills map[string]scan.Provenance `json:"skills"`
+	}{Skills: lock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, p.SkillLock(), string(body))
 }
 
 // snapshot records every file and symlink in the home so tests can assert
@@ -340,21 +377,175 @@ func TestAnalyzeUnreadableConfigIsAFinding(t *testing.T) {
 	}
 }
 
+func TestAnalyzeFlagsSkillInBothStoreAndRepo(t *testing.T) {
+	// The half-done adoption reversal: the store copy came back (or never
+	// left) while the repo copy stayed — the same name in both places.
+	p := fakeHome(t)
+	fakeRepo(t, p)
+	storeSkill(t, p, "tdd")
+	repoSkill(t, p, "tdd")
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	var found *Finding
+	for i := range rep.Findings {
+		if rep.Findings[i].Kind == KindDoublePresence {
+			found = &rep.Findings[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("findings = %+v, want one double-presence finding", rep.Findings)
+	}
+	if found.Skill != "tdd" || found.Harness != "" {
+		t.Errorf("finding = %+v, want the skill name and no harness scope", *found)
+	}
+	if !strings.Contains(found.Message, filepath.Join(p.SkillsStore(), "tdd")) ||
+		!strings.Contains(found.Message, filepath.Join(p.RepoSkills(), "tdd")) {
+		t.Errorf("message must name both copies: %q", found.Message)
+	}
+	if !strings.Contains(found.Message, "twice") || !strings.Contains(found.Message, "by hand") {
+		t.Errorf("message must state the consequence and the manual resolution: %q", found.Message)
+	}
+}
+
+func TestAnalyzeDoublePresenceFollowsTheNameNotTheDir(t *testing.T) {
+	// ls dedupes on the frontmatter name; doctor flags the same way, so a
+	// renamed directory still counts as the same skill in both places.
+	p := fakeHome(t)
+	fakeRepo(t, p)
+	storeSkill(t, p, "tdd")
+	dir := filepath.Join(p.RepoSkills(), "my-tdd")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	md := "---\nname: tdd\ndescription: the repo copy\n---\n\nbody\n"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(md), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if len(rep.Findings) != 1 || rep.Findings[0].Kind != KindDoublePresence || rep.Findings[0].Skill != "tdd" {
+		t.Fatalf("findings = %+v, want one double-presence finding for tdd", rep.Findings)
+	}
+}
+
+func TestAnalyzeQuietWhenRepoSkillsAreUnique(t *testing.T) {
+	// Distinct names on each side, no lockfile: no double presence, no
+	// stale lock — the normal adopted-customs home.
+	p := fakeHome(t)
+	fakeRepo(t, p)
+	storeSkill(t, p, "tdd")
+	repoSkill(t, p, "git-helper")
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if len(rep.Findings) != 0 {
+		t.Errorf("findings = %+v, want none", rep.Findings)
+	}
+}
+
+func TestAnalyzeFlagsStaleLockEntryForAdoptedSkill(t *testing.T) {
+	// The skill was adopted out of the store, but its lockfile entry
+	// stayed: the skills CLI would keep trying to update a skill that now
+	// lives in the repo.
+	p := fakeHome(t)
+	fakeRepo(t, p)
+	storeSkill(t, p, "tdd")
+	repoSkill(t, p, "git-helper")
+	writeLock(t, p, map[string]scan.Provenance{
+		"git-helper": {Source: "mattpocock/skills", SourceType: "github", Hash: "abc123"},
+	})
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if len(rep.Findings) != 1 {
+		t.Fatalf("findings = %+v, want exactly the stale lock finding", rep.Findings)
+	}
+	f := rep.Findings[0]
+	if f.Kind != KindStaleLock || f.Skill != "git-helper" || f.Harness != "" {
+		t.Errorf("finding = %+v, want the stale lock for git-helper", f)
+	}
+	if !strings.Contains(f.Message, p.SkillLock()) || !strings.Contains(f.Message, filepath.Join(p.RepoSkills(), "git-helper")) {
+		t.Errorf("message must name the lockfile and the repo copy: %q", f.Message)
+	}
+	if !strings.Contains(f.Message, "skills CLI") || !strings.Contains(f.Message, "never writes the lockfile") {
+		t.Errorf("message must state the consequence and that fleet never edits the lockfile: %q", f.Message)
+	}
+}
+
+func TestAnalyzeQuietWhenLockEntriesMatchTheStore(t *testing.T) {
+	// A lock entry for a store skill is normal provenance, and a repo
+	// skill without one is a plain custom: neither is stale.
+	p := fakeHome(t)
+	fakeRepo(t, p)
+	storeSkill(t, p, "tdd")
+	repoSkill(t, p, "git-helper")
+	writeLock(t, p, map[string]scan.Provenance{
+		"tdd": {Source: "mattpocock/skills", SourceType: "github", Hash: "abc123"},
+	})
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if len(rep.Findings) != 0 {
+		t.Errorf("findings = %+v, want none", rep.Findings)
+	}
+}
+
+func TestAnalyzePropagatesLockfileErrors(t *testing.T) {
+	// Provenance must not be silently lost: a malformed lockfile fails the
+	// checkup like any other unreadable input.
+	p := fakeHome(t)
+	fakeRepo(t, p)
+	repoSkill(t, p, "git-helper")
+	writeFile(t, p.SkillLock(), `{"skills": {`)
+
+	if _, err := Analyze(p); err == nil || !strings.Contains(err.Error(), "read skills lockfile") {
+		t.Fatalf("Analyze() error = %v, want the lockfile read error", err)
+	}
+}
+
 func TestAnalyzeTouchesNothing(t *testing.T) {
 	p := fakeHome(t, "opencode", "claude", "bob")
+	fakeRepo(t, p)
 	storeSkill(t, p, "tdd")
+	repoSkill(t, p, "git-helper")
+	writeLock(t, p, map[string]scan.Provenance{
+		"tdd":        {Source: "mattpocock/skills", SourceType: "github", Hash: "abc123"},
+		"git-helper": {Source: "mattpocock/skills", SourceType: "github", Hash: "def456"},
+	})
 	symlink(t, filepath.Join(p.SkillsStore(), "tdd"), filepath.Join(p.OpenCodeSkills(), "tdd"))
 	writeFile(t, p.OpenCodeConfig(), `{"permission": {"skill": {"manual": "deny"}}}`)
 	if err := os.MkdirAll(p.ClaudeSkills(), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	before := snapshot(t, p.Home)
+	for path, body := range snapshot(t, p.Repo) {
+		before["repo:"+path] = body
+	}
+	before["lock"] = readFileT(t, p.SkillLock())
 
 	if _, err := Analyze(p); err != nil {
 		t.Fatalf("Analyze() error = %v", err)
 	}
-	if after := snapshot(t, p.Home); !reflect.DeepEqual(before, after) {
-		t.Error("Analyze() modified the home")
+
+	after := snapshot(t, p.Home)
+	for path, body := range snapshot(t, p.Repo) {
+		after["repo:"+path] = body
+	}
+	after["lock"] = readFileT(t, p.SkillLock())
+	if !reflect.DeepEqual(before, after) {
+		t.Error("Analyze() modified the home, the repo, or the lockfile")
 	}
 }
 
