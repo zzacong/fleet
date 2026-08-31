@@ -76,6 +76,7 @@ func (p *Paths) CursorSkills() string { return join(p, ".cursor", "skills") }
 func (p *Paths) BobDir() string    { return join(p, ".bob") }
 func (p *Paths) BobSkills() string { return join(p, ".bob", "skills") }
 
-// Fleet's own config home (state file lands here in a later ticket).
+// Fleet's own config home (state file).
 
 func (p *Paths) FleetConfigDir() string { return join(p, ".config", "fleet") }
+func (p *Paths) FleetStateFile() string { return join(p, ".config", "fleet", "state.json") }

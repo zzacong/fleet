@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"fmt"
 	"path/filepath"
 	"sort"
 
@@ -37,4 +38,15 @@ func (a *BobAdapter) Read(names []string) (ReadResult, error) {
 	}
 	sort.Strings(res.Linked)
 	return res, nil
+}
+
+// CanProject implements Adapter: Bob's disable path needs live
+// verification (it empirically reads the canonical store), so fleet
+// writes nothing.
+func (a *BobAdapter) CanProject() bool { return false }
+
+// Project implements Adapter; Bob has no write side, so callers must check
+// CanProject first.
+func (a *BobAdapter) Project(writes []SkillWrite) (WriteReport, error) {
+	return WriteReport{}, fmt.Errorf("bob has no verified per-skill disable mechanism")
 }

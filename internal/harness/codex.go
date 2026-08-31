@@ -38,25 +38,42 @@ func (a *CodexAdapter) Read(names []string) (ReadResult, error) {
 		return ReadResult{}, err
 	}
 
-	var cfg struct {
-		Skills struct {
-			Config []struct {
-				Name    string `toml:"name"`
-				Path    string `toml:"path"`
-				Enabled *bool  `toml:"enabled"`
-			} `toml:"config"`
-		} `toml:"skills"`
-	}
-	if err := toml.Unmarshal(body, &cfg); err != nil {
+	disabled, err := codexDisabledEntries(body)
+	if err != nil {
 		return ReadResult{}, fmt.Errorf("parse %s: %w", filepath.Base(a.home.CodexConfig()), err)
 	}
-
-	// Selections are only meaningful together with an enabled flag; entries
-	// without enabled don't change anything.
-	type selection struct {
-		enabled bool
+	for _, name := range names {
+		if disabled[name] {
+			res.States[name] = StateOff
+		}
 	}
-	states := map[string]*selection{}
+	return res, nil
+}
+
+// codexConfig mirrors the subset of ~/.codex/config.toml fleet models.
+type codexConfig struct {
+	Skills struct {
+		Config []codexEntry `toml:"config"`
+	} `toml:"skills"`
+}
+
+type codexEntry struct {
+	Name    string `toml:"name"`
+	Path    string `toml:"path"`
+	Enabled *bool  `toml:"enabled"`
+}
+
+// codexDisabledEntries returns the skill names the config's
+// [[skills.config]] entries disable. Selections are only meaningful
+// together with an enabled flag; entries without one change nothing. Later
+// entries override earlier ones.
+func codexDisabledEntries(body []byte) (map[string]bool, error) {
+	var cfg codexConfig
+	if err := toml.Unmarshal(body, &cfg); err != nil {
+		return nil, err
+	}
+
+	disabled := map[string]bool{}
 	for _, entry := range cfg.Skills.Config {
 		name := entry.Name
 		if name == "" && entry.Path != "" {
@@ -67,14 +84,7 @@ func (a *CodexAdapter) Read(names []string) (ReadResult, error) {
 		if name == "" || entry.Enabled == nil {
 			continue
 		}
-		enabled := *entry.Enabled
-		states[name] = &selection{enabled: enabled} // later entries override earlier ones
+		disabled[name] = !*entry.Enabled // later entries override earlier ones
 	}
-
-	for _, name := range names {
-		if s, ok := states[name]; ok && !s.enabled {
-			res.States[name] = StateOff
-		}
-	}
-	return res, nil
+	return disabled, nil
 }

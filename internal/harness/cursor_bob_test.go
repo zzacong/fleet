@@ -55,3 +55,18 @@ func TestBobDerivedStateIsAlwaysOnWithLinkPresenceReported(t *testing.T) {
 		t.Errorf("Linked = %v, want [tdd]", res.Linked)
 	}
 }
+
+func TestCursorAndBobHaveNoWriteSide(t *testing.T) {
+	// Cursor has no per-skill disable mechanism at all; Bob's disable path
+	// needs live verification. Both must refuse to project so the CLI can
+	// report the no-op with a clear message.
+	home := filepath.Join(t.TempDir(), "home")
+	for _, a := range []Adapter{NewCursor(paths.New(home)), NewBob(paths.New(home))} {
+		if a.CanProject() {
+			t.Errorf("%s CanProject() = true, want false", a.Harness())
+		}
+		if _, err := a.Project([]SkillWrite{{Name: "tdd", State: StateOff}}); err == nil {
+			t.Errorf("%s Project() succeeded, want an error", a.Harness())
+		}
+	}
+}

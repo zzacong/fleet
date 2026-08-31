@@ -47,9 +47,15 @@ func newSkillLsCmd(p *paths.Paths) *cobra.Command {
 		Use:   "ls",
 		Short: "List every skill and where it is active",
 		Long: "List every skill in the canonical store, marked custom or installed and grouped by source repo, with a per-harness on/off column for each installed harness.\n" +
-			"\nRead-only: fleet changes nothing.",
+			"\nSync runs first: the state file is projected into each harness config, and entries fleet doesn't recognize are reported on stderr, never touched.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Sync runs on every command: converge the harness configs
+			// with the state file before reporting what they say. Findings
+			// go to stderr so stdout stays machine-readable.
+			if err := runSyncTo(cmd.ErrOrStderr(), p); err != nil {
+				return err
+			}
 			out := cmd.OutOrStdout()
 			report, err := buildReport(p)
 			if err != nil {

@@ -1,6 +1,10 @@
 package harness
 
-import "github.com/zacong/fleet/internal/paths"
+import (
+	"fmt"
+
+	"github.com/zacong/fleet/internal/paths"
+)
 
 // Cursor reads ~/.agents/skills natively (documented) and has no
 // config-level per-skill disable mechanism — the only documented lever,
@@ -23,4 +27,13 @@ func (a *CursorAdapter) Installed() bool { return isDir(a.home.CursorDir()) }
 // Read implements Adapter.
 func (a *CursorAdapter) Read(names []string) (ReadResult, error) {
 	return ReadResult{States: onForAll(names)}, nil
+}
+
+// CanProject implements Adapter: there is no config lever to write.
+func (a *CursorAdapter) CanProject() bool { return false }
+
+// Project implements Adapter; Cursor has no write side, so callers must
+// check CanProject first.
+func (a *CursorAdapter) Project(writes []SkillWrite) (WriteReport, error) {
+	return WriteReport{}, fmt.Errorf("cursor has no per-skill disable mechanism")
 }

@@ -27,6 +27,7 @@ func TestNewDerivesEveryPathFromInjectedHomeRoot(t *testing.T) {
 		{"bob dir", p.BobDir(), "/home/fake/.bob"},
 		{"bob skills", p.BobSkills(), "/home/fake/.bob/skills"},
 		{"fleet config dir", p.FleetConfigDir(), "/home/fake/.config/fleet"},
+		{"fleet state file", p.FleetStateFile(), "/home/fake/.config/fleet/state.json"},
 	}
 	for _, c := range cases {
 		if c.got != c.want {

@@ -50,6 +50,39 @@ type ReadResult struct {
 	SkillSources []string
 }
 
+// SkillWrite is one skill's desired enablement for one harness.
+type SkillWrite struct {
+	Name string
+	// State is the desired state: StateOff ensures fleet's own marker is
+	// present, StateOn ensures it is gone.
+	State State
+}
+
+// Change records one enablement flip a write actually applied: the skill's
+// effective state moved from From to To.
+type Change struct {
+	Skill string
+	From  State
+	To    State
+}
+
+// Flag describes a config entry that affects skill enablement but that
+// fleet left untouched because it isn't fleet's own. Skill is empty when
+// the entry isn't tied to one skill (blankets and patterns).
+type Flag struct {
+	Skill   string
+	Message string
+}
+
+// WriteReport is what a Project call changed and what it left alone.
+type WriteReport struct {
+	Changed []Change
+	Flags   []Flag
+}
+
+// Empty reports whether there is nothing to tell the user about.
+func (r WriteReport) Empty() bool { return len(r.Changed) == 0 && len(r.Flags) == 0 }
+
 // Adapter is the seam every harness read side goes through.
 type Adapter interface {
 	// Harness names the agent this adapter talks to.
@@ -59,6 +92,16 @@ type Adapter interface {
 	// Read reads current enablement for the named skills. Read never
 	// writes; it reports what the harness's own config expresses.
 	Read(names []string) (ReadResult, error)
+	// CanProject reports whether the adapter can write enablement into
+	// the harness's own config. Cursor and Bob have no per-skill disable
+	// mechanism; toggles for them are a no-op with a message.
+	CanProject() bool
+	// Project projects desired enablement into the harness's config with
+	// a read-modify-write that preserves everything fleet doesn't own:
+	// unknown keys, comments, formatting, and unrecognized enablement
+	// entries (which are flagged, not touched). Only call it when
+	// CanProject() is true. Only writes the file when something changed.
+	Project(writes []SkillWrite) (WriteReport, error)
 }
 
 // All returns one adapter per supported harness, in the column order the

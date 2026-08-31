@@ -27,5 +27,7 @@ func newSkillCmd(p *paths.Paths) *cobra.Command {
 		Short: "Manage skills in the canonical store",
 	}
 	skill.AddCommand(newSkillLsCmd(p))
+	skill.AddCommand(newSkillOnCmd(p))
+	skill.AddCommand(newSkillOffCmd(p))
 	return skill
 }
