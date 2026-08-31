@@ -7,8 +7,5 @@ node_modules/
 build/
 dist/
 
-# Go prototype build artifacts
-prototypes/go-tui/skillctl*
-
 # ticket-sweep worktrees
 .worktrees/
