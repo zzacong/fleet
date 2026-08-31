@@ -1,6 +1,6 @@
 # Spec: Fleet — per-harness agent skill manager
 
-Status: ready-for-agent
+Status: resolved
 
 ## Problem Statement
 
