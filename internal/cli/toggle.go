@@ -1,8 +1,9 @@
 // The on/off commands: record the toggle in the state file, then let sync
-// project it into each harness's native config. Sync runs on every
-// command; here its output is the command's own report, so it goes to
-// stdout. Cursor and Bob have no write side — toggling for them is a no-op
-// with a clear message.
+// project it into each harness's native config. The write sequence itself
+// lives in internal/toggle — the TUI's staged apply runs the same code.
+// Sync's output is the command's own report, so it goes to stdout. Cursor
+// and Bob have no write side — toggling for them is a no-op with a clear
+// message.
 
 package cli
 
@@ -16,8 +17,8 @@ import (
 	"github.com/zacong/fleet/internal/harness"
 	"github.com/zacong/fleet/internal/paths"
 	"github.com/zacong/fleet/internal/scan"
-	"github.com/zacong/fleet/internal/state"
 	fleetsync "github.com/zacong/fleet/internal/sync"
+	"github.com/zacong/fleet/internal/toggle"
 )
 
 func newSkillOnCmd(p *paths.Paths) *cobra.Command  { return newSkillToggleCmd(p, true) }
@@ -58,59 +59,40 @@ func newSkillToggleCmd(p *paths.Paths, on bool) *cobra.Command {
 				}
 			}
 
-			st, err := state.Load(p.FleetStateFile())
+			// Harnesses without a write side get their no-op message; they
+			// contribute no toggle (and no state entry).
+			var toggles []toggle.Toggle
+			var nowrite []harness.Adapter
+			for _, a := range targets {
+				if !a.CanProject() {
+					nowrite = append(nowrite, a)
+					continue
+				}
+				toggles = append(toggles, toggle.Toggle{Name: name, Harness: string(a.Harness()), On: on})
+			}
+
+			_, projected, reports, err := toggle.Apply(p, toggles)
 			if err != nil {
 				return err
 			}
-			for _, a := range targets {
-				if !a.CanProject() {
-					continue // nothing to record for harnesses fleet can't write
-				}
-				if on {
-					st.SetEnabled(name, string(a.Harness()))
-				} else {
-					st.SetDisabled(name, string(a.Harness()))
-				}
-			}
-			if err := state.Save(p.FleetStateFile(), st); err != nil {
-				return fmt.Errorf("save state: %w", err)
-			}
 
 			out := cmd.OutOrStdout()
-
-			// Enabling must strip fleet's own markers before ambient sync
-			// runs: the state entry is already gone, so sync would
-			// otherwise flag the still-present markers as untracked.
-			// Disabling needs no explicit step — sync below projects it.
-			if on {
-				for _, a := range targets {
-					if !a.CanProject() {
-						continue
-					}
-					rep, err := a.Project([]harness.SkillWrite{{Name: name, State: harness.StateOn}})
-					if err != nil {
-						return fmt.Errorf("enable %s in %s: %w", name, a.Harness(), err)
-					}
-					if err := printReport(out, string(a.Harness()), rep.Changed, rep.Flags); err != nil {
-						return err
-					}
+			for _, pr := range projected {
+				if err := printReport(out, string(pr.Harness), pr.Report.Changed, pr.Report.Flags); err != nil {
+					return err
 				}
 			}
-
-			// Sync: repair any other drift while we are here.
-			if err := runSyncTo(out, p); err != nil {
+			if err := printSyncReports(out, reports); err != nil {
 				return err
 			}
 
-			for _, a := range targets {
-				if !a.CanProject() {
-					verb := "disable"
-					if on {
-						verb = "enable"
-					}
-					if _, err := fmt.Fprintf(out, "%s: no per-skill disable mechanism — %s %q is a no-op\n", a.Harness(), verb, name); err != nil {
-						return err
-					}
+			for _, a := range nowrite {
+				verb := "disable"
+				if on {
+					verb = "enable"
+				}
+				if _, err := fmt.Fprintf(out, "%s: no per-skill disable mechanism — %s %q is a no-op\n", a.Harness(), verb, name); err != nil {
+					return err
 				}
 			}
 			return nil
@@ -190,6 +172,12 @@ func runSyncTo(out io.Writer, p *paths.Paths) error {
 	if err != nil {
 		return err
 	}
+	return printSyncReports(out, reports)
+}
+
+// printSyncReports writes sync's reports in human form: link removals
+// first, then enablement changes and flags.
+func printSyncReports(out io.Writer, reports []fleetsync.Report) error {
 	for _, r := range reports {
 		for _, e := range r.Removed {
 			if _, err := fmt.Fprintf(out, "sync: %s: removed redundant link %q — %s\n", r.Harness, e.Name, e.Reason); err != nil {
