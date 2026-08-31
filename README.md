@@ -20,7 +20,7 @@ fleet                   # the interactive skill × harness matrix
 
 Bare `fleet` opens the matrix: one screen, every skill against every installed harness, toggles staged and applied together. It needs a terminal — piped output falls back to the `fleet skill ls` listing.
 
-The remaining verbs round out the loop: `skill on` re-enables, `skill update` wraps `skills update` and keeps disabled skills disabled, `skill doctor` explains anything it would change, and `skill adopt` migrates hand-written skills into the repo. Every verb is documented with examples in the [command reference](docs/cli.md).
+The remaining verbs round out the loop: `skill on` re-enables, `skill update` wraps `skills update` and keeps disabled skills disabled, `skill doctor` explains anything it would change, and `skill adopt` migrates custom skills into the repo. Every verb is documented with examples in the [command reference](docs/cli.md).
 
 ## Custom vs installed
 
@@ -29,7 +29,7 @@ Two kinds of skill show up in `fleet skill ls`, and the split decides how each o
 - **Installed** skills came from a source repo through the `skills` CLI and have provenance (source, hash) in its lockfile. They live in the canonical store, `ls` groups them by source repo, and the update badge compares the recorded hash against the repo's current tree. Install and update them with the `skills` CLI, never by hand.
 - **Custom** skills are your own: no lockfile entry. Write them into the fleet repo's `skills/` directory. Harnesses discover them through their own config (opencode, pi) or a managed symlink (codex, claude code, Cursor, Bob) — never through the canonical store, so a custom skill can't be shadowed or double-loaded.
 
-`fleet skill adopt <name>` is the bridge: it moves a hand-written skill out of the canonical store into the repo's `skills/` directory, wires the repo path into every installed harness, and manages the symlinks. It also promotes a forked installed skill. Adoption is reversible by hand — see [undo and escape hatches](docs/undo.md).
+`fleet skill adopt <name>` is the bridge: it moves a custom skill out of the canonical store into the repo's `skills/` directory, wires the repo path into every installed harness, and manages the symlinks. It also promotes a forked installed skill. Adoption is reversible by hand — see [undo and escape hatches](docs/undo.md).
 
 ## What fleet changes on disk
 

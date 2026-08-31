@@ -21,7 +21,7 @@ func newSkillAdoptCmd(p *paths.Paths) *cobra.Command {
 	return &cobra.Command{
 		Use:   "adopt <name>",
 		Short: "Move a custom skill from the canonical store into the fleet repo",
-		Long: "Move a hand-written skill from the canonical store (~/.agents/skills) into the fleet repo's skills/ directory, where it stays versioned.\n\n" +
+		Long: "Move a custom skill from the canonical store (~/.agents/skills) into the fleet repo's skills/ directory, where it stays versioned.\n\n" +
 			"The repo path is wired into opencode's and pi's skill-path config, and every link-based harness (codex, claude code, Cursor, Bob) gets a managed symlink to the skill. Managed links point at the repo, never at the canonical store — a link into ~/.agents/skills would make opencode and pi see the skill twice, so custom skills get none.\n\n" +
 			"Adoption is reversible by hand: move the directory back into ~/.agents/skills and fleet keeps working (doctor reports the leftovers). Adopting an already-adopted skill moves nothing but re-ensures the wiring and links.",
 		Args: cobra.ExactArgs(1),

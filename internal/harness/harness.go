@@ -1,4 +1,4 @@
-// Package harness is fleet's one seam to the six supported coding agents
+// Package harness is fleet's one seam to the six supported harnesses
 // (opencode, pi, codex, claude code, Cursor, IBM Bob). Every adapter
 // implements the same interface: detect the harness by its config directory
 // and read per-skill enablement from the harness's own config. Tests build
@@ -8,7 +8,7 @@ package harness
 
 import "github.com/zacong/fleet/internal/paths"
 
-// Harness identifies a coding agent fleet manages.
+// Harness identifies a harness fleet manages.
 type Harness string
 
 const (
@@ -92,7 +92,7 @@ func (r WriteReport) Empty() bool { return len(r.Changed) == 0 && len(r.Flags) =
 
 // Adapter is the seam every harness read side goes through.
 type Adapter interface {
-	// Harness names the agent this adapter talks to.
+	// Harness names the harness this adapter talks to.
 	Harness() Harness
 	// Installed reports whether the harness's config directory exists.
 	Installed() bool
@@ -122,4 +122,16 @@ func All(p *paths.Paths) []Adapter {
 		NewCursor(p),
 		NewBob(p),
 	}
+}
+
+// Installed returns the adapters whose harness is present on this machine,
+// in All's order. Most call sites want this subset, not all six.
+func Installed(p *paths.Paths) []Adapter {
+	var out []Adapter
+	for _, a := range All(p) {
+		if a.Installed() {
+			out = append(out, a)
+		}
+	}
+	return out
 }

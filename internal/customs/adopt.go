@@ -1,5 +1,5 @@
 // Package customs owns the fleet repo's skills/ directory: the home of
-// custom (hand-written) skills. Adopt moves a skill from the canonical
+// custom skills. Adopt moves a skill from the canonical
 // store into the repo, wires the repo path into the harnesses that take
 // extra discovery paths (opencode, pi), and manages every link-based
 // harness's symlink to it (codex, claude code, Cursor, Bob).

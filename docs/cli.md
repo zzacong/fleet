@@ -2,7 +2,7 @@
 
 Fleet has one binary and one command family. Bare `fleet` opens the interactive matrix; everything scripted lives under `fleet skill`. Sync is not a verb — it runs inside every command (see [Sync is not a verb](#sync-is-not-a-verb)).
 
-Examples were run against a sandbox home (`FLEET_HOME=$(mktemp -d)`) with two skills: `tdd`, installed from a source repo, and `git-helper`, hand-written. Paths are shortened to `~` for readability.
+Examples were run against a sandbox home (`FLEET_HOME=$(mktemp -d)`) with two skills: `tdd`, installed from a source repo, and `git-helper`, a custom skill. Paths are shortened to `~` for readability.
 
 ## fleet
 
@@ -144,7 +144,7 @@ sync: codex: enabled "tdd" (was off)
 fleet skill adopt <name>
 ```
 
-Moves a hand-written skill from the canonical store (`~/.agents/skills`) into the fleet repo's `skills/` directory, where it stays versioned. Then it wires the repo in and links the skill everywhere it is needed:
+Moves a custom skill from the canonical store (`~/.agents/skills`) into the fleet repo's `skills/` directory, where it stays versioned. Then it wires the repo in and links the skill everywhere it is needed:
 
 ```sh
 $ fleet skill adopt git-helper

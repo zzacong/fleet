@@ -91,19 +91,19 @@ func printTable(out io.Writer, report *snapshot.Report, header bool) error {
 
 	if header {
 		custom := 0
-		stale := 0
+		outdated := 0
 		for _, row := range report.Skills {
 			if row.Custom {
 				custom++
 			}
 			if row.Outdated != nil && *row.Outdated {
-				stale++
+				outdated++
 			}
 		}
 		summary := fmt.Sprintf("fleet · %d skills · %d installed · %d custom",
 			len(report.Skills), len(report.Skills)-custom, custom)
-		if stale > 0 {
-			summary += fmt.Sprintf(" · %d update%s", stale, plural(stale))
+		if outdated > 0 {
+			summary += fmt.Sprintf(" · %d update%s", outdated, plural(outdated))
 		}
 		if _, err := fmt.Fprintf(out, "%s\n\n", summary); err != nil {
 			return err
