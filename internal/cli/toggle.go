@@ -108,13 +108,7 @@ func resolveTargets(p *paths.Paths, harnessFlags []string) ([]harness.Adapter, e
 	all := harness.All(p)
 
 	if len(harnessFlags) == 0 {
-		var installed []harness.Adapter
-		for _, a := range all {
-			if a.Installed() {
-				installed = append(installed, a)
-			}
-		}
-		return installed, nil
+		return harness.Installed(p), nil
 	}
 
 	seen := map[string]bool{}

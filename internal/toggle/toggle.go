@@ -69,9 +69,9 @@ func Apply(p *paths.Paths, toggles []Toggle) (int, []Projected, []fleetsync.Repo
 	}
 
 	var projected []Projected
-	for _, a := range harness.All(p) {
+	for _, a := range harness.Installed(p) {
 		writes := onWrites[string(a.Harness())]
-		if len(writes) == 0 || !a.Installed() {
+		if len(writes) == 0 {
 			continue
 		}
 		rep, err := a.Project(writes)

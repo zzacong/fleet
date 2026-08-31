@@ -88,12 +88,7 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 		return nil, nil, fmt.Errorf("read skills lockfile: %w", err)
 	}
 
-	var installed []harness.Adapter
-	for _, a := range harness.All(p) {
-		if a.Installed() {
-			installed = append(installed, a)
-		}
-	}
+	installed := harness.Installed(p)
 
 	names := make([]string, len(skills))
 	for i, s := range skills {

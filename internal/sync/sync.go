@@ -80,8 +80,8 @@ func Run(p *paths.Paths) ([]Report, error) {
 		}
 	}
 
-	for _, a := range harness.All(p) {
-		if !a.Installed() || !a.CanProject() {
+	for _, a := range harness.Installed(p) {
+		if !a.CanProject() {
 			continue
 		}
 		// The state schema is sparse: every entry is a disable.

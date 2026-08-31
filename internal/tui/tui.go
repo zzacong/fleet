@@ -116,10 +116,7 @@ func (m *model) rebuildColumns() {
 	m.adapters = nil
 	m.harnesses = nil
 	m.writable = map[string]bool{}
-	for _, a := range harness.All(m.p) {
-		if !a.Installed() {
-			continue
-		}
+	for _, a := range harness.Installed(m.p) {
 		m.adapters = append(m.adapters, a)
 		m.harnesses = append(m.harnesses, string(a.Harness()))
 		m.writable[string(a.Harness())] = a.CanProject()
