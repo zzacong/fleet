@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/BurntSushi/toml"
 	"github.com/zacong/fleet/internal/paths"
@@ -47,6 +48,16 @@ func (a *CodexAdapter) Read(names []string) (ReadResult, error) {
 			res.States[name] = StateOff
 		}
 	}
+
+	// Every name the config currently disables, however it selects the
+	// skill (name or path selector): it is a disable entry, and doctor
+	// must see it even when fleet wouldn't write that shape.
+	for name, off := range disabled {
+		if off {
+			res.Disables = append(res.Disables, name)
+		}
+	}
+	sort.Strings(res.Disables)
 	return res, nil
 }
 

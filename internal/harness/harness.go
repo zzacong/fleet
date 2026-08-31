@@ -48,6 +48,13 @@ type ReadResult struct {
 	// harness config (opencode's `skills` key, in either dialect). Only
 	// opencode sets it.
 	SkillSources []string
+	// Disables lists every skill name the harness's own config disables
+	// through an exact-name entry fleet could own — including names that
+	// aren't in the canonical store. Glob patterns, blanket rules, and
+	// shapes fleet can't write are excluded: they surface as flags, never
+	// as state-tracked entries. Adapters without a config lever leave it
+	// nil. Doctor compares this against the state file.
+	Disables []string
 }
 
 // SkillWrite is one skill's desired enablement for one harness.

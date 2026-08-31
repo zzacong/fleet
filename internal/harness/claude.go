@@ -62,5 +62,15 @@ func (a *ClaudeAdapter) Read(names []string) (ReadResult, error) {
 		res.States[name] = StateOn
 	}
 	sort.Strings(res.Linked)
+
+	// The exact "off" entries, independent of link presence: an override
+	// for an unlinked skill is stale, but it is still a disable entry in
+	// the config that doctor must see.
+	for name, value := range overrides {
+		if value == "off" {
+			res.Disables = append(res.Disables, name)
+		}
+	}
+	sort.Strings(res.Disables)
 	return res, nil
 }

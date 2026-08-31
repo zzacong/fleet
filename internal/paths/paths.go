@@ -93,11 +93,13 @@ func (p *Paths) SkillLock() string   { return join(p, ".agents", ".skill-lock.js
 
 func (p *Paths) OpenCodeDir() string    { return join(p, ".config", "opencode") }
 func (p *Paths) OpenCodeConfig() string { return join(p, ".config", "opencode", "opencode.jsonc") }
+func (p *Paths) OpenCodeSkills() string { return join(p, ".config", "opencode", "skills") }
 
 // pi (strict JSON settings).
 
 func (p *Paths) PiDir() string      { return join(p, ".pi") }
 func (p *Paths) PiSettings() string { return join(p, ".pi", "agent", "settings.json") }
+func (p *Paths) PiSkills() string   { return join(p, ".pi", "agent", "skills") }
 
 // codex (TOML config; skills arrive natively or through links).
 

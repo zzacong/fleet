@@ -183,13 +183,19 @@ func requireStoredSkill(p *paths.Paths, name string) error {
 	return fmt.Errorf("skill %q not found in %s", name, p.SkillsStore())
 }
 
-// runSyncTo runs sync and writes the reports in human form.
+// runSyncTo runs sync and writes the reports in human form: link removals
+// first, then enablement changes and flags.
 func runSyncTo(out io.Writer, p *paths.Paths) error {
 	reports, err := fleetsync.Run(p)
 	if err != nil {
 		return err
 	}
 	for _, r := range reports {
+		for _, e := range r.Removed {
+			if _, err := fmt.Fprintf(out, "sync: %s: removed redundant link %q — %s\n", r.Harness, e.Name, e.Reason); err != nil {
+				return err
+			}
+		}
 		if err := printReport(out, r.Harness, r.Changed, r.Flags); err != nil {
 			return err
 		}

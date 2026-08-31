@@ -239,6 +239,12 @@ func (f *File) Disabled(harness string) []string {
 	return names
 }
 
+// Names returns every skill the state file mentions, sorted — the universe
+// doctor compares configs against.
+func (f *File) Names() []string {
+	return sortedKeys(f.skills)
+}
+
 // IsDisabled reports whether skill is disabled for harness.
 func (f *File) IsDisabled(name, harness string) bool {
 	s, ok := f.skills[name]

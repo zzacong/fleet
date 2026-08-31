@@ -73,18 +73,33 @@ func (a *ClaudeAdapter) Project(writes []SkillWrite) (WriteReport, error) {
 				rep.Changed = append(rep.Changed, Change{Skill: w.Name, From: before, To: StateOff})
 			}
 		case StateOn:
-			// The read state is off only through skillOverrides[name] ==
-			// "off" (a link must be present for the skill to be visible at
-			// all), so the entry found here is fleet's marker or an
-			// identical manual one. Remove it.
-			if before != StateOff || overrides == nil || !overrides.Has(w.Name) {
+			// The entry here is fleet's marker, an identical manual one,
+			// or a stale "off" for a skill claude can no longer discover
+			// (no link). Removing it is what the state's "on" asks for in
+			// every case: nothing else in the settings disables the skill.
+			// Other values (claude's own, e.g. "user-invocable-only") are
+			// not disables and stay.
+			if overrides == nil {
+				continue
+			}
+			var value string
+			var ok bool
+			for _, kv := range overrides.KVs() {
+				if kv.Key == w.Name {
+					value, ok = jsonString(kv.RawValue)
+					break
+				}
+			}
+			stale := ok && value == "off" &&
+				(before == StateOff || before == StateAbsent)
+			if !stale {
 				continue
 			}
 			overrides.Delete(w.Name)
 			if len(overrides.Keys()) == 0 {
 				root.Delete("skillOverrides")
 			}
-			rep.Changed = append(rep.Changed, Change{Skill: w.Name, From: StateOff, To: StateOn})
+			rep.Changed = append(rep.Changed, Change{Skill: w.Name, From: before, To: StateOn})
 		}
 	}
 

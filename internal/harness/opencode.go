@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 
 	"github.com/zacong/fleet/internal/jsonc"
 	"github.com/zacong/fleet/internal/paths"
@@ -57,7 +58,10 @@ func (a *OpenCodeAdapter) Read(names []string) (ReadResult, error) {
 	res.Dialect = detectDialect(cfg.Permission, cfg.Permissions != nil, cfg.Skills)
 	res.SkillSources = parseSkillSources(cfg.Skills)
 
-	// V1 baseline: permission.skill, evaluated per dialect semantics.
+	// V1 baseline: permission.skill, evaluated per dialect semantics. The
+	// rules are parsed once: the state loop evaluates them per name, and
+	// the exact denies among them feed Disables.
+	var v1Rules []skillRule
 	if len(cfg.Permission) > 0 {
 		var perm struct {
 			Skill json.RawMessage `json:"skill"`
@@ -69,8 +73,9 @@ func (a *OpenCodeAdapter) Read(names []string) (ReadResult, error) {
 		if err != nil {
 			return ReadResult{}, fmt.Errorf("parse permission.skill in %s: %w", filepath.Base(a.home.OpenCodeConfig()), err)
 		}
+		v1Rules = rules
 		for _, name := range names {
-			if effect, matched := lastMatchingEffect(rules, name); matched {
+			if effect, matched := lastMatchingEffect(v1Rules, name); matched {
 				res.States[name] = effectState(effect)
 			}
 		}
@@ -96,7 +101,37 @@ func (a *OpenCodeAdapter) Read(names []string) (ReadResult, error) {
 		}
 	}
 
+	res.Disables = openCodeDisables(v1Rules, cfg.Permissions)
 	return res, nil
+}
+
+// openCodeDisables collects the exact-name deny entries in the config: V1
+// map keys and V2 rules with an exact resource, sorted. In a mixed file
+// both dialects count — V2 migrates the V1 keys, so a V1 deny still
+// disables. The string shorthand, patterns, and wildcard actions are not
+// exact entries.
+func openCodeDisables(v1 []skillRule, v2 []v2Rule) []string {
+	seen := map[string]bool{}
+	var disables []string
+	add := func(name string) {
+		if name == "" || isGlobPattern(name) || seen[name] {
+			return
+		}
+		seen[name] = true
+		disables = append(disables, name)
+	}
+	for _, rule := range v1 {
+		if rule.effect == "deny" {
+			add(rule.pattern)
+		}
+	}
+	for _, rule := range v2 {
+		if rule.action == "skill" && rule.effect == "deny" {
+			add(rule.resource)
+		}
+	}
+	sort.Strings(disables)
+	return disables
 }
 
 type v2Rule struct {

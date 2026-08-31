@@ -141,6 +141,26 @@ func TestClaudeProjectAbsentSkillIsLeftAlone(t *testing.T) {
 	}
 }
 
+func TestClaudeProjectEnableRemovesStaleOverrideForUnlinkedSkill(t *testing.T) {
+	// A skill claude can no longer discover (no link) with a leftover
+	// "off" override: the state says on, so restoring removes the stale
+	// entry — otherwise no command could ever converge this config.
+	home := filepath.Join(t.TempDir(), "home")
+
+	fixture := `{"model": "sonnet", "skillOverrides": {"tdd": "off"}}`
+	want := `{"model": "sonnet"}`
+
+	rep, got := runClaudeProject(t, home, fixture,
+		[]SkillWrite{{Name: "tdd", State: StateOn}})
+	if got != want {
+		t.Errorf("config = %s, want %s", got, want)
+	}
+	wantChanges := []Change{{Skill: "tdd", From: StateAbsent, To: StateOn}}
+	if !reflect.DeepEqual(rep.Changed, wantChanges) {
+		t.Errorf("Changed = %v, want %v", rep.Changed, wantChanges)
+	}
+}
+
 func TestClaudeProjectManualEditDriftIsFlaggedNotTouched(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
 	makeClaudeSkill(t, home, "tdd")

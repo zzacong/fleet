@@ -295,3 +295,26 @@ func readFile(t *testing.T, path string) string {
 	}
 	return string(body)
 }
+
+func TestAmbientSyncReportsRedundantLinkRemovals(t *testing.T) {
+	// The skills CLI recreated its link spam; the next fleet command's
+	// sync cleans it and says so on the command's report channel.
+	p := toggleHome(t)
+	if err := os.MkdirAll(p.OpenCodeSkills(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(p.SkillsStore(), "tdd"), filepath.Join(p.OpenCodeSkills(), "tdd")); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _ := runToggle(t, p, "on", "tdd")
+
+	if !strings.Contains(out, `sync: opencode: removed redundant link "tdd" — opencode scans the canonical store natively`) {
+		t.Errorf("output missing the removal report:\n%s", out)
+	}
+	// Idempotent: the next command reports nothing.
+	out, _ = runToggle(t, p, "off", "tdd")
+	if strings.Contains(out, "removed redundant link") {
+		t.Errorf("second run removed links again:\n%s", out)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 
 	"github.com/zacong/fleet/internal/paths"
 )
@@ -61,6 +62,13 @@ func (a *PiAdapter) Read(names []string) (ReadResult, error) {
 			}
 		}
 	}
+
+	// Only the exact -skills/<name>/SKILL.md form is an entry fleet could
+	// own; !glob exclusions are not.
+	for name := range exact {
+		res.Disables = append(res.Disables, name)
+	}
+	sort.Strings(res.Disables)
 	return res, nil
 }
 

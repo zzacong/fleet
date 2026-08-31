@@ -206,3 +206,130 @@ func TestRunReportsErrorsFromBrokenConfigs(t *testing.T) {
 		t.Fatal("Run() succeeded on a broken config, want error")
 	}
 }
+
+// linkSpam recreates the skills CLI's per-agent links by hand: every
+// native-scan harness gets a link to the store skill, claude gets the one
+// link it genuinely needs, and bob also gets a repo-style link and a real
+// directory fleet must never touch.
+func linkSpam(t *testing.T, p *paths.Paths, skill string) {
+	t.Helper()
+	store := filepath.Join(p.SkillsStore(), skill)
+	if err := os.MkdirAll(store, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	links := map[string]string{
+		filepath.Join(p.OpenCodeSkills(), skill): store,
+		filepath.Join(p.PiSkills(), skill):       store,
+		filepath.Join(p.CodexSkills(), skill):    store,
+		filepath.Join(p.CursorSkills(), skill):   store,
+		filepath.Join(p.BobSkills(), skill):      store,
+		// Claude is not a native canonical-store reader: load-bearing.
+		filepath.Join(p.ClaudeSkills(), skill): store,
+		// A repo-pointing custom-skill link (ticket 03's managed links)
+		// and a real directory: never fleet's to remove.
+		filepath.Join(p.BobSkills(), "my-custom"): filepath.Join(p.Home, "dev", "fleet", "skills", "my-custom"),
+	}
+	for link, target := range links {
+		if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(p.BobSkills(), "hand-made"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunRemovesRedundantLinksAndLeavesTheRest(t *testing.T) {
+	p := fakeHome(t, "opencode", "pi", "codex", "claude", "cursor", "bob")
+	linkSpam(t, p, "tdd")
+
+	reports, err := Run(p)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	removed := map[string][]string{}
+	for _, r := range reports {
+		for _, e := range r.Removed {
+			removed[r.Harness] = append(removed[r.Harness], e.Name)
+		}
+	}
+	want := map[string][]string{
+		"opencode": {"tdd"},
+		"pi":       {"tdd"},
+		"codex":    {"tdd"},
+		"cursor":   {"tdd"},
+		"bob":      {"tdd"},
+	}
+	if !reflect.DeepEqual(removed, want) {
+		t.Errorf("removed = %v, want %v", removed, want)
+	}
+
+	// The links are gone; claude's load-bearing link, the repo-pointing
+	// custom link, and the real directory all stay.
+	for _, gone := range []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.CursorSkills()} {
+		if _, err := os.Lstat(filepath.Join(gone, "tdd")); !os.IsNotExist(err) {
+			t.Errorf("redundant link in %s still there", gone)
+		}
+	}
+	for _, kept := range []string{
+		filepath.Join(p.ClaudeSkills(), "tdd"),
+		filepath.Join(p.BobSkills(), "my-custom"),
+		filepath.Join(p.BobSkills(), "hand-made"),
+	} {
+		if _, err := os.Lstat(kept); err != nil {
+			t.Errorf("fleet removed %s, which it must never touch: %v", kept, err)
+		}
+	}
+}
+
+func TestRunRemovesRedundantLinksWithMissingTargets(t *testing.T) {
+	// The skill was uninstalled after the skills CLI linked it: cleanup is
+	// still safe and still idempotent. linkSpam's directories make every
+	// harness installed, so every native scanner's link goes; claude's
+	// stays (broken, and doctor's business — never sync's to delete).
+	p := fakeHome(t, "opencode", "bob")
+	linkSpam(t, p, "tdd")
+	if err := os.RemoveAll(p.SkillsStore()); err != nil {
+		t.Fatal(err)
+	}
+
+	reports, err := Run(p)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	var removed int
+	for _, r := range reports {
+		removed += len(r.Removed)
+	}
+	if removed != 5 {
+		t.Errorf("removed %d links, want 5 (every native scanner)", removed)
+	}
+	if _, err := os.Lstat(filepath.Join(p.OpenCodeSkills(), "tdd")); !os.IsNotExist(err) {
+		t.Error("opencode link with missing target not removed")
+	}
+	if _, err := os.Lstat(filepath.Join(p.ClaudeSkills(), "tdd")); err != nil {
+		t.Errorf("claude's load-bearing link was removed: %v", err)
+	}
+}
+
+func TestRunLinkCleanupIsIdempotent(t *testing.T) {
+	p := fakeHome(t, "opencode", "bob")
+	linkSpam(t, p, "tdd")
+
+	if _, err := Run(p); err != nil {
+		t.Fatalf("first Run() error = %v", err)
+	}
+	reports, err := Run(p)
+	if err != nil {
+		t.Fatalf("second Run() error = %v", err)
+	}
+	for _, r := range reports {
+		if len(r.Removed) != 0 {
+			t.Errorf("%s removed %v on the second run, want nothing", r.Harness, r.Removed)
+		}
+	}
+}
