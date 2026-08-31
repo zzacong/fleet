@@ -1,0 +1,36 @@
+# goreleaser: one static binary per platform, macOS arm64 first.
+# `go install github.com/zacong/fleet/cmd/fleet@latest` is the zero-config
+# install path and needs none of this.
+version: 2
+
+project_name: fleet
+
+builds:
+  - id: fleet
+    main: ./cmd/fleet
+    binary: fleet
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - arm64
+      - amd64
+    ldflags:
+      - -s -w -X github.com/zacong/fleet/internal/buildinfo.Version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"

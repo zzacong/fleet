@@ -5,6 +5,7 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/zacong/fleet/internal/buildinfo"
 	"github.com/zacong/fleet/internal/paths"
 	"github.com/zacong/fleet/internal/tui"
 )
@@ -22,7 +23,10 @@ func NewRoot(p *paths.Paths) *cobra.Command {
 		// Bare `fleet` opens the TUI (RunE below); a pipe gets the plain
 		// listing — a matrix no one can steer is not a face, it is garbage
 		// on stdout.
+		// Piped, `--version`, or `completion` never reach RunE: Cobra
+		// handles those before dispatch.
 		SilenceUsage: true,
+		Version:      buildinfo.Version,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !stdoutIsTTY() {
 				return runListing(cmd, p, false, quiet)

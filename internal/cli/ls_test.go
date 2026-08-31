@@ -285,7 +285,6 @@ func TestLsDegradesGracefullyWhenTheAPICannotBeReached(t *testing.T) {
 	}}
 
 	out, errOut, err := runLsCapture(t, p, trees)
-
 	// The failure is visible on stderr but never fatal: the command exits
 	// 0 and the table still renders with every badge unknown.
 	if err != nil {

@@ -1,0 +1,7 @@
+version: "2"
+
+# `make fmt` writes gofumpt; lint must reject what fmt would have fixed,
+# locally and in CI.
+formatters:
+  enable:
+    - gofumpt
