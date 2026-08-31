@@ -245,6 +245,27 @@ func (f *File) Names() []string {
 	return sortedKeys(f.skills)
 }
 
+// Universe merges storeNames with the state's own names into one deduped
+// list, store order first: everything harness configs can meaningfully
+// talk about — a disable may outlive the skill it was recorded for.
+func (f *File) Universe(storeNames []string) []string {
+	seen := make(map[string]bool, len(storeNames)+len(f.skills))
+	out := make([]string, 0, len(storeNames)+len(f.skills))
+	for _, name := range storeNames {
+		if !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	for _, name := range f.Names() {
+		if !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 // IsDisabled reports whether skill is disabled for harness.
 func (f *File) IsDisabled(name, harness string) bool {
 	s, ok := f.skills[name]

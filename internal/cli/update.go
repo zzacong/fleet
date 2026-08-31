@@ -109,22 +109,15 @@ func verifyDisables(out io.Writer, p *paths.Paths, skills []scan.Skill) error {
 	// The universe of names the configs can talk about: everything in the
 	// store plus everything the state knows (a disable may outlive the
 	// skill it was recorded for).
-	names := make([]string, 0, len(skills))
-	universe := make(map[string]bool, len(skills))
+	storeNames := make([]string, 0, len(skills))
 	for _, s := range skills {
-		names = append(names, s.Name)
-		universe[s.Name] = true
+		storeNames = append(storeNames, s.Name)
 	}
-	for _, name := range st.Names() {
-		if !universe[name] {
-			universe[name] = true
-			names = append(names, name)
-		}
-	}
+	names := st.Universe(storeNames)
 
 	holds := map[string][]string{} // skill -> harnesses where the disable holds
-	for _, a := range harness.All(p) {
-		if !a.Installed() || !a.CanProject() {
+	for _, a := range harness.Installed(p) {
+		if !a.CanProject() {
 			continue
 		}
 		h := string(a.Harness())

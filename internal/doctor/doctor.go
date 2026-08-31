@@ -171,29 +171,26 @@ func analyzeConfigs(p *paths.Paths) ([]Conflict, []Finding, error) {
 	// The universe of skill names the configs can meaningfully talk about:
 	// everything installed, everything the state knows, and — added per
 	// adapter from the read itself — everything a config disables.
-	universe := map[string]bool{}
+	storeNames := make([]string, 0, len(skills))
 	for _, s := range skills {
-		universe[s.Name] = true
+		storeNames = append(storeNames, s.Name)
 	}
-	for _, name := range st.Names() {
+	universe := map[string]bool{}
+	for _, name := range st.Universe(storeNames) {
 		universe[name] = true
 	}
 
 	var conflicts []Conflict
 	var findings []Finding
-	for _, a := range harness.All(p) {
-		if !a.Installed() || !a.CanProject() {
+	for _, a := range harness.Installed(p) {
+		if !a.CanProject() {
 			continue // no config lever: nothing to disagree with
 		}
 		h := string(a.Harness())
 
 		read, err := a.Read(sortedNames(universe))
 		if err != nil {
-			findings = append(findings, Finding{
-				Kind:    KindBrokenConfig,
-				Harness: h,
-				Message: fmt.Sprintf("the %s config can't be read (%v) — sync will fail until it's fixed", h, err),
-			})
+			findings = append(findings, brokenConfigFinding(h, err))
 			continue
 		}
 
@@ -208,11 +205,7 @@ func analyzeConfigs(p *paths.Paths) ([]Conflict, []Finding, error) {
 		if len(universe) > grown {
 			read, err = a.Read(sortedNames(universe))
 			if err != nil {
-				findings = append(findings, Finding{
-					Kind:    KindBrokenConfig,
-					Harness: h,
-					Message: fmt.Sprintf("the %s config can't be read (%v) — sync will fail until it's fixed", h, err),
-				})
+				findings = append(findings, brokenConfigFinding(h, err))
 				continue
 			}
 		}
@@ -294,6 +287,16 @@ func Resolve(p *paths.Paths, c Conflict, keep bool) (harness.WriteReport, error)
 		return harness.WriteReport{}, fmt.Errorf("save state: %w", err)
 	}
 	return harness.WriteReport{}, nil
+}
+
+// brokenConfigFinding is the finding for a harness config fleet can't
+// read at all — one per harness, wherever the read happens.
+func brokenConfigFinding(harnessName string, err error) Finding {
+	return Finding{
+		Kind:    KindBrokenConfig,
+		Harness: harnessName,
+		Message: fmt.Sprintf("the %s config can't be read (%v) — sync will fail until it's fixed", harnessName, err),
+	}
 }
 
 // restoreConflict projects the state's intent back into the harness config.
