@@ -554,6 +554,19 @@ func TestViewCarriesBannerStatusAndHelp(t *testing.T) {
 		t.Error("--quiet view still shows the hero banner")
 	}
 
+	// The banner spells FLEET: five glyphs, and after L's bottom bar both
+	// E glyphs carry a full-width bottom bar on the fifth line and a full
+	// width ╚══════╝ on the sixth — not F's bare ██║/╚═╝ legs. Regressed
+	// once into "FLFET"; pin the spelling.
+	art := strings.Split(strings.TrimRight(strings.TrimPrefix(bannerArt, "\n"), "\n"), "\n")
+	if len(art) != 6 {
+		t.Fatalf("banner has %d lines, want 6", len(art))
+	}
+	const eBottom, eFoot = "███████╗", "╚══════╝"
+	if strings.Count(art[4], eBottom) != 3 || strings.Count(art[5], eFoot) != 3 {
+		t.Errorf("banner does not spell FLEET — line 5 = %q, line 6 = %q", art[4], art[5])
+	}
+
 	// The status bar counts total, installed, custom, outdated — and the
 	// staged count appears once something is staged.
 	if v := quiet.View().Content; !strings.Contains(v, "3 skills · 2 installed · 1 custom · 0 outdated") {
