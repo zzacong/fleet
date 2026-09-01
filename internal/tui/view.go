@@ -6,6 +6,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -30,6 +31,40 @@ const (
 	cellGap  = "  "
 )
 
+// harnessAbbrev maps harness names to the short labels the matrix header
+// renders. Names are state keys everywhere else — this only shrinks the
+// column header, so ten-plus columns still fit a normal terminal. A
+// harness without an entry renders its full name.
+var harnessAbbrev = map[string]string{
+	"opencode": "oc",
+	"codex":    "cx",
+	"claude":   "cl",
+	"cursor":   "cu",
+}
+
+// harnessLabel is the header label for one harness.
+func harnessLabel(h string) string {
+	if a, ok := harnessAbbrev[h]; ok {
+		return a
+	}
+	return h
+}
+
+// harnessLegend renders the abbreviation key for the help overlay, sorted
+// so the line is stable between frames.
+func harnessLegend() string {
+	names := make([]string, 0, len(harnessAbbrev))
+	for name := range harnessAbbrev {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		parts = append(parts, harnessAbbrev[name]+" = "+name)
+	}
+	return strings.Join(parts, " · ")
+}
+
 func (m model) layout() layout {
 	l := layout{width: max(m.width, 40)}
 
@@ -41,7 +76,7 @@ func (m model) layout() layout {
 	}
 
 	for _, h := range m.harnesses {
-		label := h
+		label := harnessLabel(h)
 		if !m.writable[h] {
 			label += "!" // flagged: no per-skill off switch, see the help
 		}
@@ -192,7 +227,8 @@ func (m model) filterLine() string {
 }
 
 // columnHeaderLine labels the harness columns. The ! marks harnesses
-// without a per-skill off switch (Cursor, Bob).
+// without a per-skill off switch (Cursor, Bob); long names render
+// abbreviated, keyed in the help overlay.
 func (m model) columnHeaderLine() string {
 	l := m.layout()
 	prefix := 3 + l.nameW + 1 + 3 // glyph, mark, space; name, space; badge, two spaces
@@ -205,7 +241,7 @@ func (m model) columnHeaderLine() string {
 		if i > 0 {
 			b.WriteString(cellGap)
 		}
-		label := h
+		label := harnessLabel(h)
 		sty := styDim
 		if !m.writable[h] {
 			label += "!"
@@ -362,6 +398,10 @@ func (m model) helpOverlay() string {
 		"r              refresh",
 		"?              toggle this help",
 		"q              quit (ignored while the filter holds text)",
+		"",
+		"columns",
+		"",
+		harnessLegend(),
 		"",
 		"notes",
 		"",

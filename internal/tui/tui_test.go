@@ -578,8 +578,12 @@ func TestViewCarriesBannerStatusAndHelp(t *testing.T) {
 		t.Error("status bar missing the staged count")
 	}
 
-	// The help overlay carries the limitation notes.
+	// The help overlay carries the column abbreviation key and the
+	// limitation notes.
 	help := quiet.helpOverlay()
+	if !strings.Contains(help, "oc = opencode") || !strings.Contains(help, "cx = codex") {
+		t.Error("help missing the column abbreviation legend")
+	}
 	if !strings.Contains(help, "no per-skill off switch") {
 		t.Error("help missing the cursor/bob note")
 	}
@@ -651,9 +655,10 @@ func stripANSI(s string) string {
 }
 
 // TestMatrixFitsNarrowTerminalWithEveryHarness pins the layout contract:
-// with all six harnesses installed, the header names every column and the
-// widest rendered line stays inside the terminal width, even after the
-// description has been capped and dropped.
+// with all six harnesses installed, the header names every column through
+// its abbreviated label (never the full name, which is what would eat the
+// width) and the widest rendered line stays inside the terminal width,
+// even after arrowing to the last column.
 func TestMatrixFitsNarrowTerminalWithEveryHarness(t *testing.T) {
 	p := tuiHome(t)
 	m := newTestModel(t, p)
@@ -666,7 +671,7 @@ func TestMatrixFitsNarrowTerminalWithEveryHarness(t *testing.T) {
 	lines := strings.Split(view, "\n")
 	var header string
 	for _, line := range lines {
-		if strings.Contains(line, "opencode") {
+		if strings.Contains(line, "oc") {
 			header = stripANSI(line)
 			break
 		}
@@ -675,12 +680,15 @@ func TestMatrixFitsNarrowTerminalWithEveryHarness(t *testing.T) {
 		t.Fatal("no header line in the view")
 	}
 	for _, h := range m.harnesses {
-		label := h
+		label := harnessLabel(h)
 		if !m.writable[h] {
 			label += "!"
 		}
 		if !strings.Contains(header, label) {
-			t.Errorf("header missing the %s column: %q", h, strings.TrimRight(header, " "))
+			t.Errorf("header missing the %s column label %q: %q", h, label, strings.TrimRight(header, " "))
+		}
+		if strings.Contains(header, h) && harnessLabel(h) != h {
+			t.Errorf("header renders %s by full name; the abbreviation should carry the column", h)
 		}
 	}
 	for i, line := range lines {
