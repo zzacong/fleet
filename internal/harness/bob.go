@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/zacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/paths"
 )
 
 // Bob reads ~/.agents/skills natively (verified empirically on this

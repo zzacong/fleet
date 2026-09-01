@@ -3,7 +3,7 @@ package harness
 import (
 	"fmt"
 
-	"github.com/zacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/paths"
 )
 
 // Cursor reads ~/.agents/skills natively (documented) and has no

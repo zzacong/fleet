@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zacong/fleet/internal/jsonc"
+	"github.com/zzacong/fleet/internal/jsonc"
 )
 
 // readConfig returns the file's text; empty when the file is missing.

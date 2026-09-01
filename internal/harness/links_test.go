@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/zacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/paths"
 )
 
 // linksHome builds a home with every harness installed.

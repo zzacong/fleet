@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/zacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/paths"
 )
 
 func writePiSettings(t *testing.T, home, body string) {

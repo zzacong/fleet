@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/paths"
 )
 
 // runCodexProject writes fixture (when non-empty), runs Project, and

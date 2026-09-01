@@ -5,7 +5,7 @@ Fleet manages agent skills across AI coding agents — opencode, pi, codex, clau
 ## Install
 
 ```sh
-go install github.com/zacong/fleet/cmd/fleet@latest
+go install github.com/zzacong/fleet/cmd/fleet@latest
 ```
 
 Fleet is a single static binary with no runtime dependencies. Release builds report their version through `fleet --version`; `go install` builds report `dev`.

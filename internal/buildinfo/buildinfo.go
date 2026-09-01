@@ -4,5 +4,5 @@
 package buildinfo
 
 // Version is fleet's version, stamped at build time with
-// -ldflags "-X github.com/zacong/fleet/internal/buildinfo.Version=<v>".
+// -ldflags "-X github.com/zzacong/fleet/internal/buildinfo.Version=<v>".
 var Version = "dev"

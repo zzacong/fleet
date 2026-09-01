@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zacong/fleet/internal/paths"
-	"github.com/zacong/fleet/internal/state"
+	"github.com/zzacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/state"
 )
 
 // runSync runs `fleet skill sync` (or the given args), returning stdout,

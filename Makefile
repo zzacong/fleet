@@ -2,7 +2,7 @@
 # Go targets; `pnpm run fmt:md` / `lint:md` handle markdown via oxfmt.
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-BUILDINFO := github.com/zacong/fleet/internal/buildinfo.Version
+BUILDINFO := github.com/zzacong/fleet/internal/buildinfo.Version
 GOPKGS := cmd internal
 
 .PHONY: build test vet fmt lint check

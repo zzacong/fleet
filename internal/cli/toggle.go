@@ -14,11 +14,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/zacong/fleet/internal/harness"
-	"github.com/zacong/fleet/internal/paths"
-	"github.com/zacong/fleet/internal/scan"
-	fleetsync "github.com/zacong/fleet/internal/sync"
-	"github.com/zacong/fleet/internal/toggle"
+	"github.com/zzacong/fleet/internal/harness"
+	"github.com/zzacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/scan"
+	fleetsync "github.com/zzacong/fleet/internal/sync"
+	"github.com/zzacong/fleet/internal/toggle"
 )
 
 func newSkillOnCmd(p *paths.Paths) *cobra.Command  { return newSkillToggleCmd(p, true) }

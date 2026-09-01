@@ -15,9 +15,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/zacong/fleet/internal/doctor"
-	"github.com/zacong/fleet/internal/harness"
-	"github.com/zacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/doctor"
+	"github.com/zzacong/fleet/internal/harness"
+	"github.com/zzacong/fleet/internal/paths"
 )
 
 func newSkillDoctorCmd(p *paths.Paths) *cobra.Command {

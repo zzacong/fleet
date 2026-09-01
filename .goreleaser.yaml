@@ -1,5 +1,5 @@
 # goreleaser: one static binary per platform, macOS arm64 first.
-# `go install github.com/zacong/fleet/cmd/fleet@latest` is the zero-config
+# `go install github.com/zzacong/fleet/cmd/fleet@latest` is the zero-config
 # install path and needs none of this.
 version: 2
 
@@ -18,7 +18,7 @@ builds:
       - arm64
       - amd64
     ldflags:
-      - -s -w -X github.com/zacong/fleet/internal/buildinfo.Version={{.Version}}
+      - -s -w -X github.com/zzacong/fleet/internal/buildinfo.Version={{.Version}}
 
 archives:
   - formats: [tar.gz]

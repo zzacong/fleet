@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zacong/fleet/internal/jsonc"
+	"github.com/zzacong/fleet/internal/jsonc"
 )
 
 // CanProject implements Adapter: opencode has a config lever in both

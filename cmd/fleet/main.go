@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/zacong/fleet/internal/cli"
-	"github.com/zacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/cli"
+	"github.com/zzacong/fleet/internal/paths"
 )
 
 func main() {

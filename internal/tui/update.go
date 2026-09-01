@@ -14,10 +14,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/zacong/fleet/internal/paths"
-	"github.com/zacong/fleet/internal/scan"
-	"github.com/zacong/fleet/internal/skillscli"
-	fleetsync "github.com/zacong/fleet/internal/sync"
+	"github.com/zzacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/scan"
+	"github.com/zzacong/fleet/internal/skillscli"
+	fleetsync "github.com/zzacong/fleet/internal/sync"
 )
 
 // newSkillsRunner builds the skills CLI runner: the real exec runner. A

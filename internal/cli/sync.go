@@ -9,7 +9,7 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/zacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/paths"
 )
 
 func newSkillSyncCmd(p *paths.Paths) *cobra.Command {

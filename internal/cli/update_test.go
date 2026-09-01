@@ -15,9 +15,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zacong/fleet/internal/paths"
-	"github.com/zacong/fleet/internal/skillscli"
-	"github.com/zacong/fleet/internal/state"
+	"github.com/zzacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/skillscli"
+	"github.com/zzacong/fleet/internal/state"
 )
 
 // updateHome is toggleHome's home plus the skills CLI lockfile: tdd has

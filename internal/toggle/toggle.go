@@ -12,10 +12,10 @@ package toggle
 import (
 	"fmt"
 
-	"github.com/zacong/fleet/internal/harness"
-	"github.com/zacong/fleet/internal/paths"
-	"github.com/zacong/fleet/internal/state"
-	fleetsync "github.com/zacong/fleet/internal/sync"
+	"github.com/zzacong/fleet/internal/harness"
+	"github.com/zzacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/state"
+	fleetsync "github.com/zzacong/fleet/internal/sync"
 )
 
 // Toggle is one desired enablement: skill Name on or off for Harness.

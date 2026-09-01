@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zacong/fleet/internal/paths"
-	"github.com/zacong/fleet/internal/state"
+	"github.com/zzacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/state"
 )
 
 // adoptHome builds a fake home with every harness installed and a fake

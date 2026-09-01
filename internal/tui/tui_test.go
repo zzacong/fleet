@@ -11,11 +11,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/zacong/fleet/internal/harness"
-	"github.com/zacong/fleet/internal/outdated"
-	"github.com/zacong/fleet/internal/paths"
-	"github.com/zacong/fleet/internal/snapshot"
-	"github.com/zacong/fleet/internal/state"
+	"github.com/zzacong/fleet/internal/harness"
+	"github.com/zzacong/fleet/internal/outdated"
+	"github.com/zzacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/snapshot"
+	"github.com/zzacong/fleet/internal/state"
 )
 
 // tuiHome builds a home with every harness installed, two installed skills

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/paths"
 )
 
 const repoSkillsDir = "/repo/skills"

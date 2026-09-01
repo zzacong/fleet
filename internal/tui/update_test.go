@@ -17,8 +17,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/zacong/fleet/internal/harness"
-	"github.com/zacong/fleet/internal/skillscli"
+	"github.com/zzacong/fleet/internal/harness"
+	"github.com/zzacong/fleet/internal/skillscli"
 )
 
 // stubSkillsRunner replaces the runner seam for one test, the way the

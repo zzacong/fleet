@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zacong/fleet/internal/outdated"
-	"github.com/zacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/outdated"
+	"github.com/zzacong/fleet/internal/paths"
 )
 
 func runBare(t *testing.T, p *paths.Paths, args ...string) (string, error) {

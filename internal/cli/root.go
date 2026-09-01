@@ -5,9 +5,9 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/zacong/fleet/internal/buildinfo"
-	"github.com/zacong/fleet/internal/paths"
-	"github.com/zacong/fleet/internal/tui"
+	"github.com/zzacong/fleet/internal/buildinfo"
+	"github.com/zzacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/tui"
 )
 
 // NewRoot builds the `fleet` command tree under an injected home root.

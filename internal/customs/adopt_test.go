@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/paths"
 )
 
 // adoptHome builds a fake home with every harness installed and a fake

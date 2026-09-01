@@ -6,7 +6,7 @@
 // the filesystem outside the injected home root.
 package harness
 
-import "github.com/zacong/fleet/internal/paths"
+import "github.com/zzacong/fleet/internal/paths"
 
 // Harness identifies a harness fleet manages.
 type Harness string

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zacong/fleet/internal/buildinfo"
-	"github.com/zacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/buildinfo"
+	"github.com/zzacong/fleet/internal/paths"
 )
 
 func TestVersionFlagPrintsTheBuildStamp(t *testing.T) {

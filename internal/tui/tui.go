@@ -17,11 +17,11 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/zacong/fleet/internal/harness"
-	"github.com/zacong/fleet/internal/paths"
-	"github.com/zacong/fleet/internal/snapshot"
-	fleetsync "github.com/zacong/fleet/internal/sync"
-	"github.com/zacong/fleet/internal/toggle"
+	"github.com/zzacong/fleet/internal/harness"
+	"github.com/zzacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/snapshot"
+	fleetsync "github.com/zzacong/fleet/internal/sync"
+	"github.com/zzacong/fleet/internal/toggle"
 )
 
 // ---- styles, declared once as package vars ----

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zacong/fleet/internal/paths"
-	"github.com/zacong/fleet/internal/state"
+	"github.com/zzacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/state"
 )
 
 // doctorHome builds a home with every harness installed, one stored skill

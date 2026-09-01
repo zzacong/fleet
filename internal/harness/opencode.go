@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/zacong/fleet/internal/jsonc"
-	"github.com/zacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/jsonc"
+	"github.com/zzacong/fleet/internal/paths"
 )
 
 // OpenCode reads ~/.config/opencode/opencode.jsonc. One file, two config

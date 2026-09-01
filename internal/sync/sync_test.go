@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zacong/fleet/internal/paths"
-	"github.com/zacong/fleet/internal/state"
+	"github.com/zzacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/state"
 )
 
 // fakeHome builds a home with the given harnesses' config directories

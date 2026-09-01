@@ -12,10 +12,10 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/zacong/fleet/internal/harness"
-	"github.com/zacong/fleet/internal/outdated"
-	"github.com/zacong/fleet/internal/paths"
-	"github.com/zacong/fleet/internal/scan"
+	"github.com/zzacong/fleet/internal/harness"
+	"github.com/zzacong/fleet/internal/outdated"
+	"github.com/zzacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/scan"
 )
 
 // SkillRow is one skill as a snapshot reports it: identity, origin,

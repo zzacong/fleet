@@ -13,8 +13,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/zacong/fleet/internal/jsonc"
-	"github.com/zacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/jsonc"
+	"github.com/zzacong/fleet/internal/paths"
 )
 
 // WireResult reports one harness's wiring of the repo skills dir.

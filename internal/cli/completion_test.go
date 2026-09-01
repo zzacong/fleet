@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/paths"
 )
 
 func TestCompletionEmitsScriptsNamingFleet(t *testing.T) {

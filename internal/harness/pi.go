@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"sort"
 
-	"github.com/zacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/paths"
 )
 
 // Pi reads ~/.pi/agent/settings.json (strict JSON). pi discovers the

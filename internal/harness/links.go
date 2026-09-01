@@ -24,7 +24,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/zacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/paths"
 )
 
 // LinkAction says what a LinkSkill call did to the harness's skills dir.

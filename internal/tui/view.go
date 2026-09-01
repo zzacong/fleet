@@ -11,8 +11,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/zacong/fleet/internal/harness"
-	"github.com/zacong/fleet/internal/snapshot"
+	"github.com/zzacong/fleet/internal/harness"
+	"github.com/zzacong/fleet/internal/snapshot"
 )
 
 // layout is the matrix's column math, computed once per frame so rows and
