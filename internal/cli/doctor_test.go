@@ -328,3 +328,96 @@ func TestDoctorDriftConflictKeepAdoptsTheDeletion(t *testing.T) {
 		t.Error("state still disables a skill the user enabled")
 	}
 }
+
+// piConflictsHome builds a home whose pi config hand-disables two skills
+// ("tdd" from the store, "deploy-to-vercel" known only to the config), so
+// doctor has a two-conflict pi batch to walk.
+func piConflictsHome(t *testing.T) *paths.Paths {
+	t.Helper()
+	p := doctorHome(t)
+	if err := os.MkdirAll(filepath.Dir(p.PiSettings()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture := `{"skills": ["-skills/tdd/SKILL.md", "-skills/deploy-to-vercel/SKILL.md"]}`
+	if err := os.WriteFile(p.PiSettings(), []byte(fixture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestDoctorKeepAllAdoptsTheHarnessBatch(t *testing.T) {
+	p := piConflictsHome(t)
+
+	// First prompt answers keep for one conflict, second takes the batch
+	// option for what remains of pi.
+	out := runDoctor(t, p, "k\na\n", "--interactive")
+
+	if !strings.Contains(out, "[a] keep all 2 pi conflicts") || !strings.Contains(out, "[x] skip all 2 pi conflicts") {
+		t.Errorf("output missing the pi batch options:\n%s", out)
+	}
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.IsDisabled("tdd", "pi") || !st.IsDisabled("deploy-to-vercel", "pi") {
+		t.Error("keep all did not record both pi disables")
+	}
+	if st.IsDisabled("tdd", "opencode") {
+		t.Error("keep all reached beyond the pi batch")
+	}
+	if strings.Count(out, "kept:") != 2 {
+		t.Errorf("want two keep receipts:\n%s", out)
+	}
+
+	// The adoption converges: a second doctor run is clean.
+	if out := runDoctor(t, p, ""); !strings.Contains(out, "no problems found") {
+		t.Errorf("second run =\n%s\nwant clean", out)
+	}
+}
+
+func TestDoctorSkipAllLeavesTheHarnessBatchAsIs(t *testing.T) {
+	p := piConflictsHome(t)
+
+	out := runDoctor(t, p, "x\n", "--interactive")
+
+	if !strings.Contains(out, "skipped 2 pi conflicts") {
+		t.Errorf("output missing the batch skip receipt:\n%s", out)
+	}
+	if _, err := os.Stat(p.FleetStateFile()); !os.IsNotExist(err) {
+		t.Error("skip all changed the state file")
+	}
+	if body := readFile(t, p.PiSettings()); !strings.Contains(body, `-skills/tdd/SKILL.md`) {
+		t.Error("skip all changed the pi config")
+	}
+}
+
+func TestDoctorBatchOptionsNeverCrossHarnesses(t *testing.T) {
+	// opencode comes before pi: keep-all at opencode's lone conflict must
+	// stop there, and pi's batch is offered and answered separately.
+	p := piConflictsHome(t)
+	if err := os.MkdirAll(filepath.Dir(p.OpenCodeConfig()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.OpenCodeConfig(), []byte(`{"permission": {"skill": {"tdd": "deny"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runDoctor(t, p, "k\na\n", "--interactive")
+
+	if strings.Contains(out, "[a] keep all 1 opencode conflict") {
+		t.Errorf("batch options offered for a single conflict:\n%s", out)
+	}
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.IsDisabled("tdd", "opencode") {
+		t.Error("the opencode keep was not applied")
+	}
+	if !st.IsDisabled("tdd", "pi") || !st.IsDisabled("deploy-to-vercel", "pi") {
+		t.Error("the pi batch keep was not applied")
+	}
+	if strings.Count(out, "kept:") != 3 {
+		t.Errorf("want three keep receipts:\n%s", out)
+	}
+}

@@ -227,6 +227,13 @@ func reportConflicts(out io.Writer, conflicts []doctor.Conflict, pal doctorPalet
 // resolveConflicts walks the manual-edit conflicts and applies whatever the
 // user picks at each prompt. With no input (piped stdin, EOF) everything is
 // reported and left as is. It returns how many conflicts were resolved.
+//
+// Conflicts arrive grouped per harness, so "all" means the current
+// harness's remaining batch: [a] keeps every one of them (adopting that
+// config's side into the state) and [x] skips them. The batch options only
+// appear when there is more than one, and the next harness's conflicts are
+// still prompted individually — one keypress never adopts edits from a
+// config the user hasn't been shown.
 func resolveConflicts(cmd *cobra.Command, p *paths.Paths, conflicts []doctor.Conflict, pal doctorPalette) (int, error) {
 	if len(conflicts) == 0 {
 		return 0, nil
@@ -237,7 +244,16 @@ func resolveConflicts(cmd *cobra.Command, p *paths.Paths, conflicts []doctor.Con
 	noted := false
 	resolved := 0
 
-	for _, c := range conflicts {
+	for i := 0; i < len(conflicts); {
+		c := conflicts[i]
+		// The harness batch: this conflict plus the ones that follow for
+		// the same harness.
+		batchEnd := i
+		for batchEnd+1 < len(conflicts) && conflicts[batchEnd+1].Harness == c.Harness {
+			batchEnd++
+		}
+		batch := batchEnd - i + 1
+
 		if _, err := fmt.Fprintf(out, "\n%s %s: %s\n", pal.warn("⚠"), pal.info(c.Harness), c.Message); err != nil {
 			return resolved, err
 		}
@@ -250,6 +266,14 @@ func resolveConflicts(cmd *cobra.Command, p *paths.Paths, conflicts []doctor.Con
 		if _, err := fmt.Fprintf(out, "  %s skip — leave it as is\n", pal.dim("[s]")); err != nil {
 			return resolved, err
 		}
+		if batch > 1 {
+			if _, err := fmt.Fprintf(out, "  %s keep all %d %s conflicts\n", pal.warn("[a]"), batch, c.Harness); err != nil {
+				return resolved, err
+			}
+			if _, err := fmt.Fprintf(out, "  %s skip all %d %s conflicts\n", pal.dim("[x]"), batch, c.Harness); err != nil {
+				return resolved, err
+			}
+		}
 
 		if inputEnded || !in.Scan() {
 			inputEnded = true
@@ -261,47 +285,77 @@ func resolveConflicts(cmd *cobra.Command, p *paths.Paths, conflicts []doctor.Con
 			if _, err := fmt.Fprintln(out, note); err != nil {
 				return resolved, err
 			}
+			i++
 			continue
 		}
 
+		next := i + 1
 		switch strings.ToLower(strings.TrimSpace(in.Text())) {
 		case "k":
-			if _, err := doctor.Resolve(p, c, true); err != nil {
-				return resolved, err
-			}
-			if _, err := fmt.Fprintf(out, "  kept: %q recorded as %s for %s in the state file\n",
-				c.Skill, keepState(c), c.Harness); err != nil {
+			if err := keepConflict(out, p, c, pal); err != nil {
 				return resolved, err
 			}
 			resolved++
 		case "r":
-			rep, err := doctor.Resolve(p, c, false)
-			if err != nil {
+			if err := restoreConflictReceipt(out, p, c, pal); err != nil {
 				return resolved, err
 			}
-			for _, ch := range rep.Changed {
-				if _, err := fmt.Fprintf(out, "  restored: %s\n", restoreChange(c.Harness, ch)); err != nil {
-					return resolved, err
-				}
-			}
-			for _, f := range rep.Flags {
-				if _, err := fmt.Fprintf(out, "  restored: %s: %s\n", c.Harness, f.Message); err != nil {
-					return resolved, err
-				}
-			}
-			if len(rep.Changed) == 0 && len(rep.Flags) == 0 {
-				if _, err := fmt.Fprintf(out, "  restored: %s already matches the state\n", c.Harness); err != nil {
-					return resolved, err
-				}
-			}
 			resolved++
+		case "a":
+			for _, cj := range conflicts[i : batchEnd+1] {
+				if err := keepConflict(out, p, cj, pal); err != nil {
+					return resolved, err
+				}
+				resolved++
+			}
+			next = batchEnd + 1
+		case "x":
+			if _, err := fmt.Fprintf(out, "  skipped %d %s conflict%s\n", batch, c.Harness, plural(batch)); err != nil {
+				return resolved, err
+			}
+			next = batchEnd + 1
 		default:
 			if _, err := fmt.Fprintln(out, "  skipped"); err != nil {
 				return resolved, err
 			}
 		}
+		i = next
 	}
 	return resolved, nil
+}
+
+// keepConflict applies one keep and prints its receipt.
+func keepConflict(out io.Writer, p *paths.Paths, c doctor.Conflict, pal doctorPalette) error {
+	if _, err := doctor.Resolve(p, c, true); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(out, "  kept: %q recorded as %s for %s in the state file\n",
+		c.Skill, keepState(c), c.Harness)
+	return err
+}
+
+// restoreConflictReceipt applies one restore and prints what changed.
+func restoreConflictReceipt(out io.Writer, p *paths.Paths, c doctor.Conflict, pal doctorPalette) error {
+	rep, err := doctor.Resolve(p, c, false)
+	if err != nil {
+		return err
+	}
+	for _, ch := range rep.Changed {
+		if _, err := fmt.Fprintf(out, "  restored: %s\n", restoreChange(c.Harness, ch)); err != nil {
+			return err
+		}
+	}
+	for _, f := range rep.Flags {
+		if _, err := fmt.Fprintf(out, "  restored: %s: %s\n", c.Harness, f.Message); err != nil {
+			return err
+		}
+	}
+	if len(rep.Changed) == 0 && len(rep.Flags) == 0 {
+		if _, err := fmt.Fprintf(out, "  restored: %s already matches the state\n", c.Harness); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // keepLabel describes what "keep my change" does, per conflict direction.

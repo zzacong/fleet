@@ -204,13 +204,15 @@ Manual-edit **conflicts** — when a config and the state file disagree about a 
 
 ```sh
 $ fleet skill doctor -i
-⚠ pi: "git-helper" is disabled in the pi config, but fleet's state has it enabled
+⚠ pi: "deploy-to-vercel" is disabled in the pi config, but fleet's state has it enabled
   [k] keep my change — record the disable in fleet's state
   [r] restore — sync fleet's state back into the config
   [s] skip — leave it as is
+  [a] keep all 12 pi conflicts
+  [x] skip all 12 pi conflicts
 ```
 
-`keep` adopts your hand edit as the new intent; `restore` re-projects the recorded intent. In interactive mode with piped input, conflicts are reported and left as is (`left as is (no input)`), and the command still exits 0. A clean home reports `no problems found`.
+`keep` adopts your hand edit as the new intent; `restore` re-projects the recorded intent. When one harness has several conflicts, `[a]` and `[x]` apply the choice to all of that harness's conflicts at once — and never beyond it: the next harness's conflicts are prompted separately, so one keypress never adopts edits from a config you haven't been shown. There is no restore-all because that is exactly what `fleet skill sync` does. In interactive mode with piped input, conflicts are reported and left as is (`left as is (no input)`), and the command still exits 0. A clean home reports `no problems found`.
 
 Doctor never runs ambient sync — the point is to show what sync _would_ do before it does it.
 
