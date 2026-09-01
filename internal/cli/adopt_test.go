@@ -32,6 +32,7 @@ func adoptHome(t *testing.T, storeSkills ...string) *paths.Paths {
 
 func runAdopt(t *testing.T, p *paths.Paths, args ...string) (string, error) {
 	t.Helper()
+	t.Cleanup(func() { stdoutTTY = func() bool { return false } })
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	root := NewRoot(p)
 	root.SetOut(out)
@@ -97,16 +98,19 @@ func TestAdoptMovesWiresAndLinksEveryHarness(t *testing.T) {
 		t.Errorf("canonical store = %v, %v; want just tdd", entries, err)
 	}
 
-	// The command reports what it did.
-	for _, want := range []string{
-		"moved " + filepath.Join(p.SkillsStore(), "my-notes") + " → " + filepath.Join(repoSkills, "my-notes"),
-		`opencode: wired "` + repoSkills + `" as a skill source (skills.paths)`,
-		`pi: wired "` + repoSkills + `" as a skill source (skills)`,
-		`codex: linked "my-notes" → ` + filepath.Join(repoSkills, "my-notes"),
-		`bob: linked "my-notes" → ` + filepath.Join(repoSkills, "my-notes"),
+	// The command reports what it did: one outcome line, quiet wiring/links.
+	if !strings.Contains(out, `adopted "my-notes"`) {
+		t.Errorf("output missing adopted headline:\n%s", out)
+	}
+	for _, noisy := range []string{
+		`opencode: wired "` + repoSkills,
+		`pi: wired "` + repoSkills,
+		`codex: linked "my-notes"`,
+		`bob: linked "my-notes"`,
+		"moved " + filepath.Join(p.SkillsStore(), "my-notes"),
 	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output missing %q:\n%s", want, out)
+		if strings.Contains(out, noisy) {
+			t.Errorf("output should be quiet, but contains %q:\n%s", noisy, out)
 		}
 	}
 
@@ -167,7 +171,7 @@ func TestAdoptIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-adopting an adopted skill must succeed: %v", err)
 	}
-	if !strings.Contains(out, "already in the repo") {
+	if !strings.Contains(out, "already adopted") {
 		t.Errorf("output should say the skill is already adopted:\n%s", out)
 	}
 	if strings.Contains(out, "wired") || strings.Contains(out, "linked") {

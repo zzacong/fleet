@@ -157,19 +157,16 @@ Moves a custom skill from the canonical store (`~/.agents/skills`) into the flee
 
 ```sh
 $ fleet skill adopt git-helper
-moved ~/.agents/skills/git-helper → ~/Developer/fleet/skills/git-helper
-opencode: wired "~/Developer/fleet/skills" as a skill source (skills.paths)
-pi: wired "~/Developer/fleet/skills" as a skill source (skills)
-codex: linked "git-helper" → ~/Developer/fleet/skills/git-helper
-claude: linked "git-helper" → ~/Developer/fleet/skills/git-helper
-cursor: linked "git-helper" → ~/Developer/fleet/skills/git-helper
-bob: linked "git-helper" → ~/Developer/fleet/skills/git-helper
+adopted "git-helper"
 ```
+
+- The first line is the outcome: the skill now lives in the repo. On a terminal the verb is green; it is the one line to read. Wiring the repo into opencode/pi and linking it for codex, claude code, Cursor, and Bob happens quietly — only a repointed link (the skills CLI's old link taken over) or a skipped link (a real directory in the way) prints an extra line: `codex: repointed "git-helper" (was ~/.agents/skills/git-helper) → ~/Developer/fleet/skills/git-helper`.
+- Sync runs as part of the command, but ambient findings about other skills stay out of the report; `fleet skill sync` and `fleet skill doctor` are where they are listed.
 
 - The repo is found by walking up from the working directory to the nearest `.git`; `FLEET_REPO` overrides it. Outside any repo: `Error: no fleet repo found — run inside the repo or set FLEET_REPO`.
 - opencode and pi get the repo path in their own config (in the dialect the file already speaks). codex, claude code, Cursor, and Bob get a symlink named after the skill, pointing at the repo. Managed links never point into the canonical store, so opencode and pi never see an adopted skill twice.
 - Adoption records nothing in the state file: custom is defined by living in the repo. Disables recorded before adoption keep applying, because config rules target the skill's name wherever it lives.
-- Adopting an already-adopted skill moves nothing but re-ensures the wiring and links, so a partially failed run heals on the next `adopt`.
+- Adopting an already-adopted skill moves nothing but re-ensures the wiring and links, so a partially failed run heals on the next `adopt`. The outcome line reads `"git-helper" is already adopted`.
 - To undo, move the directory back into the store by hand; see [undo](undo.md#undo-an-adoption).
 
 ## fleet skill doctor

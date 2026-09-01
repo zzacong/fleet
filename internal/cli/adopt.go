@@ -9,12 +9,14 @@ package cli
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/spf13/cobra"
 
 	"github.com/zzacong/fleet/internal/customs"
 	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/paths"
+	fleetsync "github.com/zzacong/fleet/internal/sync"
 )
 
 func newSkillAdoptCmd(p *paths.Paths) *cobra.Command {
@@ -32,26 +34,30 @@ func newSkillAdoptCmd(p *paths.Paths) *cobra.Command {
 				return err
 			}
 
+			pal := newPalette(stdoutIsTTY())
 			if rep.Moved {
-				if _, err := fmt.Fprintf(out, "moved %s → %s\n", rep.From, rep.To); err != nil {
+				if _, err := fmt.Fprintf(out, "%s %q\n", pal.good("adopted"), rep.Skill); err != nil {
 					return err
 				}
-			} else if _, err := fmt.Fprintf(out, "%s is already in the repo — nothing to move\n", rep.Skill); err != nil {
-				return err
-			}
-			for _, w := range rep.Wired {
-				if _, err := fmt.Fprintf(out, "%s: wired %q as a skill source (%s)\n", w.Harness, p.RepoSkills(), w.Where); err != nil {
+			} else {
+				if _, err := fmt.Fprintf(out, "%q is %s\n", rep.Skill, pal.good("already adopted")); err != nil {
 					return err
 				}
 			}
 			for _, l := range rep.Linked {
-				if _, err := fmt.Fprintln(out, formatLink(string(l.Harness), l)); err != nil {
-					return err
+				switch l.Change.Action {
+				case harness.LinkRepointed, harness.LinkSkipped:
+					if _, err := fmt.Fprintln(out, formatLink(string(l.Harness), l)); err != nil {
+						return err
+					}
 				}
 			}
 
-			// Sync: repair any other drift while we are here.
-			return runSyncTo(out, p)
+			// Sync: repair any other drift while we are here, but keep
+			// the report quiet — only findings about the adopted skill
+			// belong to this command. Everything else is sync's and
+			// doctor's business.
+			return printAdoptSync(out, p, rep.Skill)
 		},
 	}
 }
@@ -67,4 +73,53 @@ func formatLink(harnessName string, l harness.LinkResult) string {
 	default:
 		return fmt.Sprintf("%s: linked %q → %s", harnessName, l.Name, l.Target)
 	}
+}
+
+// printAdoptSync runs sync and reports only findings about the adopted
+// skill. Ambient findings about other skills — the untracked config
+// disables, foreign rules, and redundant links that belong to other
+// skills — stay out of the adopt report; `fleet skill sync` and
+// `fleet skill doctor` are where they are listed.
+func printAdoptSync(out io.Writer, p *paths.Paths, skill string) error {
+	reports, err := fleetsync.Run(p)
+	if err != nil {
+		return err
+	}
+	pal := newPalette(stdoutIsTTY())
+	for _, r := range reports {
+		for _, e := range r.Removed {
+			if e.Name != skill {
+				continue
+			}
+			if _, err := fmt.Fprintln(out, styleSyncLine(formatRemoved(r.Harness, e), pal)); err != nil {
+				return err
+			}
+		}
+		for _, c := range r.Changed {
+			if c.Skill != skill {
+				continue
+			}
+			if _, err := fmt.Fprintln(out, styleChange(formatChange(r.Harness, c), pal)); err != nil {
+				return err
+			}
+		}
+		var relevant []harness.Flag
+		for _, f := range r.Flags {
+			if f.Skill == skill {
+				relevant = append(relevant, f)
+			}
+		}
+		for _, g := range groupFlags(relevant) {
+			line := ""
+			if len(g.skills) == 1 {
+				line = formatFlag(r.Harness, harness.Flag{Skill: g.skills[0], Message: g.message})
+			} else {
+				line = formatFlagGroup(r.Harness, g)
+			}
+			if _, err := fmt.Fprintln(out, styleSyncLine(line, pal)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
