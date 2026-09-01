@@ -215,8 +215,8 @@ func TestLsTableShowsTheUpdateMarker(t *testing.T) {
 	if row := tableRow(t, out, "deploy-vercel"); !strings.Contains(row, "✓") {
 		t.Errorf("deploy-vercel row should be marked current: %q", row)
 	}
-	if row := tableRow(t, out, "my-notes"); !strings.Contains(row, "?") {
-		t.Errorf("custom skills are unknown, not checked: %q", row)
+	if row := tableRow(t, out, "my-notes"); !strings.Contains(row, "—") {
+		t.Errorf("custom skills are never checked, so they show the n/a dash, not ?: %q", row)
 	}
 	if len(trees.calls) != 2 {
 		t.Errorf("two source repos, two API calls, calls = %v", trees.calls)
@@ -328,16 +328,35 @@ func TestLsTableShowsTheFullPicture(t *testing.T) {
 	p := fakeHome(t)
 	out := runLs(t, p)
 
-	// Only installed harnesses get a column; claude and cursor are absent
-	// from the fake home.
-	for _, col := range []string{"NAME", "ORIGIN", "SOURCE", "DESCRIPTION", "OPENCODE", "PI", "CODEX", "BOB"} {
+	// Enablement columns come right after the name — they are the
+	// table's point — and origin folded into source: custom marks
+	// itself, installed rows show their repo.
+	for _, col := range []string{"NAME", "SOURCE", "DESCRIPTION", "OPENCODE", "PI", "CODEX", "BOB"} {
 		if !strings.Contains(out, col) {
 			t.Errorf("table missing column %q:\n%s", col, out)
 		}
 	}
+	if strings.Contains(out, "ORIGIN") {
+		t.Errorf("origin is folded into the source column:\n%s", out)
+	}
 	for _, absent := range []string{"CLAUDE", "CURSOR"} {
 		if strings.Contains(out, absent) {
 			t.Errorf("table shows column for uninstalled harness %q:\n%s", absent, out)
+		}
+	}
+
+	// A state cell sits between the name and the source: the harness
+	// columns must not be pushed past the description (the old table's
+	// wrapping failure).
+	for _, name := range []string{"my-notes", "git-helper", "tdd", "deploy-vercel"} {
+		row := tableRow(t, out, name)
+		desc := strings.Index(row, "conventions.")
+		if name != "my-notes" {
+			desc = strings.Index(row, ".") // end of the description sentence
+		}
+		state := strings.Index(row, "on")
+		if desc < 0 || state < 0 || state > desc {
+			t.Errorf("%s row: state should come before the description: %q", name, row)
 		}
 	}
 
@@ -355,13 +374,10 @@ func TestLsTableShowsTheFullPicture(t *testing.T) {
 		}
 	}
 
-	// The custom skill is marked custom with no source.
+	// The custom skill is marked custom with no source repo.
 	row := tableRow(t, out, "my-notes")
 	if !strings.Contains(row, "custom") {
 		t.Errorf("my-notes row not marked custom: %q", row)
-	}
-	if strings.Count(row, "-") < 1 {
-		t.Errorf("my-notes row should show a dash for source: %q", row)
 	}
 
 	// Per-harness states: pi disabled tdd, opencode disabled the git
@@ -521,6 +537,38 @@ func TestLsSummaryLineFollowsBannerRules(t *testing.T) {
 			t.Errorf("--json should suppress the summary line:\n%s", out)
 		}
 	})
+}
+
+func TestLsFlexWidthFitsTheTerminal(t *testing.T) {
+	// Piped output: natural source, the 60-column description cap. On a
+	// terminal the description takes what's left after source; when it
+	// can't fit, source becomes the last column and is truncated to
+	// exactly the remaining room — no row may ever wrap.
+	prev := stdoutWidth
+	t.Cleanup(func() { stdoutWidth = prev })
+
+	cases := []struct {
+		width      int
+		fixed      int
+		sourceW    int
+		wantSource int // -1 = natural
+		wantDesc   int
+	}{
+		{0, 60, 6, -1, 60},   // not a terminal: the plain caps
+		{200, 60, 6, -1, 80}, // wide terminal: description capped anyway
+		{100, 60, 6, -1, 19}, // 100 - 60 fixed - 2 - 6 source - 2 - 11 header
+		{80, 60, 6, 6, 0},    // no room for a description: source fits whole anyway
+		{50, 60, 20, -1, 0},  // fixed columns alone overflow: hopeless, no truncation
+		{62, 60, 6, -1, 0},   // hopeless: even the fixed columns overflow
+	}
+	for _, c := range cases {
+		stdoutWidth = func() int { return c.width }
+		got := flexWidth(c.fixed, c.sourceW)
+		if got.source != c.wantSource || got.desc != c.wantDesc {
+			t.Errorf("flexWidth(fixed=%d, sourceW=%d) at width %d = %+v, want source %d, desc %d",
+				c.fixed, c.sourceW, c.width, got, c.wantSource, c.wantDesc)
+		}
+	}
 }
 
 func TestShouldPrintHeader(t *testing.T) {

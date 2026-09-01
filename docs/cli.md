@@ -43,21 +43,24 @@ Lists every skill in the canonical store, plus the fleet repo's custom skills, w
 
 ```sh
 $ fleet skill ls
-NAME        ORIGIN     SOURCE       UPDATE  DESCRIPTION                          OPENCODE  PI  CODEX  CLAUDE  CURSOR  BOB
-git-helper  custom     -            ?       Hand-written commit-message helper.  on        on  on     -       on      on
-tdd         installed  example/tdd  ?       Test-driven development discipline.  on        on  on     -       on      on
+NAME        OPENCODE  PI  CODEX  CLAUDE  CURSOR  BOB  UPDATE  SOURCE       DESCRIPTION
+git-helper  on        on  on     -       on      on   —       custom       Hand-written commit-message helper.
+tdd         on        on  on     -       on      on   ↑       example/tdd  Test-driven development discipline.
 ```
 
-- `ORIGIN` is `custom` or `installed`. Custom means the skill lives in the fleet repo's `skills/` directory (or has no lockfile entry); installed means the skills CLI lockfile records provenance.
-- `UPDATE` is the outdated badge: `↑` update available, `✓` current, `?` unknown. Custom skills and non-GitHub sources are always `?` — fleet checks GitHub directly, one API call per source repo, cached for an hour under the fleet config dir, and reports unknown rather than guessing.
+- The enablement columns sit right after the name — they are the table's point. The description goes last, truncated to whatever room the terminal has left, so no column ever wraps mid-word; piped output keeps the plain 60-column cap.
+- `SOURCE` is `custom` (the skill lives in the fleet repo's `skills/` directory, or has no lockfile entry) or the source repo the lockfile records.
+- `UPDATE` is the outdated badge: `↑` update available, `✓` current, `?` unknown, `—` never checked (custom skills). Non-GitHub sources and failed checks are `?` — fleet checks GitHub directly, one API call per source repo, cached for an hour under the fleet config dir, and reports unknown rather than guessing.
 - A harness column shows `on`, `off`, or `-`. `-` means the harness cannot discover the skill at all; for claude code that is the normal state until a link exists (see [claude code](harnesses.md#claude-code)).
+- Color on a terminal only: `on` green, `off` dim, `↑` yellow, `✓` green, custom cyan. Piped output is plain.
 - On a terminal a one-line summary prints above the table (`fleet · 2 skills · 1 installed · 1 custom · …`). Piped output skips it, and `--quiet` skips it everywhere.
 
-Sync runs first. Its reports go to **stderr**, so stdout stays machine-readable:
+Sync runs first. Its reports go to **stderr**, so stdout stays machine-readable; flags that share a message collapse into one line with the skill names:
 
 ```sh
 $ fleet skill ls > /dev/null
 sync: opencode: removed redundant link "tdd" — opencode scans the canonical store natively — this link double-covers the skill
+sync: pi: disabled in config but not tracked by fleet's state — left alone (3 skills): tdd, git-helper, deploy-vercel
 ```
 
 ### --json

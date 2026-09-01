@@ -186,17 +186,61 @@ func printSyncReports(out io.Writer, reports []fleetsync.Report) error {
 }
 
 func printReport(out io.Writer, harnessName string, changed []harness.Change, flags []harness.Flag) error {
+	pal := newPalette(stdoutIsTTY())
 	for _, c := range changed {
 		if _, err := fmt.Fprintln(out, formatChange(harnessName, c)); err != nil {
 			return err
 		}
 	}
-	for _, f := range flags {
-		if _, err := fmt.Fprintln(out, formatFlag(harnessName, f)); err != nil {
+	for _, g := range groupFlags(flags) {
+		line := ""
+		if len(g.skills) == 1 {
+			line = formatFlag(harnessName, harness.Flag{Skill: g.skills[0], Message: g.message})
+		} else {
+			line = formatFlagGroup(harnessName, g)
+		}
+		if _, err := fmt.Fprintln(out, styleSyncLine(line, pal)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// styleSyncLine dims the "sync:" prefix and the harness scope so the eye
+// lands on what happened, not on who said it.
+func styleSyncLine(line string, pal palette) string {
+	rest, ok := strings.CutPrefix(line, "sync: ")
+	if !ok {
+		return line
+	}
+	scope := rest
+	tail := ""
+	if i := strings.Index(rest, ": "); i >= 0 {
+		scope, tail = rest[:i], rest[i:]
+	}
+	return pal.dim("sync: ") + pal.info(scope) + tail
+}
+
+// flagGroup collapses flags that share a message within one harness: twelve
+// near-identical "not tracked" lines become one line with the skill names.
+type flagGroup struct {
+	message string
+	skills  []string
+}
+
+// groupFlags merges flags by message, keeping first-appearance order.
+func groupFlags(flags []harness.Flag) []flagGroup {
+	var groups []flagGroup
+	index := map[string]int{}
+	for _, f := range flags {
+		if i, ok := index[f.Message]; ok {
+			groups[i].skills = append(groups[i].skills, f.Skill)
+			continue
+		}
+		index[f.Message] = len(groups)
+		groups = append(groups, flagGroup{message: f.Message, skills: []string{f.Skill}})
+	}
+	return groups
 }
 
 // formatChange renders one applied flip: "sync: opencode: disabled \"tdd\"
@@ -218,4 +262,13 @@ func formatFlag(harnessName string, f harness.Flag) string {
 		scope = harnessName + "/" + f.Skill
 	}
 	return fmt.Sprintf("sync: %s: %s", scope, f.Message)
+}
+
+// formatFlagGroup renders several flags sharing one message as a single
+// line: "sync: pi: disabled in config but not tracked by fleet's state —
+// left alone (12 skills): a, b, c". The names carry the detail; the
+// message is not repeated per skill.
+func formatFlagGroup(harnessName string, g flagGroup) string {
+	return fmt.Sprintf("sync: %s: %s (%d skills): %s",
+		harnessName, g.message, len(g.skills), strings.Join(g.skills, ", "))
 }

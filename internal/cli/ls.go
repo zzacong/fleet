@@ -1,14 +1,15 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"strings"
-	"text/tabwriter"
 
+	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
 	"github.com/zzacong/fleet/internal/harness"
@@ -45,8 +46,23 @@ func newSkillLsCmd(p *paths.Paths) *cobra.Command {
 // sync, then the snapshot, then the table (or JSON). Findings go to stderr
 // so stdout stays machine-readable.
 func runListing(cmd *cobra.Command, p *paths.Paths, asJSON, quiet bool) error {
-	if err := runSyncTo(cmd.ErrOrStderr(), p); err != nil {
+	// Sync is buffered so a non-empty report can be followed by one blank
+	// line, separating it from the listing on a terminal.
+	var syncOut bytes.Buffer
+	if err := runSyncTo(&syncOut, p); err != nil {
 		return err
+	}
+	tty := stdoutIsTTY()
+	if syncOut.Len() > 0 {
+		errOut := cmd.ErrOrStderr()
+		if _, err := errOut.Write(syncOut.Bytes()); err != nil {
+			return err
+		}
+		if tty {
+			if _, err := fmt.Fprintln(errOut); err != nil {
+				return err
+			}
+		}
 	}
 	out := cmd.OutOrStdout()
 	report, warnings, err := buildReport(cmd.Context(), p)
@@ -61,7 +77,7 @@ func runListing(cmd *cobra.Command, p *paths.Paths, asJSON, quiet bool) error {
 	if asJSON {
 		return printJSON(out, report)
 	}
-	header := shouldPrintHeader(asJSON, quiet, stdoutIsTTY())
+	header := shouldPrintHeader(asJSON, quiet, tty)
 	return printTable(out, report, header)
 }
 
@@ -89,6 +105,8 @@ func printTable(out io.Writer, report *snapshot.Report, header bool) error {
 		return err
 	}
 
+	pal := newPalette(stdoutIsTTY())
+
 	if header {
 		custom := 0
 		outdated := 0
@@ -103,39 +121,201 @@ func printTable(out io.Writer, report *snapshot.Report, header bool) error {
 		summary := fmt.Sprintf("fleet · %d skills · %d installed · %d custom",
 			len(report.Skills), len(report.Skills)-custom, custom)
 		if outdated > 0 {
-			summary += fmt.Sprintf(" · %d update%s", outdated, plural(outdated))
+			summary += " · " + pal.warn(fmt.Sprintf("%d update%s", outdated, plural(outdated)))
 		}
 		if _, err := fmt.Fprintf(out, "%s\n\n", summary); err != nil {
 			return err
 		}
 	}
 
-	tw := tabwriter.NewWriter(out, 2, 4, 2, ' ', 0)
-
-	cells := []string{"NAME", "ORIGIN", "SOURCE", "UPDATE", "DESCRIPTION"}
-	for _, h := range report.Harnesses {
-		cells = append(cells, strings.ToUpper(h))
+	// The enablement columns come right after the name — they are the
+	// table's point — and the description goes last, truncated to
+	// whatever room the terminal has left, so no column ever wraps.
+	states := make([][]string, len(report.Skills))
+	for i, row := range report.Skills {
+		states[i] = make([]string, len(report.Harnesses))
+		for j, h := range report.Harnesses {
+			states[i][j] = row.States[h]
+		}
 	}
-	if _, err := fmt.Fprintln(tw, strings.Join(cells, "\t")); err != nil {
+	sources := make([]string, len(report.Skills))
+	for i, row := range report.Skills {
+		if row.Custom {
+			sources[i] = "custom"
+		} else {
+			sources[i] = row.Source
+		}
+	}
+	badges := make([]string, len(report.Skills))
+	for i, row := range report.Skills {
+		if row.Custom {
+			badges[i] = "—" // never checked: custom by definition, not unknown
+		} else {
+			badges[i] = tableOutdated(row.Outdated)
+		}
+	}
+
+	nameW := len("NAME")
+	for _, row := range report.Skills {
+		if n := len([]rune(row.Name)); n > nameW {
+			nameW = n
+		}
+	}
+	harnessHeaders := make([]string, len(report.Harnesses))
+	harnessW := make([]int, len(report.Harnesses))
+	for j, h := range report.Harnesses {
+		harnessHeaders[j] = strings.ToUpper(h)
+		harnessW[j] = len(harnessHeaders[j])
+	}
+	for j := range report.Harnesses {
+		for i := range report.Skills {
+			if n := len(tableState(states[i][j])); n > harnessW[j] {
+				harnessW[j] = n
+			}
+		}
+	}
+	updateW := len("UPDATE")
+	fullSourceW := len("SOURCE")
+	for i := range report.Skills {
+		if n := len([]rune(sources[i])); n > fullSourceW {
+			fullSourceW = n
+		}
+	}
+	fixed := nameW + 2 + colWidths(harnessW) + 2 + updateW
+	flex := flexWidth(fixed, fullSourceW)
+	sourceW, descW := flex.source, flex.desc
+	if sourceW > fullSourceW || sourceW < 0 {
+		sourceW = fullSourceW
+	}
+	if sourceW < fullSourceW {
+		// Source is the last column and must fit exactly, or the terminal
+		// wraps the row onto two lines.
+		for i := range sources {
+			sources[i] = truncate(sources[i], sourceW)
+		}
+	}
+
+	headerCells := []string{padRight("NAME", nameW)}
+	headerCells = append(headerCells, paddedCells(harnessHeaders, harnessW)...)
+	headerCells = append(headerCells, padRight("UPDATE", updateW), padRight("SOURCE", sourceW))
+	if descW > 0 {
+		headerCells = append(headerCells, "DESCRIPTION")
+	}
+	styled := make([]string, len(headerCells))
+	for i, cell := range headerCells {
+		styled[i] = pal.dim(cell)
+	}
+	if _, err := fmt.Fprintln(out, strings.Join(styled, "  ")); err != nil {
 		return err
 	}
 
-	for _, row := range report.Skills {
-		origin := "installed"
-		source := row.Source
-		if row.Custom {
-			origin = "custom"
-			source = "-"
+	for i, row := range report.Skills {
+		line := padRight(row.Name, nameW)
+		for j, state := range states[i] {
+			line += "  " + colorState(padRight(tableState(state), harnessW[j]), pal)
 		}
-		cells := []string{row.Name, origin, source, tableOutdated(row.Outdated), truncate(row.Description, descriptionCap)}
-		for _, h := range report.Harnesses {
-			cells = append(cells, tableState(row.States[h]))
+		line += "  " + colorBadge(padRight(badges[i], updateW), pal)
+		line += "  " + colorSource(padRight(sources[i], sourceW), pal)
+		if descW > 0 {
+			line += "  " + truncate(row.Description, descW)
 		}
-		if _, err := fmt.Fprintln(tw, strings.Join(cells, "\t")); err != nil {
+		if _, err := fmt.Fprintln(out, line); err != nil {
 			return err
 		}
 	}
-	return tw.Flush()
+	return nil
+}
+
+// colWidths sums a column-width list plus the two-space gutter between
+// columns.
+func colWidths(widths []int) int {
+	total := 0
+	for _, w := range widths {
+		total += 2 + w
+	}
+	return total
+}
+
+// flexWidths carries the two flexible columns' widths. sourceFull means
+// the source column takes its natural width.
+type flexWidths struct {
+	source int // -1 = natural width
+	desc   int // 0 = no description column
+}
+
+// flexWidth splits the room left after the fixed columns between the
+// source and description columns. Description first — it benefits most
+// from room — and when it doesn't fit, source becomes the last column and
+// is truncated to exactly what remains, so no row ever exceeds the
+// terminal and wraps. Without a terminal: natural source, plain
+// 60-column description cap.
+func flexWidth(fixed, sourceW int) flexWidths {
+	w := stdoutWidth()
+	if w <= 0 {
+		return flexWidths{source: -1, desc: descriptionCap}
+	}
+	room := w - fixed
+	if desc := min(80, room-2-sourceW-2-len("DESCRIPTION")); desc >= 15 {
+		return flexWidths{source: -1, desc: desc}
+	}
+	if s := room - 2; s >= 8 {
+		if s > sourceW {
+			s = sourceW // slack stays unused; no reason to pad the last column
+		}
+		return flexWidths{source: s, desc: 0}
+	}
+	// Even the fixed columns overflow; nothing sensible to truncate.
+	return flexWidths{source: -1, desc: 0}
+}
+
+// colorState styles an enablement cell: on green, off and absent dim —
+// the TUI's same reading: off is the quiet state, not an error.
+func colorState(state string, pal palette) string {
+	if state == "on" {
+		return pal.good(state)
+	}
+	return pal.dim(state)
+}
+
+// colorBadge styles the update badge: ↑ available in yellow, ✓ current in
+// green, ? unknown and — never-checked dim.
+func colorBadge(badge string, pal palette) string {
+	switch badge {
+	case "↑":
+		return pal.warn(badge)
+	case "✓":
+		return pal.good(badge)
+	default:
+		return pal.dim(badge)
+	}
+}
+
+// colorSource styles the source column: custom in cyan, an installed
+// skill's source repo dim.
+func colorSource(source string, pal palette) string {
+	if source == "custom" {
+		return pal.info(source)
+	}
+	return pal.dim(source)
+}
+
+// stdoutWidth returns the terminal width of stdout, or 0 when stdout
+// isn't a terminal (or the size can't be had). Indirect so tests can stub.
+var stdoutWidth = func() int {
+	w, _, err := term.GetSize(os.Stdout.Fd())
+	if err != nil || w <= 0 {
+		return 0
+	}
+	return w
+}
+
+// paddedCells pads each cell to its column's width.
+func paddedCells(cells []string, widths []int) []string {
+	out := make([]string, len(cells))
+	for i, cell := range cells {
+		out[i] = padRight(cell, widths[i])
+	}
+	return out
 }
 
 // tableOutdated renders the tri-state badge for the table: ↑ update

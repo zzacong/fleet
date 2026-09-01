@@ -37,6 +37,11 @@ func TestNoV1CharmImports(t *testing.T) {
 			if !strings.HasPrefix(trimmed, `"github.com/charmbracelet/`) {
 				continue
 			}
+			// The v2 stack itself builds on charmbracelet's x/* support
+			// libraries (x/term, x/ansi, …); they are not v1 idioms.
+			if strings.HasPrefix(trimmed, `"github.com/charmbracelet/x/`) {
+				continue
+			}
 			offenders = append(offenders, rel(t, root, path)+": "+trimmed)
 		}
 		return nil

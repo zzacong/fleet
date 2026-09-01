@@ -14,7 +14,6 @@ import (
 	"io"
 	"strings"
 
-	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/zzacong/fleet/internal/doctor"
@@ -40,7 +39,7 @@ func newSkillDoctorCmd(p *paths.Paths) *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
-			pal := newDoctorPalette(stdoutIsTTY())
+			pal := newPalette(stdoutIsTTY())
 
 			rep, err := doctor.Analyze(p)
 			if err != nil {
@@ -87,39 +86,8 @@ var findingSections = []struct {
 	{doctor.KindBrokenConfig, "unreadable configs", "", "broken"},
 }
 
-// doctorPalette holds doctor's text styles. When stdout isn't a terminal
-// every style is the identity, so pipes and captures get clean plain
-// text — the same report, no escapes.
-type doctorPalette struct {
-	broken func(string) string // red — needs fixing before anything works
-	warn   func(string) string // yellow — sync or the user should act
-	info   func(string) string // cyan — informational, nothing to do
-	good   func(string) string // green
-	dim    func(string) string // annotations, legends
-	bold   func(string) string
-}
-
-func newDoctorPalette(tty bool) doctorPalette {
-	identity := func(s string) string { return s }
-	if !tty {
-		return doctorPalette{broken: identity, warn: identity, info: identity, good: identity, dim: identity, bold: identity}
-	}
-	color := func(c string) func(string) string {
-		st := lipgloss.NewStyle().Foreground(lipgloss.Color(c))
-		return func(s string) string { return st.Render(s) }
-	}
-	return doctorPalette{
-		broken: color("1"),
-		warn:   color("3"),
-		info:   color("6"),
-		good:   color("2"),
-		dim:    func(s string) string { return lipgloss.NewStyle().Faint(true).Render(s) },
-		bold:   func(s string) string { return lipgloss.NewStyle().Bold(true).Render(s) },
-	}
-}
-
 // sevIcon renders a section's severity marker.
-func (pal doctorPalette) sevIcon(sev string) string {
+func (pal palette) sevIcon(sev string) string {
 	switch sev {
 	case "broken":
 		return pal.broken("✖")
@@ -130,7 +98,7 @@ func (pal doctorPalette) sevIcon(sev string) string {
 	}
 }
 
-func printFindings(out io.Writer, findings []doctor.Finding, pal doctorPalette) error {
+func printFindings(out io.Writer, findings []doctor.Finding, pal palette) error {
 	for _, section := range findingSections {
 		var group []doctor.Finding
 		for _, f := range findings {
@@ -167,7 +135,7 @@ func printFindings(out io.Writer, findings []doctor.Finding, pal doctorPalette) 
 
 // printSectionHeader renders one section header: severity icon, title,
 // count, and the dim note.
-func printSectionHeader(out io.Writer, title, note, sev string, n int, pal doctorPalette) error {
+func printSectionHeader(out io.Writer, title, note, sev string, n int, pal palette) error {
 	header := fmt.Sprintf("%s %s %s", pal.sevIcon(sev), pal.bold(title), pal.warn(fmt.Sprintf("(%d)", n)))
 	if note != "" {
 		header += " " + pal.dim("· "+note)
@@ -179,7 +147,7 @@ func printSectionHeader(out io.Writer, title, note, sev string, n int, pal docto
 // reportConflicts prints the manual-edit conflicts as a table: one row per
 // disagreement, the options once in a legend below. Nothing is asked and
 // nothing changes.
-func reportConflicts(out io.Writer, conflicts []doctor.Conflict, pal doctorPalette) error {
+func reportConflicts(out io.Writer, conflicts []doctor.Conflict, pal palette) error {
 	if len(conflicts) == 0 {
 		return nil
 	}
@@ -234,7 +202,7 @@ func reportConflicts(out io.Writer, conflicts []doctor.Conflict, pal doctorPalet
 // appear when there is more than one, and the next harness's conflicts are
 // still prompted individually — one keypress never adopts edits from a
 // config the user hasn't been shown.
-func resolveConflicts(cmd *cobra.Command, p *paths.Paths, conflicts []doctor.Conflict, pal doctorPalette) (int, error) {
+func resolveConflicts(cmd *cobra.Command, p *paths.Paths, conflicts []doctor.Conflict, pal palette) (int, error) {
 	if len(conflicts) == 0 {
 		return 0, nil
 	}
@@ -325,7 +293,7 @@ func resolveConflicts(cmd *cobra.Command, p *paths.Paths, conflicts []doctor.Con
 }
 
 // keepConflict applies one keep and prints its receipt.
-func keepConflict(out io.Writer, p *paths.Paths, c doctor.Conflict, pal doctorPalette) error {
+func keepConflict(out io.Writer, p *paths.Paths, c doctor.Conflict, pal palette) error {
 	if _, err := doctor.Resolve(p, c, true); err != nil {
 		return err
 	}
@@ -335,7 +303,7 @@ func keepConflict(out io.Writer, p *paths.Paths, c doctor.Conflict, pal doctorPa
 }
 
 // restoreConflictReceipt applies one restore and prints what changed.
-func restoreConflictReceipt(out io.Writer, p *paths.Paths, c doctor.Conflict, pal doctorPalette) error {
+func restoreConflictReceipt(out io.Writer, p *paths.Paths, c doctor.Conflict, pal palette) error {
 	rep, err := doctor.Resolve(p, c, false)
 	if err != nil {
 		return err
@@ -393,7 +361,7 @@ func restoreChange(h string, c harness.Change) string {
 // printSummary closes the report: counts per kind, and what was resolved.
 // resolved counts only apply to interactive runs; a non-interactive run
 // points at --interactive instead.
-func printSummary(out io.Writer, rep doctor.Report, resolved int, interactive bool, pal doctorPalette) error {
+func printSummary(out io.Writer, rep doctor.Report, resolved int, interactive bool, pal palette) error {
 	if rep.Empty() {
 		_, err := fmt.Fprintln(out, "\n"+pal.good("no problems found"))
 		return err
@@ -457,13 +425,4 @@ func pluralized(singular string, n int) string {
 		return singular
 	}
 	return singular + "s"
-}
-
-// padRight pads s with spaces to width w (runes, not bytes — the strings
-// are plain, the styling happens after padding).
-func padRight(s string, w int) string {
-	if n := len([]rune(s)); n < w {
-		return s + strings.Repeat(" ", w-n)
-	}
-	return s
 }

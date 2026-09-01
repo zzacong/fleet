@@ -178,6 +178,31 @@ func TestSyncFlagsUnknownEntriesWithoutTouchingThem(t *testing.T) {
 	}
 }
 
+func TestSyncGroupsRepeatedFlagsIntoOneLine(t *testing.T) {
+	// Several hand-edits with the same shape: one line with the message
+	// and the skill names — not one near-identical line per skill.
+	p := toggleHome(t)
+	if err := os.MkdirAll(filepath.Dir(p.PiSettings()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	edit := `{"skills": ["-skills/tdd/SKILL.md", "-skills/git-helper/SKILL.md", "-skills/deploy-vercel/SKILL.md"]}`
+	if err := os.WriteFile(p.PiSettings(), []byte(edit), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _, err := runSync(t, p)
+	if err != nil {
+		t.Fatalf("fleet skill sync: %v", err)
+	}
+
+	if !strings.Contains(out, "sync: pi: disabled in config but not tracked by fleet's state — left alone (3 skills): tdd, git-helper, deploy-vercel") {
+		t.Errorf("output missing the grouped flag:\n%s", out)
+	}
+	if strings.Count(out, "disabled in config but not tracked") != 1 {
+		t.Errorf("the repeated message should appear once, not per skill:\n%s", out)
+	}
+}
+
 func TestSyncOnAConvergedHomePrintsNothing(t *testing.T) {
 	p := toggleHome(t)
 
