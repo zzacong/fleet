@@ -185,22 +185,32 @@ The read-only report of what's wrong. It inspects every installed harness, the c
 
 ```sh
 $ fleet skill doctor
-redundant links (sync removes them):
-  opencode: link "tdd" → ~/.agents/skills/tdd — opencode scans the canonical store natively — this link double-covers the skill; sync removes it
+◦ unknown entries (1) · reported, never touched
+  codex  ".system" — a real directory, not a symlink — left alone
+⚠ redundant links (1) · sync removes them
+  opencode  link "tdd" → ~/.agents/skills/tdd — opencode scans the canonical store natively — this link double-covers the skill
+⚠ manual edit conflicts (2) · left as is
+  HARNESS  SKILL         DISAGREEMENT
+  pi       git-helper    config off · state on
+  pi       pdf-tools     config on · state off
+  k keep my change · r restore — run `fleet skill doctor -i` to pick per skill
 
-1 redundant link
+1 redundant link, 2 manual edits to resolve, run `fleet skill doctor -i` to resolve
 ```
 
-Manual-edit **conflicts** are the one interactive part. When a config and the state file disagree about a skill, doctor prompts:
+Sections are marked by severity: ✖ red for breakage (broken symlinks, unreadable configs), ⚠ yellow for anything sync or you should act on, ◦ dim cyan for informational. Color only renders on a terminal; piped output is plain.
+
+Manual-edit **conflicts** — when a config and the state file disagree about a skill — are listed in a table and left as is by default. To resolve them, pass `--interactive` (`-i`): doctor walks each conflict as a prompt:
 
 ```sh
-pi: "git-helper" is disabled in the pi config, but fleet's state has it enabled
+$ fleet skill doctor -i
+⚠ pi: "git-helper" is disabled in the pi config, but fleet's state has it enabled
   [k] keep my change — record the disable in fleet's state
   [r] restore — sync fleet's state back into the config
   [s] skip — leave it as is
 ```
 
-`keep` adopts your hand edit as the new intent; `restore` re-projects the recorded intent. With piped input conflicts are reported and left as is (`left as is (no input)`), and the command still exits 0. A clean home reports `no problems found`.
+`keep` adopts your hand edit as the new intent; `restore` re-projects the recorded intent. In interactive mode with piped input, conflicts are reported and left as is (`left as is (no input)`), and the command still exits 0. A clean home reports `no problems found`.
 
 Doctor never runs ambient sync — the point is to show what sync _would_ do before it does it.
 
@@ -220,7 +230,7 @@ sync: opencode: disabled "tdd" (was on)
 
 - The report goes to stdout, one line per fix, in sync's own order: link removals first, then enablement changes and flags.
 - Nothing to repair is not an error: sync is idempotent, so a converged home prints nothing and exits 0.
-- Unknown entries and manual edits are reported and left as is — doctor explains them, and its conflict prompts are how a kept edit becomes state.
+- Unknown entries and manual edits are reported and left as is — doctor explains them, and `fleet skill doctor -i`'s conflict prompts are how a kept edit becomes state.
 - The state file is never edited.
 
 ## fleet skill update

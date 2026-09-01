@@ -46,7 +46,7 @@ rm ~/.config/fleet/state.json
 
 After this, fleet treats every skill as enabled and stops writing disables. Note what does _not_ happen: the disable entries already written into harness configs stay there. Sync only writes disables the state records; it does not hunt down entries the state no longer mentions. Two clean ways to clear the leftovers:
 
-- Run `fleet skill doctor`. Each leftover is a conflict prompt — `restore` strips the entry from the config, `keep` records it in the (now empty) state file.
+- Run `fleet skill doctor -i`. Each leftover is a conflict prompt — `restore` strips the entry from the config, `keep` records it in the (now empty) state file.
 - Edit the harness configs by hand. Fleet's entries are plain values in each harness's own format (a `deny` rule, a `"-skills/<name>/SKILL.md"` array entry, an `enabled = false` block, a `"skillOverrides"` key); removing them changes nothing else.
 
 The same applies to hand-edits generally: doctor surfaces them, sync never silently overwrites them. Manual edits you _keep_ become the state's new intent.

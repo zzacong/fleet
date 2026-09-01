@@ -96,7 +96,7 @@ Two optional interfaces extend the seam for custom skills:
 
 ## Doctor
 
-`doctor.Analyze` runs the same link classification and config reads as sync, but writes nothing. Findings are grouped (redundant links, broken symlinks, unknown entries, manual edits fleet can't manage, state drift, store+repo double presence, stale lock entries for adopted skills, missing directories, unreadable configs). Manual-edit _conflicts_ — where config and state disagree and both are expressible — are prompts: `keep` records the edit in the state file, `restore` re-projects the recorded intent. Everything else is reported for sync to fix or the user to handle.
+`doctor.Analyze` runs the same link classification and config reads as sync, but writes nothing. Findings are grouped (redundant links, broken symlinks, unknown entries, manual edits fleet can't manage, state drift, store+repo double presence, stale lock entries for adopted skills, missing directories, unreadable configs). Manual-edit _conflicts_ — where config and state disagree and both are expressible — are reported with their keep/restore options by default; `fleet skill doctor -i` walks each one as a prompt: `keep` records the edit in the state file, `restore` re-projects the recorded intent. Everything else is reported for sync to fix or the user to handle.
 
 ## Adding a new harness
 
