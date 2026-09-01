@@ -343,6 +343,32 @@ func TestScanSkillDirClassifiesEntries(t *testing.T) {
 	}
 }
 
+func TestScanSkillDirSkipsHiddenEntries(t *testing.T) {
+	p, store := linkHome(t, "codex")
+	dir := p.CodexSkills()
+
+	// Codex keeps its own reserved namespace inside its skills dir: real
+	// directories and files the harness itself owns, never fleet's.
+	if err := os.MkdirAll(filepath.Join(dir, ".system", "inner"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".DS_Store"), []byte("junk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A visible entry proves the scan still ran.
+	if err := os.MkdirAll(filepath.Join(dir, "real-dir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := ScanSkillDir(SkillDir{Harness: Codex, Path: dir, NativeScan: true}, store)
+	if err != nil {
+		t.Fatalf("ScanSkillDir() error = %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name != "real-dir" {
+		t.Fatalf("entries = %+v, want only real-dir — hidden entries must be skipped, not classified", entries)
+	}
+}
+
 func TestScanSkillDirClaudeStoreLinksAreExpectedOrBroken(t *testing.T) {
 	p, store := linkHome(t, "claude")
 	dir := p.ClaudeSkills()

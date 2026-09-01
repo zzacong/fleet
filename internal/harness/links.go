@@ -249,7 +249,9 @@ type Entry struct {
 const maxLinkHops = 40
 
 // ScanSkillDir classifies every immediate entry of one skills dir against
-// the canonical store at store. Classification is safe by construction:
+// the canonical store at store. Hidden (dot-prefixed) entries are skipped:
+// they belong to the harness itself, not to any skill fleet manages.
+// Classification is safe by construction:
 // only links that provably resolve into the store in a native scanner are
 // redundant; everything ambiguous stays untouched. A missing dir yields no
 // entries and no error.
@@ -264,6 +266,12 @@ func ScanSkillDir(d SkillDir, store string) ([]Entry, error) {
 
 	var entries []Entry
 	for _, link := range links {
+		if strings.HasPrefix(link.Name(), ".") {
+			// Hidden entries are the harness's own reserved namespace
+			// (codex's .system skills, .DS_Store noise): never fleet-managed
+			// skill links, so not classified and not reported.
+			continue
+		}
 		e, err := classifyEntry(d, filepath.Join(d.Path, link.Name()), store)
 		if err != nil {
 			return nil, err
