@@ -249,15 +249,17 @@ fleet skill update
 
 Runs `skills update -g -y` — the skills CLI stays the update backend — then syncs, so disabled skills stay disabled and cleaned links stay clean no matter what the wrapped run re-created.
 
-On success it reports from fleet's own post-run state:
+On success it reports from fleet's own post-run state — `skills update -g -y` runs first, then sync — so the `sync:` lines are the auto-sync repairing what the wrapped run re-created:
 
 ```sh
 $ fleet skill update
+sync: opencode: removed redundant link "tdd" — opencode scans the canonical store natively
 1 skill in ~/.agents/skills (1 installed, 0 custom)
-disabled: "tdd" for opencode, pi, claude
+no skills updated
+verified disabled: "tdd" for opencode, pi, claude
 ```
 
-The `disabled:` line re-reads each harness's config after sync and confirms the recorded disables hold. If one didn't survive the update, the line reads `<skill>: <harness> did not stay disabled` instead.
+The census line (`1 skill in …`) is dim context; the headline is the green outcome — `no skills updated` when nothing changed, otherwise `updated 2 skills: tdd, foo`. The `verified disabled:` line re-reads each harness's config after sync and confirms the recorded disables still hold. If one didn't survive the update, the line reads `verified: "<skill>" for <harness> did not stay disabled` instead. Like `skill on`/`off`'s green `enabled`/`disabled`, the verb carries the weight so a no-op is not mistaken for silence after `sync:` noise.
 
 On failure the skills CLI's captured output is shown raw and the command stops — a half-finished update is yours to resolve before anything else runs:
 

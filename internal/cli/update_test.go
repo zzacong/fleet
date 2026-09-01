@@ -170,13 +170,16 @@ func TestUpdateReconcilesAfterTheWrappedRun(t *testing.T) {
 	}
 
 	// Results are fleet's own post-run state: what sync did, and the
-	// verified disable matrix — never the CLI's prose.
+	// verified disable matrix — never the CLI's prose. Census is dim,
+	// outcome ("no skills updated" / "updated …") is the green headline
+	// like on/off's "enabled"/"disabled".
 	for _, want := range []string{
 		`sync: claude: disabled "tdd" (was on)`,
 		`sync: pi: disabled "tdd" (was on)`,
 		`sync: opencode: removed redundant link "tdd" — opencode scans the canonical store natively`,
 		"1 skill in " + p.SkillsStore() + " (1 installed, 0 custom)",
-		`disabled: "tdd" for opencode, pi, codex, claude`,
+		"no skills updated",
+		`verified disabled: "tdd" for opencode, pi, codex, claude`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
@@ -202,7 +205,7 @@ func TestUpdateReportsADisableThatOutlivedItsSkill(t *testing.T) {
 
 	out := runUpdate(t, p)
 
-	if !strings.Contains(out, `disabled: "tdd" for pi`) {
+	if !strings.Contains(out, `verified disabled: "tdd" for pi`) {
 		t.Errorf("output missing the stale-but-held disable:\n%s", out)
 	}
 	if strings.Contains(out, "did not stay disabled") {
@@ -256,7 +259,10 @@ func TestUpdateWithNothingToDoIsClean(t *testing.T) {
 	if !strings.Contains(out, "1 skill in "+p.SkillsStore()+" (1 installed, 0 custom)") {
 		t.Errorf("output missing the store summary:\n%s", out)
 	}
-	if strings.Contains(out, "disabled:") {
+	if !strings.Contains(out, "no skills updated") {
+		t.Errorf("a no-op run should state no skills updated:\n%s", out)
+	}
+	if strings.Contains(out, "verified disabled:") {
 		t.Errorf("nothing was disabled, yet the report lists disables:\n%s", out)
 	}
 }

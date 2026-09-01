@@ -36,6 +36,13 @@ func newSkillUpdateCmd(p *paths.Paths) *cobra.Command {
 			"The wrapped call is fully explicit and non-interactive: stdin is piped closed, so an unexpected prompt fails fast instead of hanging. Its output is shown raw on failure and never parsed; fleet reports from its own post-run state (state file, lockfile, harness configs). The skills CLI lockfile is read-only, and running the skills CLI by hand keeps working.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Snapshot before the wrapped run so the report can state
+			// what — if anything — actually changed. The lockfile is the
+			// source of truth for installed skills; the store census is
+			// the fallback when the lock is empty.
+			beforeLock, _ := scan.ReadLockfile(p.SkillLock())
+			beforeSkills, _ := scan.ScanStore(p.SkillsStore())
+
 			// The wrapped run. A failure here is the headline: show the
 			// CLI's raw output and stop — a half-finished update is the
 			// user's to resolve before anything else runs.
@@ -46,11 +53,14 @@ func newSkillUpdateCmd(p *paths.Paths) *cobra.Command {
 			out := cmd.OutOrStdout()
 
 			// Sync re-projects the state file and re-removes redundant
-			// links, then reports what the wrapped run disturbed.
+			// links, then reports what the wrapped run disturbed. This
+			// is intentional: `fleet skill update` is `skills update -g -y`
+			// followed by sync, so disables stay disabled even when the
+			// wrapped run re-creates links or resurrects config.
 			if err := runSyncTo(out, p); err != nil {
 				return err
 			}
-			return printUpdateReport(out, p)
+			return printUpdateReport(out, p, beforeLock, beforeSkills)
 		},
 	}
 }
@@ -71,8 +81,11 @@ func showSkillsFailure(cmd *cobra.Command, err error) error {
 // printUpdateReport summarizes the post-run state from fleet's own
 // records: the store scan and lockfile for what is installed, and the
 // state file re-read against the harness configs for what stayed
-// disabled.
-func printUpdateReport(out io.Writer, p *paths.Paths) error {
+// disabled. It also reports what — if anything — changed compared to
+// the pre-update snapshot, so "zero updated" is an explicit outcome
+// rather than an ambiguous census. The outcome line carries the same
+// on/off weight: the leading verb is green on a terminal, details dim.
+func printUpdateReport(out io.Writer, p *paths.Paths, beforeLock map[string]scan.Provenance, beforeSkills []scan.Skill) error {
 	skills, err := scan.ScanStore(p.SkillsStore())
 	if err != nil {
 		return fmt.Errorf("scan canonical store: %w", err)
@@ -82,12 +95,80 @@ func printUpdateReport(out io.Writer, p *paths.Paths) error {
 		return fmt.Errorf("read skills lockfile: %w", err)
 	}
 	installed := scan.CountInstalled(skills, lock)
-	line := fmt.Sprintf("%d skill%s in %s (%d installed, %d custom)",
+	pal := newPalette(stdoutIsTTY())
+	// Census is context, not the outcome — keep it dim so the eye lands
+	// on the outcome line (like on/off's "enabled … for …" headline).
+	census := fmt.Sprintf("%d skill%s in %s (%d installed, %d custom)",
 		len(skills), plural(len(skills)), p.SkillsStore(), installed, len(skills)-installed)
-	if _, err := fmt.Fprintln(out, line); err != nil {
+	if _, err := fmt.Fprintln(out, pal.dim(census)); err != nil {
+		return err
+	}
+	if err := printUpdateDiff(out, beforeLock, beforeSkills, lock, skills); err != nil {
 		return err
 	}
 	return verifyDisables(out, p, skills)
+}
+
+// printUpdateDiff reports what the wrapped run actually changed, derived
+// from fleet's own state rather than the skills CLI's prose. A zero
+// result is explicit ("no skills updated") so the update is not
+// mistaken for a silent failure. The outcome line carries the same
+// weight as on/off's headline: verb in green on a terminal.
+func printUpdateDiff(out io.Writer, beforeLock map[string]scan.Provenance, beforeSkills []scan.Skill, afterLock map[string]scan.Provenance, afterSkills []scan.Skill) error {
+	if beforeLock == nil {
+		beforeLock = map[string]scan.Provenance{}
+	}
+	if afterLock == nil {
+		afterLock = map[string]scan.Provenance{}
+	}
+	updated := updatedSkillNames(beforeLock, afterLock)
+	// Also consider store adds/removes when lock is empty (all custom) or
+	// a skill was installed/removed outside the lock's hash (new dir).
+	if len(updated) == 0 && len(beforeSkills) != len(afterSkills) {
+		// Store count changed but lock didn't — treat as an update (custom
+		// skill added/removed or lock missing). Report the count delta.
+		if len(afterSkills) > len(beforeSkills) {
+			updated = []string{fmt.Sprintf("%d added", len(afterSkills)-len(beforeSkills))}
+		} else {
+			updated = []string{fmt.Sprintf("%d removed", len(beforeSkills)-len(afterSkills))}
+		}
+	}
+	pal := newPalette(stdoutIsTTY())
+	if len(updated) == 0 {
+		// Outcome: matches on/off's "already enabled" weight — verb in green
+		// so a no-op update is not mistaken for silent noise after sync lines.
+		_, err := fmt.Fprintln(out, pal.good("no skills updated"))
+		return err
+	}
+	// Name the updated skills when the set is small; otherwise just count.
+	// Verb green like "enabled"/"disabled" on/off headline.
+	if len(updated) <= 8 {
+		_, err := fmt.Fprintf(out, "%s %d skill%s: %s\n", pal.good("updated"), len(updated), plural(len(updated)), strings.Join(updated, ", "))
+		return err
+	}
+	_, err := fmt.Fprintf(out, "%s %d skills\n", pal.good("updated"), len(updated))
+	return err
+}
+
+func updatedSkillNames(before, after map[string]scan.Provenance) []string {
+	var out []string
+	for dir, provAfter := range after {
+		provBefore, ok := before[dir]
+		if !ok {
+			out = append(out, dir)
+			continue
+		}
+		if provBefore.Hash != provAfter.Hash || provBefore.Source != provAfter.Source {
+			out = append(out, dir)
+		}
+	}
+	for dir := range before {
+		if _, ok := after[dir]; !ok {
+			out = append(out, dir+" (removed)")
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // verifyDisables re-reads each writable harness's config after sync and
@@ -111,6 +192,7 @@ func verifyDisables(out io.Writer, p *paths.Paths, skills []scan.Skill) error {
 	names := st.Universe(storeNames)
 
 	holds := map[string][]string{} // skill -> harnesses where the disable holds
+	pal := newPalette(stdoutIsTTY())
 	for _, a := range harness.Installed(p) {
 		if !a.CanProject() {
 			continue
@@ -129,7 +211,7 @@ func verifyDisables(out io.Writer, p *paths.Paths, skills []scan.Skill) error {
 			case harness.StateOff, harness.StateAbsent:
 				holds[name] = append(holds[name], h)
 			default:
-				if _, err := fmt.Fprintf(out, "%s: %s did not stay disabled\n", name, h); err != nil {
+				if _, err := fmt.Fprintf(out, "%s: %q for %s did not stay disabled\n", pal.broken("verified"), name, h); err != nil {
 					return err
 				}
 			}
@@ -137,7 +219,7 @@ func verifyDisables(out io.Writer, p *paths.Paths, skills []scan.Skill) error {
 	}
 
 	for _, name := range sortedStrings(holds) {
-		if _, err := fmt.Fprintf(out, "disabled: %q for %s\n", name, strings.Join(holds[name], ", ")); err != nil {
+		if _, err := fmt.Fprintf(out, "%s %q for %s\n", pal.good("verified disabled:"), name, strings.Join(holds[name], ", ")); err != nil {
 			return err
 		}
 	}
