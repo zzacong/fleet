@@ -79,8 +79,8 @@ func TestHelpScreenWrapsDescriptionsAtDescriptionColumn(t *testing.T) {
 		if !section || strings.TrimSpace(line) == "" {
 			continue
 		}
-		switch indent := len(line) - len(strings.TrimLeft(line, " ")); {
-		case indent == 2:
+		switch indent := len(line) - len(strings.TrimLeft(line, " ")); indent {
+		case 2:
 			// A command row: its description column is where the first
 			// character after the padded command name lands.
 			name := strings.Fields(line)[0]

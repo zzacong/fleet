@@ -1,15 +1,19 @@
 // The on/off commands: record the toggle in the state file, then let sync
 // project it into each harness's native config. The write sequence itself
 // lives in internal/toggle — the TUI's staged apply runs the same code.
-// Sync's output is the command's own report, so it goes to stdout. Cursor
-// and Bob have no write side — toggling for them is a no-op with a clear
-// message.
+// The command reports its own outcome: one headline line naming the
+// harnesses the recorded state now holds, then sync's leftover findings
+// (real repairs, and flags that kept the toggle from landing). Ambient
+// findings about other skills are sync's and doctor's business; the
+// toggle stays quiet about them. Cursor and Bob have no write side —
+// toggling for them is a no-op with a clear message.
 
 package cli
 
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -77,12 +81,16 @@ func newSkillToggleCmd(p *paths.Paths, on bool) *cobra.Command {
 			}
 
 			out := cmd.OutOrStdout()
-			for _, pr := range projected {
-				if err := printReport(out, string(pr.Harness), pr.Report.Changed, pr.Report.Flags); err != nil {
-					return err
-				}
+
+			// The outcome leads; sync's leftover findings follow quietly.
+			writeTargets := make([]string, 0, len(toggles))
+			for _, t := range toggles {
+				writeTargets = append(writeTargets, t.Harness)
 			}
-			if err := printSyncReports(out, reports); err != nil {
+			if err := printToggleOutcome(out, name, on, writeTargets, projected, reports); err != nil {
+				return err
+			}
+			if err := printToggleDetail(out, name, writeTargets, projected, reports); err != nil {
 				return err
 			}
 
@@ -157,6 +165,146 @@ func requireStoredSkill(p *paths.Paths, name string) error {
 		}
 	}
 	return fmt.Errorf("skill %q not found in %s", name, p.SkillsStore())
+}
+
+// printToggleOutcome writes the command's headline: one line naming every
+// targeted harness whose config now holds the recorded state —
+// `disabled "tdd" for opencode, pi`. A harness flagged in the reports
+// stays out of the list; its flag line below explains what fleet couldn't
+// change. When nothing moved the line says so: `"tdd" is already enabled
+// for opencode, pi`.
+func printToggleOutcome(out io.Writer, name string, on bool, targets []string, projected []toggle.Projected, reports []fleetsync.Report) error {
+	if len(targets) == 0 {
+		return nil
+	}
+	blocked := toggledFlagHarnesses(name, targets, projected, reports)
+	reached := make([]string, 0, len(targets))
+	for _, h := range targets {
+		if !blocked[h] {
+			reached = append(reached, h)
+		}
+	}
+	if len(reached) == 0 {
+		return nil // every target is flagged; the flags are the report
+	}
+	verb := "enabled"
+	if !on {
+		verb = "disabled"
+	}
+	pal := newPalette(stdoutIsTTY())
+	if toggledFlips(name, targets, projected, reports) {
+		_, err := fmt.Fprintf(out, "%s %q for %s\n", pal.good(verb), name, strings.Join(reached, ", "))
+		return err
+	}
+	_, err := fmt.Fprintf(out, "%q is %s for %s\n", name, pal.good("already "+verb), strings.Join(reached, ", "))
+	return err
+}
+
+// toggledFlagHarnesses collects the targeted harnesses whose reports flag
+// the toggled skill: there the write did not fully hold.
+func toggledFlagHarnesses(name string, targets []string, projected []toggle.Projected, reports []fleetsync.Report) map[string]bool {
+	blocked := map[string]bool{}
+	for _, pr := range projected {
+		for _, f := range pr.Report.Flags {
+			if f.Skill == name {
+				blocked[string(pr.Harness)] = true
+			}
+		}
+	}
+	for _, r := range reports {
+		for _, f := range r.Flags {
+			if f.Skill == name && slices.Contains(targets, r.Harness) {
+				blocked[r.Harness] = true
+			}
+		}
+	}
+	return blocked
+}
+
+// toggledFlips reports whether any targeted harness's config actually
+// moved for the skill: the direct "on" writes report their own flips,
+// sync's reports carry the "off" projections.
+func toggledFlips(name string, targets []string, projected []toggle.Projected, reports []fleetsync.Report) bool {
+	for _, pr := range projected {
+		for _, c := range pr.Report.Changed {
+			if c.Skill == name {
+				return true
+			}
+		}
+	}
+	for _, r := range reports {
+		for _, c := range r.Changed {
+			if c.Skill == name && slices.Contains(targets, r.Harness) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// printToggleDetail writes what the run did beyond the toggle itself, in
+// sync's own order: redundant-link removals, then drift repairs, then
+// flags. Flags about the toggled skill always print — they mean the
+// recorded state did not fully land — deduplicated, because the direct
+// "on" writes and the sync pass that follows can flag the same entry.
+// Flags about other skills are ambient config findings: `fleet skill
+// sync` and `fleet skill doctor` report them, the toggle stays quiet.
+func printToggleDetail(out io.Writer, name string, targets []string, projected []toggle.Projected, reports []fleetsync.Report) error {
+	pal := newPalette(stdoutIsTTY())
+	targeted := map[string]bool{}
+	for _, h := range targets {
+		targeted[h] = true
+	}
+
+	for _, r := range reports {
+		for _, e := range r.Removed {
+			if _, err := fmt.Fprintf(out, "sync: %s: removed redundant link %q — %s\n", r.Harness, e.Name, e.Reason); err != nil {
+				return err
+			}
+		}
+	}
+	for _, r := range reports {
+		for _, c := range r.Changed {
+			if c.Skill == name && targeted[r.Harness] {
+				continue // the outcome line owns this flip
+			}
+			if _, err := fmt.Fprintln(out, styleSyncLine(formatChange(r.Harness, c), pal)); err != nil {
+				return err
+			}
+		}
+	}
+
+	seen := map[string]bool{}
+	printToggledFlag := func(harnessName string, f harness.Flag) error {
+		key := harnessName + "\x00" + f.Message
+		if seen[key] {
+			return nil
+		}
+		seen[key] = true
+		_, err := fmt.Fprintln(out, styleSyncLine(formatFlag(harnessName, f), pal))
+		return err
+	}
+	for _, pr := range projected {
+		for _, f := range pr.Report.Flags {
+			if f.Skill != name {
+				continue
+			}
+			if err := printToggledFlag(string(pr.Harness), f); err != nil {
+				return err
+			}
+		}
+	}
+	for _, r := range reports {
+		for _, f := range r.Flags {
+			if f.Skill != name {
+				continue
+			}
+			if err := printToggledFlag(r.Harness, f); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // runSyncTo runs sync and writes the reports in human form: link removals

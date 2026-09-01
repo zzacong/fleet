@@ -86,18 +86,19 @@ func TestOffRecordsStateAndWritesEachHarnessNativeOff(t *testing.T) {
 		t.Errorf("claude settings:\n%s", body)
 	}
 
-	// The report names what changed, and Cursor/Bob get the no-op message.
+	// The report leads with the outcome line, and Cursor/Bob get the
+	// no-op message.
 	for _, want := range []string{
-		`sync: opencode: disabled "tdd" (was on)`,
-		`sync: pi: disabled "tdd" (was on)`,
-		`sync: codex: disabled "tdd" (was on)`,
-		`sync: claude: disabled "tdd" (was on)`,
+		`disabled "tdd" for opencode, pi, codex, claude`,
 		`cursor: no per-skill disable mechanism — disable "tdd" is a no-op`,
 		`bob: no per-skill disable mechanism — disable "tdd" is a no-op`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, `sync: opencode: disabled "tdd"`) {
+		t.Errorf("per-harness sync lines duplicate the outcome line:\n%s", out)
 	}
 }
 
@@ -122,8 +123,8 @@ func TestOffWithHarnessFlagTouchesOnlyThatHarness(t *testing.T) {
 	if body := readFile(t, p.PiSettings()); !strings.Contains(body, "-skills/tdd/SKILL.md") {
 		t.Errorf("pi settings:\n%s", body)
 	}
-	if !strings.Contains(out, `sync: pi: disabled "tdd" (was on)`) {
-		t.Errorf("output missing the pi change:\n%s", out)
+	if !strings.Contains(out, `disabled "tdd" for pi`) {
+		t.Errorf("output missing the pi outcome:\n%s", out)
 	}
 	if strings.Contains(out, "opencode: disabled") {
 		t.Errorf("output reports untargeted harnesses:\n%s", out)
@@ -152,8 +153,8 @@ func TestOnRemovesStateAndStripsFleetMarkers(t *testing.T) {
 			t.Errorf("%s still mentions tdd after enabling:\n%s", filepath.Base(path), body)
 		}
 	}
-	if !strings.Contains(out, `sync: pi: enabled "tdd" (was off)`) {
-		t.Errorf("output missing the enable change:\n%s", out)
+	if !strings.Contains(out, `enabled "tdd" for opencode, pi, codex, claude`) {
+		t.Errorf("output missing the enable outcome:\n%s", out)
 	}
 }
 
@@ -194,8 +195,8 @@ func TestOnForSkillNeverToggledIsQuietlyFine(t *testing.T) {
 	p := toggleHome(t)
 	out, _ := runToggle(t, p, "on", "tdd")
 
-	// No state entry existed, nothing to strip: the command succeeds with
-	// nothing to report beyond the no-op messages.
+	// No state entry existed, nothing to strip: the command succeeds and
+	// says so without claiming a change that did not happen.
 	st, err := state.Load(p.FleetStateFile())
 	if err != nil {
 		t.Fatal(err)
@@ -205,8 +206,65 @@ func TestOnForSkillNeverToggledIsQuietlyFine(t *testing.T) {
 			t.Errorf("state: tdd/%s disabled after on", h)
 		}
 	}
-	if strings.Contains(out, `enabled "tdd"`) {
+	if !strings.Contains(out, `"tdd" is already enabled for opencode, pi, codex, claude`) {
+		t.Errorf("output missing the already-enabled outcome:\n%s", out)
+	}
+	if strings.Contains(out, `enabled "tdd" for`) {
 		t.Errorf("output claims a change that did not happen:\n%s", out)
+	}
+}
+
+func TestAmbientFlagsAboutOtherSkillsStayOutOfToggleOutput(t *testing.T) {
+	// pi's config disables a skill fleet doesn't track. That finding
+	// belongs to sync and doctor; the toggle's report is about the
+	// toggled skill, so the flag stays out of it.
+	p := toggleHome(t)
+	if err := os.MkdirAll(filepath.Dir(p.PiSettings()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.PiSettings(), []byte(`{"skills": ["-skills/manual-skill/SKILL.md"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _ := runToggle(t, p, "off", "tdd")
+
+	if !strings.Contains(out, `disabled "tdd" for opencode, pi, codex, claude`) {
+		t.Errorf("output missing the outcome line:\n%s", out)
+	}
+	if strings.Contains(out, "manual-skill") || strings.Contains(out, "left alone") {
+		t.Errorf("ambient flags leaked into the toggle report:\n%s", out)
+	}
+
+	// The explicit sync verb is where the finding belongs.
+	syncOut, _ := runToggle(t, p, "sync")
+	if !strings.Contains(syncOut, "sync: pi/manual-skill: disabled in config but not tracked by fleet's state") {
+		t.Errorf("sync missing the pi manual-edit flag:\n%s", syncOut)
+	}
+}
+
+func TestFlagThatBlocksTheTogglePrintsOnceAndDropsTheHarness(t *testing.T) {
+	// pi's config excludes tdd with a !glob fleet doesn't own: enabling
+	// removes fleet's exact entry but the skill stays off. The outcome
+	// line must not claim pi, and the flag prints once even though both
+	// the direct write and the sync pass flag it.
+	p := toggleHome(t)
+	if err := os.MkdirAll(filepath.Dir(p.PiSettings()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.PiSettings(), []byte(`{"skills": ["-skills/tdd/SKILL.md", "!t*"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _ := runToggle(t, p, "on", "tdd", "--harness", "pi")
+
+	if strings.Contains(out, `enabled "tdd"`) {
+		t.Errorf("outcome claims pi, where a glob still excludes the skill:\n%s", out)
+	}
+	if got := strings.Count(out, "pi/tdd:"); got != 1 {
+		t.Errorf("want exactly one flag line about pi/tdd, got %d:\n%s", got, out)
+	}
+	if !strings.Contains(out, "still excluded by a !glob entry") {
+		t.Errorf("output missing the glob flag:\n%s", out)
 	}
 }
 

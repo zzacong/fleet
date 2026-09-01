@@ -111,15 +111,16 @@ Disables a skill: records the toggle in the state file, then sync projects it in
 
 ```sh
 $ fleet skill off tdd
-sync: opencode: disabled "tdd" (was on)
-sync: pi: disabled "tdd" (was on)
-sync: codex: disabled "tdd" (was on)
+disabled "tdd" for opencode, pi, codex
 cursor: no per-skill disable mechanism — disable "tdd" is a no-op
 bob: no per-skill disable mechanism — disable "tdd" is a no-op
 ```
 
+- The first line is the outcome: every harness the state file now records the disable for. On a terminal the verb is green; it is the one line to read.
 - Without `--harness`, every installed harness is targeted. `--harness` is repeatable and takes a harness ID: `opencode`, `pi`, `codex`, `claude`, `cursor`, `bob`.
 - Cursor and Bob have no per-skill disable mechanism. Toggling for them prints the no-op line and records nothing.
+- A harness where something else overrode the write (a foreign config entry that keeps the skill enabled) is left out of the outcome list; its flag line prints instead — `sync: codex/tdd: a skills.config entry fleet doesn't manage overrides fleet's disable — left alone`.
+- Sync runs as part of the command and reports real repairs it made beyond the toggle: redundant-link removals and drift fixes print as `sync:` lines. Ambient findings about other skills (untracked config disables, foreign rules) stay out of the report; `fleet skill sync` and `fleet skill doctor` are where they are listed.
 - The name must exist in the canonical store. Disabling a typo would silently record state, so it fails loudly:
 
   ```sh
@@ -127,7 +128,7 @@ bob: no per-skill disable mechanism — disable "tdd" is a no-op
   Error: skill "typo-skill" not found in ~/.agents/skills
   ```
 
-- The command is idempotent: disabling an already-disabled skill changes nothing and prints nothing.
+- The command is idempotent: disabling an already-disabled skill changes nothing, and the outcome line says so — `"tdd" is already disabled for opencode, pi, codex`.
 
 ## fleet skill on
 
@@ -139,8 +140,10 @@ Re-enables a skill by removing fleet's disable entries. Same targeting rules as 
 
 ```sh
 $ fleet skill on tdd --harness codex
-sync: codex: enabled "tdd" (was off)
+enabled "tdd" for codex
 ```
+
+- The outcome line works the same way as `off`: it names the harnesses the skill is now enabled for, and reads `"tdd" is already enabled for codex` when nothing had to change. A harness where a foreign rule still disables the skill stays out of the list; its flag line explains (`sync: pi/tdd: still excluded by a !glob entry — left alone`).
 
 `on` is deliberately more lenient than `off`: it also cleans up entries for skills that were uninstalled while disabled, so stale state disappears instead of accumulating.
 
