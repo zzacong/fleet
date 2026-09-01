@@ -203,6 +203,32 @@ func TestSyncGroupsRepeatedFlagsIntoOneLine(t *testing.T) {
 	}
 }
 
+func TestSyncChangeLinesCarryTheOutcomeWeight(t *testing.T) {
+	// The flip is the report's headline, so it gets the treatment the
+	// on/off outcome line gives its verb: green verb, dim "sync:" prefix,
+	// cyan harness, and the "(was on)" provenance as a faint annotation.
+	// Unit-level with a fake palette: the composition is the contract,
+	// not the escape codes.
+	pal := palette{
+		dim:  func(s string) string { return "{" + s + "}" },
+		info: func(s string) string { return "[" + s + "]" },
+		good: func(s string) string { return "<" + s + ">" },
+	}
+	got := styleChange(`sync: pi: disabled "deploy-to-vercel" (was on)`, pal)
+	want := `{sync: }[pi]: <disabled> "deploy-to-vercel" {(was on)}`
+	if got != want {
+		t.Errorf("styled change line:\n%s\nwant:\n%s", got, want)
+	}
+
+	// Flags share the "disabled…" wording but are findings, not flips:
+	// they get the dim/cyan scoping, never the verb's weight.
+	flag := `sync: pi: disabled in config but not tracked by fleet's state — left alone`
+	wantFlag := `{sync: }[pi]: disabled in config but not tracked by fleet's state — left alone`
+	if got := styleSyncLine(flag, pal); got != wantFlag {
+		t.Errorf("styled flag line:\n%s\nwant:\n%s", got, wantFlag)
+	}
+}
+
 func TestSyncOnAConvergedHomePrintsNothing(t *testing.T) {
 	p := toggleHome(t)
 

@@ -258,7 +258,7 @@ func printToggleDetail(out io.Writer, name string, targets []string, projected [
 
 	for _, r := range reports {
 		for _, e := range r.Removed {
-			if _, err := fmt.Fprintf(out, "sync: %s: removed redundant link %q — %s\n", r.Harness, e.Name, e.Reason); err != nil {
+			if _, err := fmt.Fprintln(out, styleSyncLine(formatRemoved(r.Harness, e), pal)); err != nil {
 				return err
 			}
 		}
@@ -268,7 +268,7 @@ func printToggleDetail(out io.Writer, name string, targets []string, projected [
 			if c.Skill == name && targeted[r.Harness] {
 				continue // the outcome line owns this flip
 			}
-			if _, err := fmt.Fprintln(out, styleSyncLine(formatChange(r.Harness, c), pal)); err != nil {
+			if _, err := fmt.Fprintln(out, styleChange(formatChange(r.Harness, c), pal)); err != nil {
 				return err
 			}
 		}
@@ -320,9 +320,10 @@ func runSyncTo(out io.Writer, p *paths.Paths) error {
 // printSyncReports writes sync's reports in human form: link removals
 // first, then enablement changes and flags.
 func printSyncReports(out io.Writer, reports []fleetsync.Report) error {
+	pal := newPalette(stdoutIsTTY())
 	for _, r := range reports {
 		for _, e := range r.Removed {
-			if _, err := fmt.Fprintf(out, "sync: %s: removed redundant link %q — %s\n", r.Harness, e.Name, e.Reason); err != nil {
+			if _, err := fmt.Fprintln(out, styleSyncLine(formatRemoved(r.Harness, e), pal)); err != nil {
 				return err
 			}
 		}
@@ -336,7 +337,7 @@ func printSyncReports(out io.Writer, reports []fleetsync.Report) error {
 func printReport(out io.Writer, harnessName string, changed []harness.Change, flags []harness.Flag) error {
 	pal := newPalette(stdoutIsTTY())
 	for _, c := range changed {
-		if _, err := fmt.Fprintln(out, formatChange(harnessName, c)); err != nil {
+		if _, err := fmt.Fprintln(out, styleChange(formatChange(harnessName, c), pal)); err != nil {
 			return err
 		}
 	}
@@ -369,6 +370,33 @@ func styleSyncLine(line string, pal palette) string {
 	return pal.dim("sync: ") + pal.info(scope) + tail
 }
 
+// styleChange renders one applied flip with the weight the on/off outcome
+// line gives its verb: dim "sync:" prefix, cyan harness scope, the verb in
+// green, and the "(was on)" provenance demoted to a faint annotation.
+// Change lines only — flags never pass through here, because their
+// messages can open with the same words ("disabled in config but not
+// tracked…") and must not borrow the verb's color.
+func styleChange(line string, pal palette) string {
+	rest, ok := strings.CutPrefix(line, "sync: ")
+	if !ok {
+		return line
+	}
+	scope, tail, ok := strings.Cut(rest, ": ")
+	if !ok {
+		return line
+	}
+	verb, detail, ok := strings.Cut(tail, " ")
+	if !ok {
+		return line
+	}
+	name, note, hasNote := strings.Cut(detail, " (was ")
+	styled := pal.dim("sync: ") + pal.info(scope) + ": " + pal.good(verb) + " " + name
+	if hasNote {
+		styled += " " + pal.dim("(was "+note)
+	}
+	return styled
+}
+
 // flagGroup collapses flags that share a message within one harness: twelve
 // near-identical "not tracked" lines become one line with the skill names.
 type flagGroup struct {
@@ -391,14 +419,21 @@ func groupFlags(flags []harness.Flag) []flagGroup {
 	return groups
 }
 
-// formatChange renders one applied flip: "sync: opencode: disabled \"tdd\"
-// (was on)".
+// formatChange renders one applied flip as plain text: "sync: opencode:
+// disabled \"tdd\" (was on)". styleChange adds the terminal styling.
 func formatChange(harnessName string, c harness.Change) string {
 	verb := "disabled"
 	if c.To == harness.StateOn {
 		verb = "enabled"
 	}
 	return fmt.Sprintf("sync: %s: %s %q (was %s)", harnessName, verb, c.Skill, c.From)
+}
+
+// formatRemoved renders one redundant-link removal as plain text: "sync:
+// opencode: removed redundant link \"tdd\" — opencode scans the canonical
+// store natively".
+func formatRemoved(harnessName string, e harness.Entry) string {
+	return fmt.Sprintf("sync: %s: removed redundant link %q — %s", harnessName, e.Name, e.Reason)
 }
 
 // formatFlag renders one untouched-but-flagged entry, attributed to the
