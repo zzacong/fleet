@@ -13,5 +13,9 @@ dist/
 *.test
 *.out
 
+# watcher artifacts (snapshots + deduped file contents)
+scripts/watcher/.state/
+scripts/watcher/__pycache__/
+
 # ticket-sweep worktrees
 .worktrees/
