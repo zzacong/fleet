@@ -96,6 +96,9 @@ type Adapter interface {
 	Harness() Harness
 	// Installed reports whether the harness's config directory exists.
 	Installed() bool
+	// Dir is the harness's config directory, the same path Installed
+	// probes.
+	Dir() string
 	// Read reads current enablement for the named skills. Read never
 	// writes; it reports what the harness's own config expresses.
 	Read(names []string) (ReadResult, error)

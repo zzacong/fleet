@@ -263,6 +263,54 @@ Error: skills update -g -y: exit status 1
 
 The wrapped call is fully explicit and non-interactive: stdin is piped closed, so an unexpected prompt fails fast instead of hanging. Fleet never parses the CLI's prose, never writes the skills CLI lockfile, and `skills check` (an undocumented alias of `update`) is not used.
 
+## fleet harness ls
+
+```sh
+fleet harness ls [--json]
+```
+
+Lists the six harnesses fleet supports, marking each installed — its config directory exists, the same probe every command uses — or not, with the directory itself and whether fleet can write a per-skill off switch into its config. Cursor and Bob have no off switch; fleet says so instead of pretending.
+
+Read-only: unlike most fleet commands, no sync runs — listing what is installed must not converge anything. Nothing is filtered: you see all six even when none is installed.
+
+```sh
+$ fleet harness ls
+NAME      INSTALLED  CONFIG DIR                      OFF SWITCH
+opencode  ✓          /home/you/.config/opencode      yes
+pi        ✓          /home/you/.pi                   yes
+codex     ✓          /home/you/.codex                yes
+claude    -          /home/you/.claude               yes
+cursor    ✓          /home/you/.cursor               no
+bob       ✓          /home/you/.bob                  no
+```
+
+- `INSTALLED` is `✓` when the harness's config directory exists, `-` when it does not. A `-` harness is skipped by every other command.
+- `CONFIG DIR` is the probed directory itself.
+- `OFF SWITCH` is `yes` when fleet can write a per-skill disable into that harness's config, `no` where no such lever exists.
+- On a terminal a one-line summary prints above the table (`fleet · 5 of 6 harnesses installed`). Piped output skips it.
+
+### --json
+
+```sh
+$ fleet harness ls --json
+```
+
+```json
+{
+  "harnesses": [
+    {
+      "name": "opencode",
+      "installed": true,
+      "configDir": "/home/you/.config/opencode",
+      "canDisable": true
+    }
+  ]
+}
+```
+
+- Rows appear in fleet's fixed harness order: opencode, pi, codex, claude, cursor, bob.
+- `canDisable` is false exactly for cursor and bob.
+
 ## fleet completion
 
 ```sh

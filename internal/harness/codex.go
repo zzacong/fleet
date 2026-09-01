@@ -27,6 +27,9 @@ func (a *CodexAdapter) Harness() Harness { return Codex }
 // Installed implements Adapter.
 func (a *CodexAdapter) Installed() bool { return isDir(a.home.CodexDir()) }
 
+// Dir implements Adapter.
+func (a *CodexAdapter) Dir() string { return a.home.CodexDir() }
+
 // Read implements Adapter.
 func (a *CodexAdapter) Read(names []string) (ReadResult, error) {
 	res := ReadResult{States: onForAll(names)}

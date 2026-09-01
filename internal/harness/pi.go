@@ -30,6 +30,9 @@ func (a *PiAdapter) Harness() Harness { return Pi }
 // Installed implements Adapter.
 func (a *PiAdapter) Installed() bool { return isDir(a.home.PiDir()) }
 
+// Dir implements Adapter.
+func (a *PiAdapter) Dir() string { return a.home.PiDir() }
+
 // Read implements Adapter.
 func (a *PiAdapter) Read(names []string) (ReadResult, error) {
 	res := ReadResult{States: onForAll(names)}

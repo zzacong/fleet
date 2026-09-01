@@ -27,6 +27,9 @@ func (a *BobAdapter) Harness() Harness { return Bob }
 // Installed implements Adapter.
 func (a *BobAdapter) Installed() bool { return isDir(a.home.BobDir()) }
 
+// Dir implements Adapter.
+func (a *BobAdapter) Dir() string { return a.home.BobDir() }
+
 // Read implements Adapter.
 func (a *BobAdapter) Read(names []string) (ReadResult, error) {
 	res := ReadResult{States: onForAll(names)}

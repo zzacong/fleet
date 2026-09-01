@@ -39,6 +39,7 @@ func NewRoot(p *paths.Paths) *cobra.Command {
 	// template and its helper live in help.go.
 	root.SetUsageTemplate(usageTemplate)
 	root.AddCommand(newSkillCmd(p))
+	root.AddCommand(newHarnessCmd(p))
 	return root
 }
 

@@ -29,6 +29,9 @@ func (a *ClaudeAdapter) Harness() Harness { return Claude }
 // Installed implements Adapter.
 func (a *ClaudeAdapter) Installed() bool { return isDir(a.home.ClaudeDir()) }
 
+// Dir implements Adapter.
+func (a *ClaudeAdapter) Dir() string { return a.home.ClaudeDir() }
+
 // Read implements Adapter.
 func (a *ClaudeAdapter) Read(names []string) (ReadResult, error) {
 	res := ReadResult{States: make(map[string]State, len(names))}

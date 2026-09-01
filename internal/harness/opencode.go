@@ -34,6 +34,9 @@ func (a *OpenCodeAdapter) Harness() Harness { return OpenCode }
 // Installed implements Adapter.
 func (a *OpenCodeAdapter) Installed() bool { return isDir(a.home.OpenCodeDir()) }
 
+// Dir implements Adapter.
+func (a *OpenCodeAdapter) Dir() string { return a.home.OpenCodeDir() }
+
 // Read implements Adapter.
 func (a *OpenCodeAdapter) Read(names []string) (ReadResult, error) {
 	res := ReadResult{States: onForAll(names)}

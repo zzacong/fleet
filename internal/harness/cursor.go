@@ -24,6 +24,9 @@ func (a *CursorAdapter) Harness() Harness { return Cursor }
 // Installed implements Adapter.
 func (a *CursorAdapter) Installed() bool { return isDir(a.home.CursorDir()) }
 
+// Dir implements Adapter.
+func (a *CursorAdapter) Dir() string { return a.home.CursorDir() }
+
 // Read implements Adapter.
 func (a *CursorAdapter) Read(names []string) (ReadResult, error) {
 	return ReadResult{States: onForAll(names)}, nil

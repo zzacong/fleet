@@ -20,7 +20,7 @@ fleet                   # the interactive skill × harness matrix
 
 Bare `fleet` opens the matrix: one screen, every skill against every installed harness, toggles staged and applied together, and `u` running a one-key update-all — the same wrapped `skills update` the `skill update` verb runs, with the matrix reloading when it lands. It needs a terminal — piped output falls back to the `fleet skill ls` listing.
 
-The remaining verbs round out the loop: `skill on` re-enables, `skill update` wraps `skills update` and keeps disabled skills disabled, `skill doctor` explains anything it would change, `skill sync` repairs drift on demand, and `skill adopt` migrates custom skills into the repo. Every verb is documented with examples in the [command reference](docs/cli.md).
+The remaining verbs round out the loop: `skill on` re-enables, `skill update` wraps `skills update` and keeps disabled skills disabled, `skill doctor` explains anything it would change, `skill sync` repairs drift on demand, and `skill adopt` migrates custom skills into the repo. `harness ls` shows which of the six supported harnesses are installed and which have a per-skill off switch. Every verb is documented with examples in the [command reference](docs/cli.md).
 
 ## Custom vs installed
 

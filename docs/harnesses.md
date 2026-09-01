@@ -13,7 +13,7 @@ Fleet targets six harnesses. Each section states exactly which files fleet touch
 | Cursor      | `~/.cursor`          | none                                | none (no config lever exists)                        | symlink into `~/.cursor/skills`    |
 | IBM Bob     | `~/.bob`             | none                                | none (undocumented, unverified)                      | symlink into `~/.bob/skills`       |
 
-A harness counts as installed when its config directory exists — the same probe the `skills` CLI uses. Commands only act on installed harnesses.
+A harness counts as installed when its config directory exists — the same probe the `skills` CLI uses. Commands only act on installed harnesses. `fleet harness ls` shows all six with their installed state, config directory, and whether fleet can write a per-skill off switch.
 
 What fleet never touches, for every harness:
 
