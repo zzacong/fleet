@@ -24,6 +24,12 @@ type layout struct {
 	cellW []int // per-harness column widths
 }
 
+const (
+	minCellW = 3  // state columns never narrow below one padded glyph
+	descCap  = 60 // the description yields long before the screen edge
+	cellGap  = "  "
+)
+
 func (m model) layout() layout {
 	l := layout{width: max(m.width, 40)}
 
@@ -39,17 +45,19 @@ func (m model) layout() layout {
 		if !m.writable[h] {
 			label += "!" // flagged: no per-skill off switch, see the help
 		}
-		l.cellW = append(l.cellW, runeLen(label))
+		l.cellW = append(l.cellW, max(runeLen(label), minCellW))
 	}
 
 	// glyph + mark + space, name + space, badge + two spaces, cells joined
-	// by single spaces. The description gets whatever is left, and is
-	// dropped entirely on narrow terminals — the cells matter more.
+	// by two-space gaps. The description gets whatever is left — capped so
+	// the cells stay near the names on wide terminals — and is dropped
+	// entirely on narrow terminals: the cells matter more.
 	used := 3 + l.nameW + 1 + 3
 	for _, w := range l.cellW {
-		used += w + 1
+		used += w + runeLen(cellGap)
 	}
 	l.descW = max(0, l.width-used-1)
+	l.descW = min(l.descW, descCap)
 	if l.descW < 8 {
 		l.descW = 0
 	}
@@ -195,13 +203,16 @@ func (m model) columnHeaderLine() string {
 	b.WriteString(strings.Repeat(" ", prefix))
 	for i, h := range m.harnesses {
 		if i > 0 {
-			b.WriteString(" ")
+			b.WriteString(cellGap)
 		}
 		label := h
 		sty := styDim
 		if !m.writable[h] {
 			label += "!"
 			sty = styNowrite
+		}
+		if i == m.col {
+			sty = sty.Bold(true).Faint(false) // the column ←/→ moves to
 		}
 		b.WriteString(sty.Render(pad(label, l.cellW[i])))
 	}
@@ -236,7 +247,7 @@ func (m model) renderRow(r snapshot.SkillRow, selected bool) string {
 		pad(truncate(r.Name, l.nameW), l.nameW) + " "
 
 	if l.descW > 0 {
-		line += truncate(r.Description, l.descW) + " "
+		line += pad(truncate(r.Description, l.descW), l.descW) + " "
 	}
 
 	switch {
@@ -256,13 +267,15 @@ func (m model) renderRow(r snapshot.SkillRow, selected bool) string {
 }
 
 // renderCells draws one row's harness cells, left to right in column
-// order: the current state, or the staged target in yellow. Cells in a
-// column without a write side render faint — fleet cannot change them.
+// order: the current state, or the staged target in yellow. The selected
+// column — the one ←/→ moves and space flips — renders reversed so the
+// cursor is always visible. Cells in a column without a write side render
+// faint — fleet cannot change them.
 func (m model) renderCells(r snapshot.SkillRow, l layout) string {
 	var b strings.Builder
 	for i, h := range m.harnesses {
 		if i > 0 {
-			b.WriteString(" ")
+			b.WriteString(cellGap)
 		}
 		var label string
 		var sty lipgloss.Style
@@ -285,7 +298,10 @@ func (m model) renderCells(r snapshot.SkillRow, l layout) string {
 				label, sty = "-", styAbsent
 			}
 		}
-		b.WriteString(sty.Render(pad(label, l.cellW[i])))
+		if i == m.col {
+			sty = sty.Reverse(true)
+		}
+		b.WriteString(sty.Render(center(label, l.cellW[i])))
 	}
 	return b.String()
 }
@@ -328,7 +344,8 @@ func (m model) noticeLine() string {
 }
 
 func (m model) footer() string {
-	return styDim.Render("space toggle   ←/→ harness   enter apply staged   u update all   / filter   r refresh   ? help   q quit")
+	text := "space toggle   ←/→ harness   enter apply staged   u update all   / filter   r refresh   ? help   q quit"
+	return styDim.Render(truncate(text, m.width))
 }
 
 func (m model) helpOverlay() string {
@@ -367,6 +384,16 @@ func pad(s string, w int) string {
 		return s + strings.Repeat(" ", w-n)
 	}
 	return s
+}
+
+// center pads s with spaces on both sides so a glyph sits mid-column.
+func center(s string, w int) string {
+	n := runeLen(s)
+	if n >= w {
+		return s
+	}
+	left := (w - n) / 2
+	return strings.Repeat(" ", left) + s + strings.Repeat(" ", w-n-left)
 }
 
 // truncate shortens s to at most w runes, marking the cut with an ellipsis.

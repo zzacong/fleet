@@ -631,6 +631,65 @@ func TestCursorRowRendersOnAFullPageWithGroupHeaders(t *testing.T) {
 	}
 }
 
+// stripANSI removes SGR escapes so tests can measure rendered widths.
+func stripANSI(s string) string {
+	var b strings.Builder
+	inEscape := false
+	for _, r := range s {
+		switch {
+		case inEscape:
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEscape = false
+			}
+		case r == '\x1b':
+			inEscape = true
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// TestMatrixFitsNarrowTerminalWithEveryHarness pins the layout contract:
+// with all six harnesses installed, the header names every column and the
+// widest rendered line stays inside the terminal width, even after the
+// description has been capped and dropped.
+func TestMatrixFitsNarrowTerminalWithEveryHarness(t *testing.T) {
+	p := tuiHome(t)
+	m := newTestModel(t, p)
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m = m2.(model)
+	// Walk right to the last column so the cursor highlight is rendered.
+	m = moveRight(m, colBob)
+
+	view := m.View().Content
+	lines := strings.Split(view, "\n")
+	var header string
+	for _, line := range lines {
+		if strings.Contains(line, "opencode") {
+			header = stripANSI(line)
+			break
+		}
+	}
+	if header == "" {
+		t.Fatal("no header line in the view")
+	}
+	for _, h := range m.harnesses {
+		label := h
+		if !m.writable[h] {
+			label += "!"
+		}
+		if !strings.Contains(header, label) {
+			t.Errorf("header missing the %s column: %q", h, strings.TrimRight(header, " "))
+		}
+	}
+	for i, line := range lines {
+		if w := runeLen(stripANSI(line)); w > m.width {
+			t.Errorf("line %d renders %d columns, over the %d-column terminal", i, w, m.width)
+		}
+	}
+}
+
 func TestQuitKeys(t *testing.T) {
 	p := tuiHome(t)
 	m := newTestModel(t, p)
