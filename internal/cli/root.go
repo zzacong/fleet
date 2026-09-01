@@ -35,6 +35,9 @@ func NewRoot(p *paths.Paths) *cobra.Command {
 		},
 	}
 	root.Flags().BoolVarP(&quiet, "quiet", "q", false, "suppress the hero banner")
+	// Descriptions wrap at the description column, not the screen edge; the
+	// template and its helper live in help.go.
+	root.SetUsageTemplate(usageTemplate)
 	root.AddCommand(newSkillCmd(p))
 	return root
 }
