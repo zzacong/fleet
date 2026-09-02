@@ -32,22 +32,22 @@ Targets mirror fleet's `Paths` — every location fleet derives from an injected
 home root plus the repo root. Only the config file + skills dir per harness are
 watched (full harness dirs are not).
 
-| Label | Path | Kind |
-|---|---|---|
-| `fleet-config` | `~/.config/fleet` | dir — covers `state.json`, `config.json`, `tree-cache.json` and `skills/` (fleet-home customs) via dir walk |
-| `agents-store` | `~/.agents` | dir (canonical store) |
-| `opencode-config` | `~/.config/opencode/opencode.jsonc` | file |
-| `opencode-skills` | `~/.config/opencode/skills` | dir |
-| `pi-settings` | `~/.pi/agent/settings.json` | file |
-| `pi-skills` | `~/.pi/agent/skills` | dir |
-| `codex-config` | `~/.codex/config.toml` | file |
-| `codex-skills` | `~/.codex/skills` | dir |
-| `claude-skills` | `~/.claude/skills` | dir |
-| `claude-config` | `~/.claude/settings.json` | file |
-| `cursor-skills` | `~/.cursor/skills` | dir |
-| `bob-skills` | `~/.bob/skills` | dir |
-| `bob-settings` | `~/.bob/settings.json` | file |
-| `repo-skills` | `<repo>/skills` | dir — designated skills repo's `skills/` when `skillsRepo` is set (checkout's `skills/` for dogfooding before monorepo move) |
+| Label             | Path                                | Kind                                                                                                                         |
+| ----------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `fleet-config`    | `~/.config/fleet`                   | dir — covers `state.json`, `config.json`, `tree-cache.json` and `skills/` (fleet-home customs) via dir walk                  |
+| `agents-store`    | `~/.agents`                         | dir (canonical store)                                                                                                        |
+| `opencode-config` | `~/.config/opencode/opencode.jsonc` | file                                                                                                                         |
+| `opencode-skills` | `~/.config/opencode/skills`         | dir                                                                                                                          |
+| `pi-settings`     | `~/.pi/agent/settings.json`         | file                                                                                                                         |
+| `pi-skills`       | `~/.pi/agent/skills`                | dir                                                                                                                          |
+| `codex-config`    | `~/.codex/config.toml`              | file                                                                                                                         |
+| `codex-skills`    | `~/.codex/skills`                   | dir                                                                                                                          |
+| `claude-skills`   | `~/.claude/skills`                  | dir                                                                                                                          |
+| `claude-config`   | `~/.claude/settings.json`           | file                                                                                                                         |
+| `cursor-skills`   | `~/.cursor/skills`                  | dir                                                                                                                          |
+| `bob-skills`      | `~/.bob/skills`                     | dir                                                                                                                          |
+| `bob-settings`    | `~/.bob/settings.json`              | file                                                                                                                         |
+| `repo-skills`     | `<repo>/skills`                     | dir — designated skills repo's `skills/` when `skillsRepo` is set (checkout's `skills/` for dogfooding before monorepo move) |
 
 ## Protocol
 
@@ -58,22 +58,23 @@ watched (full harness dirs are not).
 2. **Every `go`:** retake a snapshot and report diffs vs the previous snapshot.
    Do not skip the diff even when empty — report "No changes detected."
 3. Keep the initial baseline in mind for context, but diff against the
-   *previous* snapshot by default. Mention the initial→current delta when the
+   _previous_ snapshot by default. Mention the initial→current delta when the
    user asks.
 
 ## Diff markers
 
-| Marker | Meaning |
-|---|---|
-| `+` | Added path (or `+ <dir created>` for an empty dir becoming present) |
-| `-` | Removed path (or `- <dir removed>`) |
-| `~` | Modified — SHA-1 differs; followed by `size/hash8 -> size/hash8` and a unified line diff when available |
-| `·` | Touched — stat differs but SHA-1 identical (fleet sync rewrote with identical bytes) |
+| Marker | Meaning                                                                                                 |
+| ------ | ------------------------------------------------------------------------------------------------------- |
+| `+`    | Added path (or `+ <dir created>` for an empty dir becoming present)                                     |
+| `-`    | Removed path (or `- <dir removed>`)                                                                     |
+| `~`    | Modified — SHA-1 differs; followed by `size/hash8 -> size/hash8` and a unified line diff when available |
+| `·`    | Touched — stat differs but SHA-1 identical (fleet sync rewrote with identical bytes)                    |
 
 Line diffs are capped at 120 lines per file. Minified blobs (any line
+
 > 500 chars, e.g. `tree-cache.json`) are summarized as
-`(minified content — see hash change above)` — rely on the hash change,
-not the dump. Files > 4 MB are tracked by size + mtime only.
+> `(minified content — see hash change above)` — rely on the hash change,
+> not the dump. Files > 4 MB are tracked by size + mtime only.
 
 ## Reporting
 
