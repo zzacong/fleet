@@ -43,13 +43,15 @@ const (
 	// KindBrokenConfig: a config file that doesn't parse; sync will fail
 	// on it until it's fixed.
 	KindBrokenConfig Kind = "broken-config"
-	// KindDoublePresence: a skill name that exists in both the canonical
-	// store and the repo's skills/ dir — the harnesses that read both
-	// would see it twice. Only the user's hands can remove a copy.
+	// KindDoublePresence: a skill name that exists in more than one of the
+	// three homes (canonical store, fleet-home, skills repo) — the harnesses
+	// that read more than one would see it twice. Only the user's hands can
+	// remove a copy.
 	KindDoublePresence Kind = "double-presence"
 	// KindStaleLock: a skills CLI lockfile entry for a skill that now
-	// lives in the repo — the skills CLI would keep trying to update it.
-	// Fleet reads the lockfile only; it never writes it.
+	// lives in a custom home (fleet-home or repo) — the skills CLI would
+	// keep trying to update it. Fleet reads the lockfile only; it never
+	// writes it.
 	KindStaleLock Kind = "stale-lock"
 )
 

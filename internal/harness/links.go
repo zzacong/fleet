@@ -5,10 +5,11 @@
 // codex, claude code, Cursor, and Bob reach skills outside the canonical
 // store only through a symlink named after the skill in their own skills
 // dir, so each custom skill gets one link per harness — pointed at the
-// fleet repo. By construction these links never target the canonical
-// store: a link into ~/.agents/skills would make opencode and pi see the
-// skill twice, and it would make the link indistinguishable from the
-// skills CLI's redundant per-agent links.
+// resolved custom home (the designated skills repo's skills/ when a repo
+// is set, otherwise ~/.config/fleet/skills). By construction these links
+// never target the canonical store: a link into ~/.agents/skills would
+// make opencode and pi see the skill twice, and it would make the link
+// indistinguishable from the skills CLI's redundant per-agent links.
 //
 // For harnesses that scan the canonical store natively those per-agent
 // links are redundant double-coverage; sync removes them. Everything else

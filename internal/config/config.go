@@ -6,6 +6,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -59,7 +60,7 @@ func Load(path string) (*File, error) {
 }
 
 func bytesTrimSpace(b []byte) []byte {
-	return []byte(strings.TrimSpace(string(b)))
+	return bytes.TrimSpace(b)
 }
 
 // Save writes the config file, creating its directory when needed. The
