@@ -1,14 +1,16 @@
 name: Release
 
+# Disabled: not ready for automated releases yet.
+# To re-enable, restore: on: push: tags: ["v*"]
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   goreleaser:
+    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
