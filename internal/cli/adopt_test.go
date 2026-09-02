@@ -327,17 +327,40 @@ func TestAdoptRefusesUnknownSkillsAndAmbiguity(t *testing.T) {
 	}
 }
 
-func TestAdoptWithoutARepoExplainsHowToFixIt(t *testing.T) {
+func TestAdoptWithoutARepoAdoptsIntoFleetHome(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
 	p := paths.New(home)
 	writeSkillDir(t, p.SkillsStore(), "my-notes", "desc.")
 	if err := os.MkdirAll(p.OpenCodeDir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(p.CodexDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
-	_, err := runAdopt(t, p, "my-notes")
-	if err == nil || !strings.Contains(err.Error(), "FLEET_REPO") {
-		t.Errorf("error = %v, want the no-repo hint", err)
+	out, err := runAdopt(t, p, "my-notes")
+	if err != nil {
+		t.Fatalf("adopt without repo should succeed into fleet-home: %v", err)
+	}
+	fleetDir := filepath.Join(p.FleetHomeSkills(), "my-notes")
+	if _, err := os.Stat(filepath.Join(fleetDir, "SKILL.md")); err != nil {
+		t.Errorf("skill not moved to fleet-home: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(p.SkillsStore(), "my-notes")); !os.IsNotExist(err) {
+		t.Errorf("skill still in canonical store: %v", err)
+	}
+	if !strings.Contains(out, fleetDir) && !strings.Contains(out, "fleet") {
+		// at least check that output mentions adopted
+		if !strings.Contains(out, "adopted") {
+			t.Errorf("output missing adopted headline: %s", out)
+		}
+	}
+	oc := readFile(t, p.OpenCodeConfig())
+	if !strings.Contains(oc, p.FleetHomeSkills()) {
+		t.Errorf("opencode not wired to fleet-home: %s", oc)
+	}
+	if got, err := os.Readlink(filepath.Join(p.CodexSkills(), "my-notes")); err != nil || got != fleetDir {
+		t.Errorf("codex link = %q, %v; want %q", got, err, fleetDir)
 	}
 }
 

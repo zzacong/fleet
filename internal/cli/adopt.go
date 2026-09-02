@@ -1,9 +1,10 @@
 // The adopt command: migrate a custom skill from the canonical store into
-// the fleet repo's skills/ directory, wire the repo path into the
+// the resolved custom home (the designated skills repo's skills/ when a
+// repo is set, otherwise ~/.config/fleet/skills), wire that home into the
 // config-path harnesses (opencode, pi), and manage the link-based
 // harnesses' symlinks (codex, claude code, Cursor, Bob). The state file is
-// untouched — custom is defined by living in the repo — and sync runs
-// after, as on every command.
+// untouched — custom is defined by living in the resolved home — and sync
+// runs after, as on every command.
 
 package cli
 
@@ -22,9 +23,9 @@ import (
 func newSkillAdoptCmd(p *paths.Paths) *cobra.Command {
 	return &cobra.Command{
 		Use:   "adopt <name>",
-		Short: "Move a custom skill from the canonical store into the fleet repo",
-		Long: "Move a custom skill from the canonical store (~/.agents/skills) into the fleet repo's skills/ directory, where it stays versioned.\n\n" +
-			"The repo path is wired into opencode's and pi's skill-path config, and every link-based harness (codex, claude code, Cursor, Bob) gets a managed symlink to the skill. Managed links point at the repo, never at the canonical store — a link into ~/.agents/skills would make opencode and pi see the skill twice, so custom skills get none.\n\n" +
+		Short: "Move a custom skill from the canonical store into the resolved custom home",
+		Long: "Move a custom skill from the canonical store (~/.agents/skills) into the resolved custom home (the designated skills repo's skills/ when a skills repo is set, otherwise ~/.config/fleet/skills), where it stays versioned.\n\n" +
+			"The resolved home is wired into opencode's and pi's skill-path config, and every link-based harness (codex, claude code, Cursor, Bob) gets a managed symlink to the skill. Managed links point into the resolved home, never into the canonical store — a link into ~/.agents/skills would make opencode and pi see the skill twice, so custom skills get none.\n\n" +
 			"Adoption is reversible by hand: move the directory back into ~/.agents/skills and fleet keeps working (doctor reports the leftovers). Adopting an already-adopted skill moves nothing but re-ensures the wiring and links.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -53,8 +54,12 @@ func newSkillAdoptCmd(p *paths.Paths) *cobra.Command {
 					return err
 				}
 			}
+			target := p.RepoSkills()
+			if target == "" {
+				target = p.FleetHomeSkills()
+			}
 			for _, w := range rep.Wired {
-				if _, err := fmt.Fprintln(out, pal.dim("adopt: ")+formatWired(string(w.Harness), p.RepoSkills(), w.Where, pal)); err != nil {
+				if _, err := fmt.Fprintln(out, pal.dim("adopt: ")+formatWired(string(w.Harness), target, w.Where, pal)); err != nil {
 					return err
 				}
 			}
