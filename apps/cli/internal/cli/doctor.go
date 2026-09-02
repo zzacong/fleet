@@ -214,6 +214,8 @@ func reportConflicts(out io.Writer, conflicts []doctor.Conflict, pal palette) er
 // appear when there is more than one, and the next harness's conflicts are
 // still prompted individually — one keypress never adopts edits from a
 // config the user hasn't been shown.
+//
+//nolint:unused // retained for CLI completeness; shared variant is used
 func resolveConflicts(cmd *cobra.Command, p *paths.Paths, conflicts []doctor.Conflict, pal palette) (int, error) {
 	if len(conflicts) == 0 {
 		return 0, nil

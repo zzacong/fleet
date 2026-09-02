@@ -3,25 +3,25 @@
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 BUILDINFO := github.com/zzacong/fleet/internal/buildinfo.Version
-GOPKGS := cmd internal
+GOPKGS := ./...
 
 .PHONY: build test vet fmt lint check
 
 build:
-	go build -trimpath -ldflags "-X $(BUILDINFO)=$(VERSION)" -o bin/fleet ./cmd/fleet
+	go -C apps/cli build -trimpath -ldflags "-X $(BUILDINFO)=$(VERSION)" -o ../../bin/fleet ./cmd/fleet
 
 test:
-	go test ./...
+	go -C apps/cli test $(GOPKGS)
 
 vet:
-	go vet ./...
+	go -C apps/cli vet $(GOPKGS)
 
 fmt:
-	go run mvdan.cc/gofumpt@v0.11.0 -l -w $(GOPKGS)
+	go -C apps/cli run mvdan.cc/gofumpt@v0.11.0 -l -w .
 	pnpm run fmt:md
 
 lint:
-	golangci-lint run
+	golangci-lint run ./apps/cli/...
 	pnpm run check:md
 
 # Everything CI runs, in one go. fmt rewrites in place, so CI follows with

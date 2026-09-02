@@ -243,6 +243,8 @@ func isManagedCustomLink(e harness.Entry, p *paths.Paths, repoByDir map[string]s
 
 // isManagedRepoLink is kept for compatibility; it now also suppresses
 // fleet-home managed links by delegating to isManagedCustomLink.
+//
+//nolint:unused // retained for compatibility; isManagedCustomLink is the primary path
 func isManagedRepoLink(e harness.Entry, p *paths.Paths, repoByDir map[string]string, repoByName map[string]bool) bool {
 	fleetByDir := map[string]string{}
 	fleetByName := map[string]bool{}

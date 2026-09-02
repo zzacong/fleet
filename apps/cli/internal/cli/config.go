@@ -120,7 +120,7 @@ func newConfigSetCmd(p *paths.Paths) *cobra.Command {
 				return fmt.Errorf("skills repo path is not a directory: %q", abs)
 			}
 			if _, err := os.Stat(filepath.Join(abs, ".git")); err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "warning: %q does not contain .git — not a git repo root\n", abs)
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: %q does not contain .git — not a git repo root\n", abs) //nolint:errcheck
 			}
 			f, err := config.Load(p.FleetConfigFile())
 			if err != nil {

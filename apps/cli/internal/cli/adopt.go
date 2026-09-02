@@ -37,20 +37,20 @@ func newSkillAdoptCmd(p *paths.Paths) *cobra.Command {
 
 			pal := newPalette(stdoutIsTTY())
 			if rep.Moved {
-				if _, err := fmt.Fprintln(out, fmt.Sprintf("%s%s %q", pal.dim("adopt: "), pal.good("adopted"), rep.Skill)); err != nil {
+				if _, err := fmt.Fprintf(out, "%s%s %q\n", pal.dim("adopt: "), pal.good("adopted"), rep.Skill); err != nil {
 					return err
 				}
-				if _, err := fmt.Fprintln(out, fmt.Sprintf("  %s%s", pal.dim("from "), rep.From)); err != nil {
+				if _, err := fmt.Fprintf(out, "  %s%s\n", pal.dim("from "), rep.From); err != nil {
 					return err
 				}
-				if _, err := fmt.Fprintln(out, fmt.Sprintf("    %s %s", pal.dim("→"), rep.To)); err != nil {
+				if _, err := fmt.Fprintf(out, "    %s %s\n", pal.dim("→"), rep.To); err != nil {
 					return err
 				}
 			} else {
-				if _, err := fmt.Fprintln(out, fmt.Sprintf("%s%q is %s", pal.dim("adopt: "), rep.Skill, pal.good("already adopted"))); err != nil {
+				if _, err := fmt.Fprintf(out, "%s%q is %s\n", pal.dim("adopt: "), rep.Skill, pal.good("already adopted")); err != nil {
 					return err
 				}
-				if _, err := fmt.Fprintln(out, fmt.Sprintf("  %s %s", pal.dim("→"), rep.To)); err != nil {
+				if _, err := fmt.Fprintf(out, "  %s %s\n", pal.dim("→"), rep.To); err != nil {
 					return err
 				}
 			}
@@ -80,6 +80,8 @@ func newSkillAdoptCmd(p *paths.Paths) *cobra.Command {
 
 // formatLink renders one managed-link action: 'codex: linked "my-notes" →
 // /repo/skills/my-notes'.
+//
+//nolint:unused // kept for reference; styled variant is used in output
 func formatLink(harnessName string, l harness.LinkResult) string {
 	switch l.Change.Action {
 	case harness.LinkRepointed:
