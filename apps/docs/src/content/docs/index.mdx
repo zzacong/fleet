@@ -14,7 +14,7 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid } from "@astrojs/starlight/components";
 
 ## What Fleet does
 
@@ -22,13 +22,15 @@ Fleet keeps a single state file as the source of truth and projects it into each
 
 <CardGrid stagger>
   <Card title="Turn off per harness" icon="setting">
-    `fleet skill off tdd --harness pi` disables one skill in one harness — `fleet skill on` restores it.
+    `fleet skill off tdd --harness pi` disables one skill in one harness — `fleet skill on` restores
+    it.
   </Card>
   <Card title="Interactive matrix" icon="laptop">
     Bare `fleet` opens the skill × harness matrix: toggle, stage, and apply together.
   </Card>
   <Card title="Custom skills" icon="puzzle">
-    `fleet skill adopt` moves a custom skill into your skills collection and wires it for every harness.
+    `fleet skill adopt` moves a custom skill into your skills collection and wires it for every
+    harness.
   </Card>
   <Card title="Doctor & Sync" icon="magnifier">
     `fleet skill doctor` previews drift; `fleet skill sync` converges configs with the state file.
