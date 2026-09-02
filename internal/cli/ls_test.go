@@ -672,12 +672,28 @@ func TestLsMarksRepoCustomsAndPrefersTheStoreOnNameClashes(t *testing.T) {
 		t.Errorf("tdd = %+v, want custom with no source despite the stale lock entry", c)
 	}
 
-	// A name present in both places reports once, from the canonical store.
-	writeSkillDir(t, p.SkillsStore(), "clash", "The live copy lives here.")
-	writeSkillDir(t, p.RepoSkills(), "clash", "The live copy lives here.")
+	// A name present in more than one source appears once, from the highest
+	// precedence source (repo > canonical). Its existence in the lower
+	// source is doctor drift, not a second row.
+	writeSkillDir(t, p.SkillsStore(), "clash", "canonical description")
+	writeSkillDir(t, p.RepoSkills(), "clash", "repo description")
 	out, _, _ = runLsCapture(t, p, &fakeTrees{}, "--json")
 	if strings.Count(out, `"name": "clash"`) != 1 {
 		t.Errorf("a name in both places must report once:\n%s", out)
+	}
+	var clashReport struct {
+		Skills []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"skills"`
+	}
+	if err := json.Unmarshal([]byte(out), &clashReport); err != nil {
+		t.Fatalf("bad JSON: %v\n%s", err, out)
+	}
+	for _, s := range clashReport.Skills {
+		if s.Name == "clash" && s.Description != "repo description" {
+			t.Errorf("clash description = %q, want repo description (repo > canonical)", s.Description)
+		}
 	}
 }
 
@@ -686,6 +702,185 @@ func TestLsSkipsRepoScanOutsideARepo(t *testing.T) {
 	out := runLs(t, p)
 	if !strings.Contains(out, "my-notes") {
 		t.Errorf("ls outside a repo should still list the store:\n%s", out)
+	}
+}
+
+func TestLsFleetHomeOnlyReportsCustomWithNullOutdated(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	p := paths.New(home)
+	// fleet-home custom, canonical empty, no repo
+	writeSkillDir(t, p.FleetHomeSkills(), "fleet-only", "Fleet-only custom skill.")
+	for _, dir := range []string{p.OpenCodeDir()} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, _, _ := runLsCapture(t, p, &fakeTrees{}, "--json")
+	var report struct {
+		Skills []struct {
+			Name     string `json:"name"`
+			Custom   bool   `json:"custom"`
+			Outdated *bool  `json:"outdated"`
+		} `json:"skills"`
+	}
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("bad JSON: %v\n%s", err, out)
+	}
+	if len(report.Skills) != 1 {
+		t.Fatalf("skills = %d, want 1", len(report.Skills))
+	}
+	if !report.Skills[0].Custom {
+		t.Errorf("fleet-only skill should be custom")
+	}
+	if report.Skills[0].Outdated != nil {
+		t.Errorf("fleet-only outdated = %v, want null", report.Skills[0].Outdated)
+	}
+}
+
+func TestLsShowsCanonicalPlusFleetHomeWhenNoRepoSet(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	p := paths.New(home)
+	writeSkillDir(t, p.SkillsStore(), "canon-one", "Canonical one.")
+	writeSkillDir(t, p.FleetHomeSkills(), "fleet-one", "Fleet one.")
+	if err := os.MkdirAll(p.AgentsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.SkillLock(), []byte(`{"version":3,"skills":{"canon-one":{"source":"a/b","sourceType":"github","skillFolderHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","skillPath":"skills/canon-one/SKILL.md"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{p.OpenCodeDir()} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, _, _ := runLsCapture(t, p, &fakeTrees{}, "--json")
+	var report struct {
+		Skills []struct {
+			Name   string `json:"name"`
+			Custom bool   `json:"custom"`
+		} `json:"skills"`
+	}
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("bad JSON: %v\n%s", err, out)
+	}
+	byName := map[string]bool{}
+	for _, s := range report.Skills {
+		byName[s.Name] = s.Custom
+	}
+	if c, ok := byName["canon-one"]; !ok || c {
+		t.Errorf("canon-one custom = %v, want false (installed)", c)
+	}
+	if c, ok := byName["fleet-one"]; !ok || !c {
+		t.Errorf("fleet-one custom = %v, want true", c)
+	}
+}
+
+func TestLsFleetHomeAndCanonicalCollisionPrefersFleet(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	p := paths.New(home)
+	writeSkillDir(t, p.SkillsStore(), "dup-dir", "Fleet wins.")
+	// Use frontmatter name to force collision on Name "shared"
+	// writeSkillDir uses dir as name, so need custom write with same name
+	// Overwrite fleet with same name but different dir and description
+	// Create canonical with name "shared"
+	writeSkillDir(t, p.SkillsStore(), "canon-shared", "Canonical wins.")
+	// Actually create two skills with same frontmatter name "clash"
+	// Clean previous and recreate properly
+	if err := os.RemoveAll(p.SkillsStore()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(p.FleetHomeSkills()); err != nil {
+		t.Fatal(err)
+	}
+	// Helper to write with explicit frontmatter name
+	writeNamedSkill := func(store, dir, name, desc string) {
+		path := filepath.Join(store, dir, "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		body := "---\nname: " + name + "\ndescription: " + desc + "\n---\n"
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeNamedSkill(p.SkillsStore(), "canon-clash", "clash", "canonical desc")
+	writeNamedSkill(p.FleetHomeSkills(), "fleet-clash", "clash", "fleet desc")
+	for _, dir := range []string{p.OpenCodeDir()} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, _, _ := runLsCapture(t, p, &fakeTrees{}, "--json")
+	var report struct {
+		Skills []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			Custom      bool   `json:"custom"`
+			Outdated    *bool  `json:"outdated"`
+		} `json:"skills"`
+	}
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("bad JSON: %v\n%s", err, out)
+	}
+	if len(report.Skills) != 1 {
+		t.Fatalf("fleet+canonical collision should dedupe to 1, got %d", len(report.Skills))
+	}
+	if report.Skills[0].Description != "fleet desc" {
+		t.Errorf("clash description = %q, want fleet desc (fleet > canonical)", report.Skills[0].Description)
+	}
+	if !report.Skills[0].Custom {
+		t.Errorf("fleet winner should be custom")
+	}
+	if report.Skills[0].Outdated != nil {
+		t.Errorf("fleet custom outdated should be null")
+	}
+}
+
+func TestLsThreeWayCollisionPrefersRepo(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	repo := filepath.Join(t.TempDir(), "repo")
+	p := paths.WithRepo(home, repo)
+	writeNamedSkill := func(store, dir, name, desc string) {
+		path := filepath.Join(store, dir, "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		body := "---\nname: " + name + "\ndescription: " + desc + "\n---\n"
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeNamedSkill(p.SkillsStore(), "canon-clash", "tri", "canonical desc")
+	writeNamedSkill(p.FleetHomeSkills(), "fleet-clash", "tri", "fleet desc")
+	writeNamedSkill(p.RepoSkills(), "repo-clash", "tri", "repo desc")
+	for _, dir := range []string{p.OpenCodeDir()} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, _, _ := runLsCapture(t, p, &fakeTrees{}, "--json")
+	var report struct {
+		Skills []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			Custom      bool   `json:"custom"`
+			Outdated    *bool  `json:"outdated"`
+		} `json:"skills"`
+	}
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("bad JSON: %v\n%s", err, out)
+	}
+	if len(report.Skills) != 1 {
+		t.Fatalf("three-way collision should dedupe to 1, got %d", len(report.Skills))
+	}
+	if report.Skills[0].Description != "repo desc" {
+		t.Errorf("tri description = %q, want repo desc (repo > fleet > canonical)", report.Skills[0].Description)
+	}
+	if !report.Skills[0].Custom {
+		t.Errorf("repo winner should be custom")
+	}
+	if report.Skills[0].Outdated != nil {
+		t.Errorf("repo custom outdated should be null")
 	}
 }
 

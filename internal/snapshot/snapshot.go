@@ -52,37 +52,51 @@ func DefaultTreeClient(p *paths.Paths) outdated.TreeClient {
 	return outdated.NewCachingClient(outdated.NewHTTPClient(""), filepath.Join(p.FleetConfigDir(), "tree-cache.json"))
 }
 
-// Build scans the canonical store and the fleet repo's custom skills,
-// then every installed harness's own config, and classifies each installed
-// skill's update state. Check failures come back as warnings, not errors.
+// Build scans the canonical store, the fleet-home fallback, and the
+// designated skills repo when one is set, then every installed harness's
+// own config, and classifies each installed skill's update state. Check
+// failures come back as warnings, not errors. Display uses skills-repo
+// precedence skillsRepo > fleet-home > canonical: a name present in more
+// than one source appears once, from the highest-precedence source. The
+// other copy is not shown — its existence is doctor drift.
 func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Report, []string, error) {
 	storeSkills, err := scan.ScanStore(p.SkillsStore())
 	if err != nil {
 		return nil, nil, fmt.Errorf("scan canonical store: %w", err)
 	}
-	// Repo customs join the list; custom means lives in the repo. A name
-	// present in both places reports once, from the canonical store — the
-	// double-visibility is drift for doctor to flag, not ls's job.
-	repoNames := map[string]bool{}
-	skills := storeSkills
+	fleetSkills, err := scan.ScanStore(p.FleetHomeSkills())
+	if err != nil {
+		return nil, nil, fmt.Errorf("scan fleet home: %w", err)
+	}
+	var repoSkills []scan.Skill
 	if p.Repo != "" {
-		repoSkills, err := scan.ScanStore(p.RepoSkills())
+		repoSkills, err = scan.ScanStore(p.RepoSkills())
 		if err != nil {
 			return nil, nil, fmt.Errorf("scan repo skills: %w", err)
 		}
-		seen := make(map[string]bool, len(storeSkills))
-		for _, s := range storeSkills {
-			seen[s.Name] = true
-		}
-		for _, s := range repoSkills {
-			if seen[s.Name] {
-				continue
-			}
-			seen[s.Name] = true
-			repoNames[s.Name] = true
-			skills = append(skills, s)
+	}
+
+	// Union with precedence repo > fleet-home > canonical.
+	skillsByName := make(map[string]scan.Skill, len(storeSkills)+len(fleetSkills)+len(repoSkills))
+	customHomeNames := map[string]bool{}
+	for _, s := range storeSkills {
+		if _, ok := skillsByName[s.Name]; !ok {
+			skillsByName[s.Name] = s
 		}
 	}
+	for _, s := range fleetSkills {
+		skillsByName[s.Name] = s
+		customHomeNames[s.Name] = true
+	}
+	for _, s := range repoSkills {
+		skillsByName[s.Name] = s
+		customHomeNames[s.Name] = true
+	}
+	skills := make([]scan.Skill, 0, len(skillsByName))
+	for _, s := range skillsByName {
+		skills = append(skills, s)
+	}
+	sort.Slice(skills, func(i, j int) bool { return skills[i].Dir < skills[j].Dir })
 	lock, err := scan.ReadLockfile(p.SkillLock())
 	if err != nil {
 		return nil, nil, fmt.Errorf("read skills lockfile: %w", err)
@@ -110,13 +124,14 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 
 	// One update check for every skill in the store, grouped inside the
 	// checker: installed skills carry their lockfile provenance, customs
-	// stay the zero entry (unknown by definition, no API call). Repo
-	// customs are skipped entirely — a lingering lock entry from a
+	// stay the zero entry (unknown by definition, no API call). Fleet-home
+	// and repo customs are zero entries — a lingering lock entry from a
 	// pre-adoption install must not make fleet check (or misreport) a
-	// skill that now lives in the repo.
+	// skill that now lives in a custom home.
 	entries := make(map[string]outdated.Entry, len(skills))
 	for _, s := range skills {
-		if repoNames[s.Name] {
+		if customHomeNames[s.Name] {
+			entries[s.Dir] = outdated.Entry{}
 			continue
 		}
 		if prov, ok := lock[s.Dir]; ok {
@@ -150,9 +165,9 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 			States:      states,
 			Outdated:    outdatedPtr(check.Statuses[s.Dir]),
 		}
-		if repoNames[s.Name] {
-			// Custom by definition: it lives in the repo, unversioned by
-			// the skills CLI. A lingering lock entry under the same
+		if customHomeNames[s.Name] {
+			// Custom by definition: it lives in a custom home, unversioned
+			// by the skills CLI. A lingering lock entry under the same
 			// directory name is stale provenance, not provenance.
 			row.Custom = true
 		} else if prov, ok := lock[s.Dir]; ok {
