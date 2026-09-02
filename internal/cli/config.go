@@ -13,11 +13,17 @@ import (
 	"github.com/zzacong/fleet/internal/paths"
 )
 
+const configKeySkillsRepo = "skills-repo"
+
+var allowedConfigKeys = []string{configKeySkillsRepo}
+
 func newConfigCmd(p *paths.Paths) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Manage fleet's machine-local config",
-		Long:  "Manage fleet's machine-local config at ~/.config/fleet/config.json (FLEET_HOME-aware). The file holds the pointer to the versioned skills repo.",
+		Long: "Manage fleet's machine-local config at ~/.config/fleet/config.json (FLEET_HOME-aware). The file holds the pointer to the versioned skills repo.\n\n" +
+			"Available keys:\n" +
+			"  skills-repo   Absolute path to the skills repo root (the directory whose skills/ is the collection). Alias: skillsRepo. Env FLEET_REPO overrides the file; no walk-up to .git.",
 	}
 	cmd.AddCommand(newConfigGetCmd(p))
 	cmd.AddCommand(newConfigSetCmd(p))
@@ -52,9 +58,18 @@ func expandPath(p string) string {
 
 func newConfigGetCmd(p *paths.Paths) *cobra.Command {
 	return &cobra.Command{
-		Use:   "get <key>",
-		Short: "Print a config value",
-		Args:  cobra.ExactArgs(1),
+		Use:       "get <key>",
+		Short:     "Print a config value",
+		Long:      "Print the effective value for a config key (FLEET_REPO env overrides the file). One key today:\n\n  skills-repo   Absolute path to the skills repo root. Alias: skillsRepo.\n\nPrints empty and exits 0 when unset; unknown keys fail.",
+		Example:   "  fleet config get skills-repo",
+		ValidArgs: allowedConfigKeys,
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return allowedConfigKeys, cobra.ShellCompDirectiveNoFileComp
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key := args[0]
 			if normalizeConfigKey(key) == "" {
@@ -72,9 +87,21 @@ func newConfigGetCmd(p *paths.Paths) *cobra.Command {
 
 func newConfigSetCmd(p *paths.Paths) *cobra.Command {
 	return &cobra.Command{
-		Use:   "set <key> <value>",
-		Short: "Set a config value",
-		Args:  cobra.ExactArgs(2),
+		Use:       "set <key> <value>",
+		Short:     "Set a config value",
+		Long:      "Set a config value. One key today:\n\n  skills-repo   Absolute path to the skills repo root (the directory whose skills/ is the collection). ~/ expands to the home directory. Alias: skillsRepo.\n\nValidates the path is absolute and the directory exists; warns when it lacks .git. Writes atomically and preserves unknown fields.",
+		Example:   "  fleet config set skills-repo ~/Developer/fleet\n  fleet config set skills-repo /abs/path/to/repo",
+		ValidArgs: allowedConfigKeys,
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return allowedConfigKeys, cobra.ShellCompDirectiveNoFileComp
+			}
+			if len(args) == 1 {
+				return nil, cobra.ShellCompDirectiveFilterDirs
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
+		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key, val := args[0], args[1]
 			if normalizeConfigKey(key) == "" {
@@ -107,9 +134,18 @@ func newConfigSetCmd(p *paths.Paths) *cobra.Command {
 
 func newConfigUnsetCmd(p *paths.Paths) *cobra.Command {
 	return &cobra.Command{
-		Use:   "unset <key>",
-		Short: "Clear a config value",
-		Args:  cobra.ExactArgs(1),
+		Use:       "unset <key>",
+		Short:     "Clear a config value",
+		Long:      "Clear a config value. One key today:\n\n  skills-repo   Absolute path to the skills repo root. Alias: skillsRepo.\n\nWrites atomically and preserves unknown fields.",
+		Example:   "  fleet config unset skills-repo",
+		ValidArgs: allowedConfigKeys,
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return allowedConfigKeys, cobra.ShellCompDirectiveNoFileComp
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key := args[0]
 			if normalizeConfigKey(key) == "" {
