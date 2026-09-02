@@ -6,9 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/zzacong/fleet/internal/paths"
 )
+
+type testPaths struct{ home string }
+
+func (t testPaths) FleetConfigFile() string {
+	return filepath.Join(t.home, ".config", "fleet", "config.json")
+}
 
 func TestMissingFileIsEmpty(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
@@ -121,7 +125,7 @@ func TestSaveIsAtomic(t *testing.T) {
 
 func TestEffectiveRepoPrecedenceEnvOverFile(t *testing.T) {
 	home := t.TempDir()
-	p := paths.New(home)
+	p := testPaths{home: home}
 	repoFile := filepath.Join(home, "repo-file")
 	repoEnv := filepath.Join(home, "repo-env")
 	for _, r := range []string{repoFile, repoEnv} {

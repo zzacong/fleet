@@ -499,3 +499,66 @@ func TestAdoptCollisionFrontmatterName(t *testing.T) {
 		t.Errorf("expected double-presence via frontmatter, got %v", err)
 	}
 }
+
+func TestAdoptWithRepoSetButSkillInFleetHomeRewiresToFleetHome(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	repo := filepath.Join(t.TempDir(), "repo")
+	p := paths.WithRepo(home, repo)
+	for _, dir := range []string{p.OpenCodeDir(), p.PiDir(), p.CodexDir(), p.ClaudeDir(), p.CursorDir(), p.BobDir()} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Skill only in fleet-home, not in repo or store.
+	writeSkill(t, p.FleetHomeSkills(), "my-notes")
+	if err := os.MkdirAll(p.RepoSkills(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fleetDir := filepath.Join(p.FleetHomeSkills(), "my-notes")
+	repoDir := filepath.Join(p.RepoSkills(), "my-notes")
+
+	rep, err := Adopt(p, "my-notes")
+	if err != nil {
+		t.Fatalf("Adopt() error = %v", err)
+	}
+	if rep.Moved {
+		t.Error("Adopt should not move an already-adopted fleet-home skill")
+	}
+	if rep.To != fleetDir {
+		t.Errorf("rep.To = %q, want fleet-home %q (not repo %q)", rep.To, fleetDir, repoDir)
+	}
+	if rep.Skill != "my-notes" {
+		t.Errorf("rep.Skill = %q, want my-notes", rep.Skill)
+	}
+	// Wiring/linking must point at fleet-home, not the repo.
+	for _, l := range rep.Linked {
+		if l.Target != fleetDir {
+			t.Errorf("linked target = %q, want fleet-home %q", l.Target, fleetDir)
+		}
+		if l.Target == repoDir {
+			t.Errorf("linked target incorrectly points at repo %q", repoDir)
+		}
+	}
+	for _, dir := range []string{p.CodexSkills(), p.ClaudeSkills(), p.CursorSkills(), p.BobSkills()} {
+		got, err := os.Readlink(filepath.Join(dir, "my-notes"))
+		if err != nil {
+			t.Fatalf("readlink %s: %v", filepath.Join(dir, "my-notes"), err)
+		}
+		if got != fleetDir {
+			t.Errorf("link in %s = %q, want fleet-home %q (not repo %q)", dir, got, fleetDir, repoDir)
+		}
+		if got == repoDir {
+			t.Errorf("link in %s incorrectly points at repo", dir)
+		}
+	}
+	// The repo path must not be wired; fleet-home must be.
+	for _, w := range rep.Wired {
+		if !w.Changed {
+			t.Errorf("wired result not changed: %+v", w)
+		}
+	}
+	// Verify the skill was not copied to repo.
+	if _, err := os.Stat(repoDir); !os.IsNotExist(err) {
+		t.Errorf("repo dir %q should not exist after fleet-home adopt, err=%v", repoDir, err)
+	}
+}

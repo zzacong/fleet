@@ -13,8 +13,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/zzacong/fleet/internal/paths"
 )
 
 // File is the parsed config file.
@@ -99,8 +97,10 @@ func (f *File) Unknown() map[string]json.RawMessage {
 }
 
 // EffectiveRepo resolves the skills repo honoring FLEET_REPO env override.
-// Env > file > "".
-func EffectiveRepo(p *paths.Paths) (string, error) {
+// Env > file > "". p is any Paths-like value that can provide the config
+// file location; this avoids a hard import of internal/paths and the
+// resulting import cycle (paths → config → paths).
+func EffectiveRepo(p interface{ FleetConfigFile() string }) (string, error) {
 	if env := os.Getenv("FLEET_REPO"); env != "" {
 		abs, err := filepath.Abs(env)
 		if err != nil {

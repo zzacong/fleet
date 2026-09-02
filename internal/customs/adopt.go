@@ -90,6 +90,7 @@ func Adopt(p *paths.Paths, name string) (*Report, error) {
 	}
 
 	rep := &Report{}
+	var wireTarget string
 	switch {
 	case storeHit != nil:
 		// Move first: the wired paths and links must point at a directory
@@ -97,8 +98,9 @@ func Adopt(p *paths.Paths, name string) (*Report, error) {
 		rep.Skill = storeHit.Dir
 		rep.From = filepath.Join(p.SkillsStore(), storeHit.Dir)
 		rep.To = filepath.Join(target, storeHit.Dir)
+		wireTarget = target
 		rep.Moved = true
-		if err := os.MkdirAll(target, 0o755); err != nil {
+		if err := os.MkdirAll(wireTarget, 0o755); err != nil {
 			return nil, err
 		}
 		if err := moveDir(rep.From, rep.To); err != nil {
@@ -106,19 +108,23 @@ func Adopt(p *paths.Paths, name string) (*Report, error) {
 		}
 	case fleetHit != nil:
 		rep.Skill = fleetHit.Dir
-		rep.To = filepath.Join(target, fleetHit.Dir)
-		if err := os.MkdirAll(target, 0o755); err != nil {
+		actualHome := p.FleetHomeSkills()
+		rep.To = filepath.Join(actualHome, fleetHit.Dir)
+		wireTarget = actualHome
+		if err := os.MkdirAll(wireTarget, 0o755); err != nil {
 			return nil, err
 		}
 	case repoHit != nil:
 		rep.Skill = repoHit.Dir
-		rep.To = filepath.Join(target, repoHit.Dir)
-		if err := os.MkdirAll(target, 0o755); err != nil {
+		actualHome := p.RepoSkills()
+		rep.To = filepath.Join(actualHome, repoHit.Dir)
+		wireTarget = actualHome
+		if err := os.MkdirAll(wireTarget, 0o755); err != nil {
 			return nil, err
 		}
 	}
 
-	wired, err := harness.WireSkillSource(p, target)
+	wired, err := harness.WireSkillSource(p, wireTarget)
 	if err != nil {
 		return nil, err
 	}

@@ -110,7 +110,7 @@ func Analyze(p *paths.Paths) (Report, error) {
 	}
 
 	// Links: what's in each installed harness's skills dir.
-	// Repo skills are needed to filter managed custom links from unknown entries.
+	// Repo and fleet-home skills are needed to filter managed custom links from unknown entries.
 	var repoSkills []scan.Skill
 	if p.RepoSkills() != "" {
 		if rs, err := scan.ScanStore(p.RepoSkills()); err == nil {
@@ -122,6 +122,16 @@ func Analyze(p *paths.Paths) (Report, error) {
 	for _, s := range repoSkills {
 		repoByDir[s.Dir] = s.Name
 		repoByName[s.Name] = true
+	}
+	var fleetSkills []scan.Skill
+	if fs, err := scan.ScanStore(p.FleetHomeSkills()); err == nil {
+		fleetSkills = fs
+	}
+	fleetByDir := map[string]string{}
+	fleetByName := map[string]bool{}
+	for _, s := range fleetSkills {
+		fleetByDir[s.Dir] = s.Name
+		fleetByName[s.Name] = true
 	}
 	for _, d := range harness.SkillDirs(p) {
 		entries, err := harness.ScanSkillDir(d, p.SkillsStore())
@@ -139,7 +149,7 @@ func Analyze(p *paths.Paths) (Report, error) {
 			}
 		}
 		for _, e := range entries {
-			if isManagedRepoLink(e, p, repoByDir, repoByName) {
+			if isManagedCustomLink(e, p, repoByDir, repoByName, fleetByDir, fleetByName) {
 				continue
 			}
 			f, ok := linkFinding(e)
@@ -192,26 +202,34 @@ func linkFinding(e harness.Entry) (Finding, bool) {
 	return f, true
 }
 
-// isManagedRepoLink reports whether the entry is a managed custom-skill
-// link pointing into the fleet repo's skills/ dir. Such links are fleet's
-// own discovery path for adopted skills, not unknown entries.
-func isManagedRepoLink(e harness.Entry, p *paths.Paths, repoByDir map[string]string, repoByName map[string]bool) bool {
+// isManagedCustomLink reports whether the entry is a managed custom-skill
+// link pointing into either custom home (repo or fleet-home). Such links
+// are fleet's own discovery path for adopted skills, not unknown entries.
+func isManagedCustomLink(e harness.Entry, p *paths.Paths, repoByDir map[string]string, repoByName map[string]bool, fleetByDir map[string]string, fleetByName map[string]bool) bool {
 	if e.Class != harness.EntryForeign {
 		return false
 	}
+	if e.Target == "" {
+		return false
+	}
 	repoSkills := p.RepoSkills()
-	if repoSkills == "" || e.Target == "" {
+	fleetSkills := p.FleetHomeSkills()
+	isRepo := repoSkills != "" && (pathInside(e.Target, repoSkills) || e.Target == repoSkills)
+	isFleet := fleetSkills != "" && (pathInside(e.Target, fleetSkills) || e.Target == fleetSkills)
+	if !isRepo && !isFleet {
 		return false
 	}
-	// Target must be inside the repo skills dir (absolute, cleaned).
-	if !pathInside(e.Target, repoSkills) && e.Target != repoSkills {
-		return false
-	}
-	// The link name should match a repo skill (by dir or frontmatter name).
+	// The link name should match a custom skill (by dir or frontmatter name) in either home.
 	if _, ok := repoByDir[e.Name]; ok {
 		return true
 	}
 	if repoByName[e.Name] {
+		return true
+	}
+	if _, ok := fleetByDir[e.Name]; ok {
+		return true
+	}
+	if fleetByName[e.Name] {
 		return true
 	}
 	// Also handle the case where target's leaf matches the link name.
@@ -221,6 +239,20 @@ func isManagedRepoLink(e harness.Entry, p *paths.Paths, repoByDir map[string]str
 		}
 	}
 	return false
+}
+
+// isManagedRepoLink is kept for compatibility; it now also suppresses
+// fleet-home managed links by delegating to isManagedCustomLink.
+func isManagedRepoLink(e harness.Entry, p *paths.Paths, repoByDir map[string]string, repoByName map[string]bool) bool {
+	fleetByDir := map[string]string{}
+	fleetByName := map[string]bool{}
+	if fs, err := scan.ScanStore(p.FleetHomeSkills()); err == nil {
+		for _, s := range fs {
+			fleetByDir[s.Dir] = s.Name
+			fleetByName[s.Name] = true
+		}
+	}
+	return isManagedCustomLink(e, p, repoByDir, repoByName, fleetByDir, fleetByName)
 }
 
 // pathInside reports whether path is inside dir. Local copy to avoid
@@ -473,8 +505,22 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 				name, prefix, joined, strings.Join(paths, ", ")),
 		})
 	}
+	// Stale lock entries for both custom homes (union, deduped by Dir).
+	seen := map[string]bool{}
+	for _, s := range fleetSkills {
+		if _, ok := lock[s.Dir]; ok && !seen[s.Dir] {
+			seen[s.Dir] = true
+			findings = append(findings, Finding{
+				Kind:  KindStaleLock,
+				Skill: s.Name,
+				Message: fmt.Sprintf("%q lives in the fleet home (%s), but the skills lockfile (%s) still carries its install entry — the entry's source and hash describe a skill that moved out of the canonical store, so the skills CLI will keep trying to update it — remove the entry by hand; fleet never writes the lockfile",
+					s.Name, filepath.Join(p.FleetHomeSkills(), s.Dir), p.SkillLock()),
+			})
+		}
+	}
 	for _, s := range repoSkills {
-		if _, ok := lock[s.Dir]; ok {
+		if _, ok := lock[s.Dir]; ok && !seen[s.Dir] {
+			seen[s.Dir] = true
 			findings = append(findings, Finding{
 				Kind:  KindStaleLock,
 				Skill: s.Name,

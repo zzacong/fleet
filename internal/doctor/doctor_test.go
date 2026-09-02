@@ -89,6 +89,19 @@ func repoSkill(t *testing.T, p *paths.Paths, name string) {
 	}
 }
 
+// fleetSkill writes a skill into the fleet-home skills dir.
+func fleetSkill(t *testing.T, p *paths.Paths, name string) {
+	t.Helper()
+	dir := filepath.Join(p.FleetHomeSkills(), name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	md := "---\nname: " + name + "\ndescription: test skill " + name + "\n---\n\nbody\n"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(md), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // writeLock writes a skills CLI lockfile with the given provenance
 // entries, keyed by directory name.
 func writeLock(t *testing.T, p *paths.Paths, lock map[string]scan.Provenance) {
@@ -652,6 +665,114 @@ func TestResolveRefusesHarnessesWithoutALever(t *testing.T) {
 	c := Conflict{Harness: "cursor", Skill: "tdd", ConfigDisables: true}
 	if _, err := Resolve(p, c, false); err == nil {
 		t.Fatal("Resolve(restore) succeeded for cursor, want error")
+	}
+}
+
+func TestAnalyzeFlagsStaleLockEntryForFleetHomeSkill(t *testing.T) {
+	p := fakeHome(t)
+	fakeRepo(t, p)
+	storeSkill(t, p, "tdd")
+	fleetSkill(t, p, "fleet-helper")
+	writeLock(t, p, map[string]scan.Provenance{
+		"fleet-helper": {Source: "mattpocock/skills", SourceType: "github", Hash: "abc123"},
+	})
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if len(rep.Findings) != 1 {
+		t.Fatalf("findings = %+v, want exactly the fleet stale lock finding", rep.Findings)
+	}
+	f := rep.Findings[0]
+	if f.Kind != KindStaleLock || f.Skill != "fleet-helper" || f.Harness != "" {
+		t.Errorf("finding = %+v, want the stale lock for fleet-helper", f)
+	}
+	if !strings.Contains(f.Message, p.SkillLock()) || !strings.Contains(f.Message, filepath.Join(p.FleetHomeSkills(), "fleet-helper")) {
+		t.Errorf("message must name the lockfile and the fleet-home copy: %q", f.Message)
+	}
+	if !strings.Contains(f.Message, "skills CLI") || !strings.Contains(f.Message, "never writes the lockfile") {
+		t.Errorf("message must state the consequence and that fleet never edits the lockfile: %q", f.Message)
+	}
+}
+
+func TestAnalyzeFlagsStaleLockForBothCustomHomes(t *testing.T) {
+	p := fakeHome(t)
+	fakeRepo(t, p)
+	storeSkill(t, p, "tdd")
+	fleetSkill(t, p, "fleet-helper")
+	repoSkill(t, p, "repo-helper")
+	writeLock(t, p, map[string]scan.Provenance{
+		"fleet-helper": {Source: "a/b", SourceType: "github", Hash: "aaa"},
+		"repo-helper":  {Source: "a/b", SourceType: "github", Hash: "bbb"},
+	})
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	// Two stale-lock findings, one per custom home, sorted by skill.
+	if len(rep.Findings) != 2 {
+		t.Fatalf("findings = %+v, want two stale lock findings", rep.Findings)
+	}
+	found := map[string]bool{}
+	for _, f := range rep.Findings {
+		if f.Kind != KindStaleLock {
+			t.Errorf("finding kind = %s, want stale-lock", f.Kind)
+		}
+		found[f.Skill] = true
+		if f.Harness != "" {
+			t.Errorf("stale lock should have no harness, got %q", f.Harness)
+		}
+	}
+	if !found["fleet-helper"] || !found["repo-helper"] {
+		t.Errorf("findings missing expected skills, got %+v", rep.Findings)
+	}
+}
+
+func TestAnalyzeSuppressesManagedFleetHomeLinks(t *testing.T) {
+	p := fakeHome(t, "claude", "codex", "cursor", "bob")
+	storeSkill(t, p, "tdd")
+	fleetSkill(t, p, "fleet-helper")
+	// Managed links into fleet-home must not be reported as unknown.
+	for _, dir := range []string{p.ClaudeSkills(), p.CodexSkills(), p.CursorSkills(), p.BobSkills()} {
+		symlink(t, filepath.Join(p.FleetHomeSkills(), "fleet-helper"), filepath.Join(dir, "fleet-helper"))
+	}
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	for _, f := range rep.Findings {
+		if f.Kind == KindUnknownEntry && f.Skill == "fleet-helper" {
+			t.Errorf("managed fleet-home link reported as unknown: %+v", f)
+		}
+	}
+	// Also ensure no redundant/broken for these managed links.
+	for _, f := range rep.Findings {
+		if f.Skill == "fleet-helper" {
+			t.Errorf("managed fleet link should be suppressed, got finding %+v", f)
+		}
+	}
+}
+
+func TestAnalyzeSuppressesManagedRepoLinksStill(t *testing.T) {
+	p := fakeHome(t, "claude", "codex", "cursor", "bob")
+	fakeRepo(t, p)
+	storeSkill(t, p, "tdd")
+	repoSkill(t, p, "repo-helper")
+	for _, dir := range []string{p.ClaudeSkills(), p.CodexSkills(), p.CursorSkills(), p.BobSkills()} {
+		symlink(t, filepath.Join(p.RepoSkills(), "repo-helper"), filepath.Join(dir, "repo-helper"))
+	}
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	for _, f := range rep.Findings {
+		if f.Skill == "repo-helper" {
+			t.Errorf("managed repo link should be suppressed, got %+v", f)
+		}
 	}
 }
 

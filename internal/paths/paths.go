@@ -6,10 +6,10 @@
 package paths
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/zzacong/fleet/internal/config"
 )
 
 // Paths holds the home root every fleet path derives from.
@@ -68,28 +68,11 @@ func FromEnv() (*Paths, error) {
 }
 
 func loadSkillsRepo(path string) (string, error) {
-	body, err := os.ReadFile(path)
+	f, err := config.Load(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", nil
-		}
 		return "", err
 	}
-	if len(strings.TrimSpace(string(body))) == 0 {
-		return "", nil
-	}
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return "", err
-	}
-	if repoRaw, ok := raw["skillsRepo"]; ok {
-		var repo string
-		if err := json.Unmarshal(repoRaw, &repo); err != nil {
-			return "", err
-		}
-		return repo, nil
-	}
-	return "", nil
+	return f.SkillsRepo(), nil
 }
 
 // DiscoverRepo walks up from startDir to the filesystem root and returns
