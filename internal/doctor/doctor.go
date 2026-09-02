@@ -368,25 +368,30 @@ func analyzeConfigs(p *paths.Paths) ([]Conflict, []Finding, error) {
 	return conflicts, findings, nil
 }
 
-// analyzeRepoSkills cross-checks the fleet repo's skills/ dir against the
-// canonical store and the skills CLI lockfile. A name present in both
-// places is double visibility — opencode and pi read the store and the
-// wired repo path, so they would see the skill twice. A lock entry for a
-// repo skill is stale provenance from before its adoption: the skills CLI
-// keys updates by it and would keep touching a skill that moved. Both
-// need the user's hands; fleet never deletes a copy or edits the lockfile.
-// Without a repo there are no customs and nothing to check.
+// analyzeRepoSkills cross-checks the three skill homes — the canonical store
+// (~/.agents/skills), the fleet-home fallback (~/.config/fleet/skills),
+// and the skills repo (when set) — plus the skills CLI lockfile. A name
+// present in more than one home is double visibility — opencode and pi
+// read the canonical store and the wired custom homes, so they would see
+// the skill twice. A lock entry for a repo skill is stale provenance from
+// before its adoption: the skills CLI keys updates by it and would keep
+// touching a skill that moved. Both need the user's hands; fleet never
+// deletes a copy or edits the lockfile.
 func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
-	if p.RepoSkills() == "" {
-		return nil, nil
-	}
 	storeSkills, err := scan.ScanStore(p.SkillsStore())
 	if err != nil {
 		return nil, fmt.Errorf("scan canonical store: %w", err)
 	}
-	repoSkills, err := scan.ScanStore(p.RepoSkills())
+	fleetSkills, err := scan.ScanStore(p.FleetHomeSkills())
 	if err != nil {
-		return nil, fmt.Errorf("scan repo skills: %w", err)
+		return nil, fmt.Errorf("scan fleet home: %w", err)
+	}
+	var repoSkills []scan.Skill
+	if p.RepoSkills() != "" {
+		repoSkills, err = scan.ScanStore(p.RepoSkills())
+		if err != nil {
+			return nil, fmt.Errorf("scan repo skills: %w", err)
+		}
 	}
 	lock, err := scan.ReadLockfile(p.SkillLock())
 	if err != nil {
@@ -395,22 +400,78 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 
 	// Names are the identity the harnesses see (ls dedupes on them too),
 	// so a double presence is a name match, wherever each copy's
-	// directory sits.
-	storeDirs := make(map[string]string, len(storeSkills))
+	// directory sits. Track every home a name appears in so any pair or
+	// triple is flagged as one finding grouped by name.
+	type homePresence struct {
+		label string
+		path  string
+	}
+	byName := map[string]map[string]homePresence{}
+	add := func(name, dir, storePath, label string) {
+		if _, ok := byName[name]; !ok {
+			byName[name] = map[string]homePresence{}
+		}
+		if _, exists := byName[name][label]; !exists {
+			byName[name][label] = homePresence{label: label, path: filepath.Join(storePath, dir)}
+		}
+	}
 	for _, s := range storeSkills {
-		storeDirs[s.Name] = s.Dir
+		add(s.Name, s.Dir, p.SkillsStore(), "canonical")
+	}
+	for _, s := range fleetSkills {
+		add(s.Name, s.Dir, p.FleetHomeSkills(), "fleet-home")
+	}
+	for _, s := range repoSkills {
+		add(s.Name, s.Dir, p.RepoSkills(), "repo")
 	}
 
-	var findings []Finding
-	for _, s := range repoSkills {
-		if dir, ok := storeDirs[s.Name]; ok {
-			findings = append(findings, Finding{
-				Kind:  KindDoublePresence,
-				Skill: s.Name,
-				Message: fmt.Sprintf("%q exists in both the canonical store (%s) and the repo skills dir (%s) — opencode and pi would see it twice, and one copy's rules may shadow the other — remove one of the copies by hand",
-					s.Name, filepath.Join(p.SkillsStore(), dir), filepath.Join(p.RepoSkills(), s.Dir)),
-			})
+	// Deterministic order: sorted names, homes in canonical → fleet-home → repo.
+	orderedLabels := []string{"canonical", "fleet-home", "repo"}
+	labelDesc := map[string]func(string) string{
+		"canonical":  func(path string) string { return fmt.Sprintf("the canonical store (%s)", path) },
+		"fleet-home": func(path string) string { return fmt.Sprintf("the fleet home (%s)", path) },
+		"repo":       func(path string) string { return fmt.Sprintf("the repo skills dir (%s)", path) },
+	}
+
+	var names []string
+	for name, homes := range byName {
+		if len(homes) > 1 {
+			names = append(names, name)
 		}
+	}
+	sort.Strings(names)
+
+	var findings []Finding
+	for _, name := range names {
+		homes := byName[name]
+		var parts []string
+		var paths []string
+		for _, lbl := range orderedLabels {
+			if hp, ok := homes[lbl]; ok {
+				parts = append(parts, labelDesc[lbl](hp.path))
+				paths = append(paths, hp.path)
+			}
+		}
+		// Keep message stable for two-way and three-way cases while
+		// guaranteeing it mentions every conflicting path and the manual
+		// resolution the ticket requires. Two-way keeps the historical
+		// "both" phrasing so existing CLI contract tests stay green.
+		joined := strings.Join(parts, " and ")
+		if len(parts) > 2 {
+			joined = strings.Join(parts[:len(parts)-1], ", ") + ", and " + parts[len(parts)-1]
+		}
+		prefix := "exists in "
+		if len(parts) == 2 {
+			prefix = "exists in both "
+		}
+		findings = append(findings, Finding{
+			Kind:  KindDoublePresence,
+			Skill: name,
+			Message: fmt.Sprintf("%q %s%s — opencode and pi would see it twice, and one copy's rules may shadow the other — resolve by hand (remove one of the copies: %s)",
+				name, prefix, joined, strings.Join(paths, ", ")),
+		})
+	}
+	for _, s := range repoSkills {
 		if _, ok := lock[s.Dir]; ok {
 			findings = append(findings, Finding{
 				Kind:  KindStaleLock,
@@ -420,6 +481,12 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 			})
 		}
 	}
+	sort.Slice(findings, func(i, j int) bool {
+		if findings[i].Kind != findings[j].Kind {
+			return findings[i].Kind < findings[j].Kind
+		}
+		return findings[i].Skill < findings[j].Skill
+	})
 	return findings, nil
 }
 
