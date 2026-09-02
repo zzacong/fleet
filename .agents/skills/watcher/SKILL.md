@@ -34,7 +34,7 @@ watched (full harness dirs are not).
 
 | Label | Path | Kind |
 |---|---|---|
-| `fleet-config` | `~/.config/fleet` | dir |
+| `fleet-config` | `~/.config/fleet` | dir — covers `state.json`, `config.json`, `tree-cache.json` and `skills/` (fleet-home customs) via dir walk |
 | `agents-store` | `~/.agents` | dir (canonical store) |
 | `opencode-config` | `~/.config/opencode/opencode.jsonc` | file |
 | `opencode-skills` | `~/.config/opencode/skills` | dir |
@@ -47,7 +47,7 @@ watched (full harness dirs are not).
 | `cursor-skills` | `~/.cursor/skills` | dir |
 | `bob-skills` | `~/.bob/skills` | dir |
 | `bob-settings` | `~/.bob/settings.json` | file |
-| `repo-skills` | `<repo>/skills` | dir |
+| `repo-skills` | `<repo>/skills` | dir — designated skills repo's `skills/` when `skillsRepo` is set (checkout's `skills/` for dogfooding before monorepo move) |
 
 ## Protocol
 
