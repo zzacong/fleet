@@ -1,8 +1,9 @@
 // The on/off commands: record the toggle in the state file, then let sync
 // project it into each harness's native config. The write sequence itself
 // lives in internal/toggle — the TUI's staged apply runs the same code.
-// The command reports its own outcome: one headline line naming the
-// harnesses the recorded state now holds, then sync's leftover findings
+// The command reports its own outcome: one `skill: <harness>: enabled/disabled`
+// line per harness that now holds the recorded state, then sync's leftover
+// findings
 // (real repairs, and flags that kept the toggle from landing). Ambient
 // findings about other skills are sync's and doctor's business; the
 // toggle stays quiet about them. Cursor and Bob have no write side —
@@ -94,12 +95,13 @@ func newSkillToggleCmd(p *paths.Paths, on bool) *cobra.Command {
 				return err
 			}
 
+			palNoOp := newPalette(stdoutIsTTY())
 			for _, a := range nowrite {
 				verb := "disable"
 				if on {
 					verb = "enable"
 				}
-				if _, err := fmt.Fprintf(out, "%s: no per-skill disable mechanism — %s %q is a no-op\n", a.Harness(), verb, name); err != nil {
+				if _, err := fmt.Fprintf(out, "%s%s: %s\n", palNoOp.dim("skill: "), palNoOp.info(string(a.Harness())), palNoOp.dim(fmt.Sprintf("no per-skill disable mechanism — %s %q is a no-op", verb, name))); err != nil {
 					return err
 				}
 			}
@@ -167,12 +169,12 @@ func requireStoredSkill(p *paths.Paths, name string) error {
 	return fmt.Errorf("skill %q not found in %s", name, p.SkillsStore())
 }
 
-// printToggleOutcome writes the command's headline: one line naming every
-// targeted harness whose config now holds the recorded state —
-// `disabled "tdd" for opencode, pi`. A harness flagged in the reports
-// stays out of the list; its flag line below explains what fleet couldn't
-// change. When nothing moved the line says so: `"tdd" is already enabled
-// for opencode, pi`.
+// printToggleOutcome writes the command's headline: one line per harness
+// whose config now holds the recorded state — `skill: opencode: disabled
+// "tdd"`. A harness flagged in the reports stays out of the list; its
+// flag line below explains what fleet couldn't change. When nothing moved
+// the line says so: `skill: opencode: "tdd" is already enabled` (already
+// dim, verb green).
 func printToggleOutcome(out io.Writer, name string, on bool, targets []string, projected []toggle.Projected, reports []fleetsync.Report) error {
 	if len(targets) == 0 {
 		return nil
@@ -193,11 +195,19 @@ func printToggleOutcome(out io.Writer, name string, on bool, targets []string, p
 	}
 	pal := newPalette(stdoutIsTTY())
 	if toggledFlips(name, targets, projected, reports) {
-		_, err := fmt.Fprintf(out, "%s %q for %s\n", pal.good(verb), name, strings.Join(reached, ", "))
-		return err
+		for _, h := range reached {
+			if _, err := fmt.Fprintf(out, "%s%s: %s %q\n", pal.dim("skill: "), pal.info(h), pal.good(verb), name); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
-	_, err := fmt.Fprintf(out, "%q is %s for %s\n", name, pal.good("already "+verb), strings.Join(reached, ", "))
-	return err
+	for _, h := range reached {
+		if _, err := fmt.Fprintf(out, "%s%s: %q is %s %s\n", pal.dim("skill: "), pal.info(h), name, pal.dim("already"), pal.good(verb)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // toggledFlagHarnesses collects the targeted harnesses whose reports flag

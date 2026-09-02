@@ -89,9 +89,12 @@ func TestOffRecordsStateAndWritesEachHarnessNativeOff(t *testing.T) {
 	// The report leads with the outcome line, and Cursor/Bob get the
 	// no-op message.
 	for _, want := range []string{
-		`disabled "tdd" for opencode, pi, codex, claude`,
-		`cursor: no per-skill disable mechanism — disable "tdd" is a no-op`,
-		`bob: no per-skill disable mechanism — disable "tdd" is a no-op`,
+		`skill: opencode: disabled "tdd"`,
+		`skill: pi: disabled "tdd"`,
+		`skill: codex: disabled "tdd"`,
+		`skill: claude: disabled "tdd"`,
+		`skill: cursor: no per-skill disable mechanism — disable "tdd" is a no-op`,
+		`skill: bob: no per-skill disable mechanism — disable "tdd" is a no-op`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
@@ -123,10 +126,10 @@ func TestOffWithHarnessFlagTouchesOnlyThatHarness(t *testing.T) {
 	if body := readFile(t, p.PiSettings()); !strings.Contains(body, "-skills/tdd/SKILL.md") {
 		t.Errorf("pi settings:\n%s", body)
 	}
-	if !strings.Contains(out, `disabled "tdd" for pi`) {
+	if !strings.Contains(out, `skill: pi: disabled "tdd"`) {
 		t.Errorf("output missing the pi outcome:\n%s", out)
 	}
-	if strings.Contains(out, "opencode: disabled") {
+	if strings.Contains(out, "skill: opencode: disabled") {
 		t.Errorf("output reports untargeted harnesses:\n%s", out)
 	}
 }
@@ -153,8 +156,15 @@ func TestOnRemovesStateAndStripsFleetMarkers(t *testing.T) {
 			t.Errorf("%s still mentions tdd after enabling:\n%s", filepath.Base(path), body)
 		}
 	}
-	if !strings.Contains(out, `enabled "tdd" for opencode, pi, codex, claude`) {
-		t.Errorf("output missing the enable outcome:\n%s", out)
+	for _, want := range []string{
+		`skill: opencode: enabled "tdd"`,
+		`skill: pi: enabled "tdd"`,
+		`skill: codex: enabled "tdd"`,
+		`skill: claude: enabled "tdd"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
 	}
 }
 
@@ -206,10 +216,17 @@ func TestOnForSkillNeverToggledIsQuietlyFine(t *testing.T) {
 			t.Errorf("state: tdd/%s disabled after on", h)
 		}
 	}
-	if !strings.Contains(out, `"tdd" is already enabled for opencode, pi, codex, claude`) {
-		t.Errorf("output missing the already-enabled outcome:\n%s", out)
+	for _, want := range []string{
+		`skill: opencode: "tdd" is already enabled`,
+		`skill: pi: "tdd" is already enabled`,
+		`skill: codex: "tdd" is already enabled`,
+		`skill: claude: "tdd" is already enabled`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
 	}
-	if strings.Contains(out, `enabled "tdd" for`) {
+	if strings.Contains(out, `skill: opencode: enabled "tdd"`) {
 		t.Errorf("output claims a change that did not happen:\n%s", out)
 	}
 }
@@ -228,8 +245,15 @@ func TestAmbientFlagsAboutOtherSkillsStayOutOfToggleOutput(t *testing.T) {
 
 	out, _ := runToggle(t, p, "off", "tdd")
 
-	if !strings.Contains(out, `disabled "tdd" for opencode, pi, codex, claude`) {
-		t.Errorf("output missing the outcome line:\n%s", out)
+	for _, want := range []string{
+		`skill: opencode: disabled "tdd"`,
+		`skill: pi: disabled "tdd"`,
+		`skill: codex: disabled "tdd"`,
+		`skill: claude: disabled "tdd"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
 	}
 	if strings.Contains(out, "manual-skill") || strings.Contains(out, "left alone") {
 		t.Errorf("ambient flags leaked into the toggle report:\n%s", out)

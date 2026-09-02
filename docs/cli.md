@@ -111,12 +111,14 @@ Disables a skill: records the toggle in the state file, then sync projects it in
 
 ```sh
 $ fleet skill off tdd
-disabled "tdd" for opencode, pi, codex
-cursor: no per-skill disable mechanism — disable "tdd" is a no-op
-bob: no per-skill disable mechanism — disable "tdd" is a no-op
+skill: opencode: disabled "tdd"
+skill: pi: disabled "tdd"
+skill: codex: disabled "tdd"
+skill: cursor: no per-skill disable mechanism — disable "tdd" is a no-op
+skill: bob: no per-skill disable mechanism — disable "tdd" is a no-op
 ```
 
-- The first line is the outcome: every harness the state file now records the disable for. On a terminal the verb is green; it is the one line to read.
+- The outcome is one line per harness (`skill: opencode: disabled "tdd"`). On a terminal the `skill:` prefix is dim, the harness cyan, the verb green.
 - Without `--harness`, every installed harness is targeted. `--harness` is repeatable and takes a harness ID: `opencode`, `pi`, `codex`, `claude`, `cursor`, `bob`.
 - Cursor and Bob have no per-skill disable mechanism. Toggling for them prints the no-op line and records nothing.
 - A harness where something else overrode the write (a foreign config entry that keeps the skill enabled) is left out of the outcome list; its flag line prints instead — `sync: codex/tdd: a skills.config entry fleet doesn't manage overrides fleet's disable — left alone`.
@@ -128,7 +130,7 @@ bob: no per-skill disable mechanism — disable "tdd" is a no-op
   Error: skill "typo-skill" not found in ~/.agents/skills
   ```
 
-- The command is idempotent: disabling an already-disabled skill changes nothing, and the outcome line says so — `"tdd" is already disabled for opencode, pi, codex`.
+- The command is idempotent: disabling an already-disabled skill changes nothing, and the outcome says so — `skill: opencode: "tdd" is already disabled` (one line per harness, `already` dim, verb green).
 
 ## fleet skill on
 
@@ -140,10 +142,10 @@ Re-enables a skill by removing fleet's disable entries. Same targeting rules as 
 
 ```sh
 $ fleet skill on tdd --harness codex
-enabled "tdd" for codex
+skill: codex: enabled "tdd"
 ```
 
-- The outcome line works the same way as `off`: it names the harnesses the skill is now enabled for, and reads `"tdd" is already enabled for codex` when nothing had to change. A harness where a foreign rule still disables the skill stays out of the list; its flag line explains (`sync: pi/tdd: still excluded by a !glob entry — left alone`).
+- The outcome is one line per harness (`skill: codex: enabled "tdd"`), and reads `skill: codex: "tdd" is already enabled` (`already` dim, verb green) when nothing had to change. A harness where a foreign rule still disables the skill stays out of the list; its flag line explains (`sync: pi/tdd: still excluded by a !glob entry — left alone`).
 
 `on` is deliberately more lenient than `off`: it also cleans up entries for skills that were uninstalled while disabled, so stale state disappears instead of accumulating.
 
@@ -262,11 +264,11 @@ On success it reports from fleet's own post-run state — `skills update -g -y` 
 $ fleet skill update
 sync: opencode: removed redundant link "tdd" — opencode scans the canonical store natively
 1 skill in ~/.agents/skills (1 installed, 0 custom)
-no skills updated
-verified disabled: "tdd" for opencode, pi, claude
+update: no skills updated
+update: verified disabled: "tdd" for opencode, pi, claude
 ```
 
-The census line (`1 skill in …`) is dim context; the headline is the green outcome — `no skills updated` when nothing changed, otherwise `updated 2 skills: tdd, foo`. The `verified disabled:` line re-reads each harness's config after sync and confirms the recorded disables still hold. If one didn't survive the update, the line reads `verified: "<skill>" for <harness> did not stay disabled` instead. Like `skill on`/`off`'s green `enabled`/`disabled`, the verb carries the weight so a no-op is not mistaken for silence after `sync:` noise.
+The census line (`1 skill in …`) is dim context; the headline is the green outcome — `update: no skills updated` when nothing changed, otherwise `update: updated 2 skills: tdd, foo` (`update:` dim, verb green). The `update: verified disabled:` line re-reads each harness's config after sync and confirms the recorded disables still hold (harness list cyan). If one didn't survive the update, the line reads `update: verified: "<skill>" for <harness> did not stay disabled` instead (`verified:` red). Like `skill: opencode: enabled` the verb carries the weight so a no-op is not mistaken for silence after `sync:` noise.
 
 On failure the skills CLI's captured output is shown raw and the command stops — a half-finished update is yours to resolve before anything else runs:
 

@@ -137,16 +137,16 @@ func printUpdateDiff(out io.Writer, beforeLock map[string]scan.Provenance, befor
 	if len(updated) == 0 {
 		// Outcome: matches on/off's "already enabled" weight — verb in green
 		// so a no-op update is not mistaken for silent noise after sync lines.
-		_, err := fmt.Fprintln(out, pal.good("no skills updated"))
+		_, err := fmt.Fprintln(out, pal.dim("update: ")+pal.good("no skills updated"))
 		return err
 	}
 	// Name the updated skills when the set is small; otherwise just count.
 	// Verb green like "enabled"/"disabled" on/off headline.
 	if len(updated) <= 8 {
-		_, err := fmt.Fprintf(out, "%s %d skill%s: %s\n", pal.good("updated"), len(updated), plural(len(updated)), strings.Join(updated, ", "))
+		_, err := fmt.Fprintf(out, "%s%s %d skill%s: %s\n", pal.dim("update: "), pal.good("updated"), len(updated), plural(len(updated)), strings.Join(updated, ", "))
 		return err
 	}
-	_, err := fmt.Fprintf(out, "%s %d skills\n", pal.good("updated"), len(updated))
+	_, err := fmt.Fprintf(out, "%s%s %d skills\n", pal.dim("update: "), pal.good("updated"), len(updated))
 	return err
 }
 
@@ -211,7 +211,7 @@ func verifyDisables(out io.Writer, p *paths.Paths, skills []scan.Skill) error {
 			case harness.StateOff, harness.StateAbsent:
 				holds[name] = append(holds[name], h)
 			default:
-				if _, err := fmt.Fprintf(out, "%s: %q for %s did not stay disabled\n", pal.broken("verified"), name, h); err != nil {
+				if _, err := fmt.Fprintf(out, "%s%s %q for %s did not stay disabled\n", pal.dim("update: "), pal.broken("verified:"), name, pal.info(h)); err != nil {
 					return err
 				}
 			}
@@ -219,7 +219,7 @@ func verifyDisables(out io.Writer, p *paths.Paths, skills []scan.Skill) error {
 	}
 
 	for _, name := range sortedStrings(holds) {
-		if _, err := fmt.Fprintf(out, "%s %q for %s\n", pal.good("verified disabled:"), name, strings.Join(holds[name], ", ")); err != nil {
+		if _, err := fmt.Fprintf(out, "%s%s %q for %s\n", pal.dim("update: "), pal.good("verified disabled:"), name, pal.info(strings.Join(holds[name], ", "))); err != nil {
 			return err
 		}
 	}
