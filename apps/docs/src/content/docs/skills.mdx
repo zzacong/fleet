@@ -1,0 +1,19 @@
+---
+title: Skills Catalog
+description: Versioned skills collection — what skills.sh publishes.
+---
+
+import SkillsCatalog from "../../components/SkillsCatalog.astro";
+
+The `skills/` directory at the repo root is the versioned collection — what [skills.sh](https://skills.sh) publishes. Each immediate child directory containing a `SKILL.md` is a custom skill. Fleet code alongside it is ignored.
+
+<SkillsCatalog />
+
+## Collection contract
+
+- Each skill lives at `skills/<name>/SKILL.md` with frontmatter `name` (falls back to directory name) and `description`.
+- Fleet discovers customs from `~/.config/fleet/skills` (fleet home, always) and `<skillsRepo>/skills` (when a repo is set via `fleet config set skills-repo`), plus the canonical store `~/.agents/skills`. Precedence is `skillsRepo > fleet-home > canonical`.
+- `fleet skill ls` shows the union; `fleet skill adopt <name>` moves a skill from the canonical store into the resolved home.
+
+This page reads `skills/*/SKILL.md` frontmatter at build time (via `SkillsCatalog.astro` using `fs` and `import.meta.glob` equivalent) and lists the collection.
+

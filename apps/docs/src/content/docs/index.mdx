@@ -1,0 +1,44 @@
+---
+title: Fleet
+description: Manage agent skills across AI coding agents.
+template: splash
+hero:
+  tagline: Manage agent skills across opencode, pi, codex, claude code, Cursor and Bob — one state file, six harnesses.
+  actions:
+    - text: Command Reference
+      link: /cli/
+      icon: right-arrow
+    - text: Per-Harness Reference
+      link: /harnesses/
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## What Fleet does
+
+Fleet keeps a single state file as the source of truth and projects it into each harness's own config. Skills never move, the canonical store (`~/.agents/skills`) is never edited, and the `skills` CLI stays the install and update backend.
+
+<CardGrid stagger>
+  <Card title="Turn off per harness" icon="setting">
+    `fleet skill off tdd --harness pi` disables one skill in one harness — `fleet skill on` restores it.
+  </Card>
+  <Card title="Interactive matrix" icon="laptop">
+    Bare `fleet` opens the skill × harness matrix: toggle, stage, and apply together.
+  </Card>
+  <Card title="Custom skills" icon="puzzle">
+    `fleet skill adopt` moves a custom skill into your skills collection and wires it for every harness.
+  </Card>
+  <Card title="Doctor & Sync" icon="magnifier">
+    `fleet skill doctor` previews drift; `fleet skill sync` converges configs with the state file.
+  </Card>
+</CardGrid>
+
+## Documentation
+
+- [Command Reference](/cli/) — every verb, flag and error with examples
+- [Per-Harness Reference](/harnesses/) — files touched, written shapes, limitations
+- [State File Schema](/state-file/) — versioned, forward-compatible format
+- [Undo & Escape Hatches](/undo/) — running `skills` by hand, resetting state, how sync decides
+- [Skills Catalog](/skills/) — versioned collection in `skills/` at the repo root

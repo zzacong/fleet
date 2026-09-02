@@ -35,6 +35,9 @@ jobs:
       - name: fmt, vet, test, lint, build
         run: make check
 
+      - name: Build docs (Starlight)
+        run: pnpm -F docs build
+
       # fmt rewrites in place; a dirty tree means something was unformatted.
       - name: Fail on unformatted files
         run: git diff --exit-code

@@ -1,0 +1,85 @@
+---
+import fs from "node:fs";
+import path from "node:path";
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+function parseFrontmatter(text: string): Record<string, string> {
+  const m = text.match(/^---\s*\n([\s\S]*?)\n---\s*\n/);
+  if (!m) return {};
+  const yaml = m[1];
+  const out: Record<string, string> = {};
+  for (const line of yaml.split("\n")) {
+    const idx = line.indexOf(":");
+    if (idx === -1) continue;
+    const k = line.slice(0, idx).trim();
+    let v = line.slice(idx + 1).trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+      v = v.slice(1, -1);
+    }
+    out[k] = v;
+  }
+  return out;
+}
+
+function getSkillsDir(): string | null {
+  const candidates = [
+    path.resolve(process.cwd(), "../../skills"),
+    path.resolve(process.cwd(), "skills"),
+    path.resolve(process.cwd(), "../skills"),
+    path.resolve(process.cwd(), "../../..", "skills"),
+  ];
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(c) && fs.statSync(c).isDirectory()) return c;
+    } catch {}
+  }
+  return null;
+}
+
+const skillsDir = getSkillsDir();
+let skills: Array<{ dir: string; name: string; description: string }> = [];
+
+if (skillsDir) {
+  try {
+    const entries = fs
+      .readdirSync(skillsDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .sort();
+    for (const dir of entries) {
+      const skillMd = path.join(skillsDir, dir, "SKILL.md");
+      if (!fs.existsSync(skillMd)) continue;
+      try {
+        const raw = fs.readFileSync(skillMd, "utf8");
+        const fm = parseFrontmatter(raw);
+        skills.push({
+          dir,
+          name: fm.name || dir,
+          description: fm.description || "",
+        });
+      } catch {}
+    }
+  } catch {}
+}
+---
+
+{
+  skills.length > 0 ? (
+    <CardGrid>
+      {skills.map((s) => (
+        <Card title={s.name} icon="puzzle">
+          <p>{s.description || "No description."}</p>
+          <p>
+            <code>skills/{s.dir}/SKILL.md</code>
+          </p>
+        </Card>
+      ))}
+    </CardGrid>
+  ) : (
+    <Card title="No skills yet" icon="open-book">
+      No skills are shipped yet. Add a directory <code>skills/&lt;name&gt;/SKILL.md</code>{" "}
+      with frontmatter <code>name</code> and <code>description</code> and it will appear here on
+      the next build. See <code>CONTEXT.md</code> and ADR 0001 for the skills collection contract.
+    </Card>
+  )
+}
