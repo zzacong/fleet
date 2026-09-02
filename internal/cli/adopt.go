@@ -36,21 +36,30 @@ func newSkillAdoptCmd(p *paths.Paths) *cobra.Command {
 
 			pal := newPalette(stdoutIsTTY())
 			if rep.Moved {
-				if _, err := fmt.Fprintf(out, "%s %q\n", pal.good("adopted"), rep.Skill); err != nil {
+				if _, err := fmt.Fprintln(out, fmt.Sprintf("%s%s %q", pal.dim("adopt: "), pal.good("adopted"), rep.Skill)); err != nil {
+					return err
+				}
+				if _, err := fmt.Fprintln(out, fmt.Sprintf("  %s%s", pal.dim("from "), rep.From)); err != nil {
+					return err
+				}
+				if _, err := fmt.Fprintln(out, fmt.Sprintf("    %s %s", pal.dim("→"), rep.To)); err != nil {
 					return err
 				}
 			} else {
-				if _, err := fmt.Fprintf(out, "%q is %s\n", rep.Skill, pal.good("already adopted")); err != nil {
+				if _, err := fmt.Fprintln(out, fmt.Sprintf("%s%q is %s", pal.dim("adopt: "), rep.Skill, pal.good("already adopted"))); err != nil {
+					return err
+				}
+				if _, err := fmt.Fprintln(out, fmt.Sprintf("  %s %s", pal.dim("→"), rep.To)); err != nil {
 					return err
 				}
 			}
 			for _, w := range rep.Wired {
-				if _, err := fmt.Fprintln(out, formatWired(string(w.Harness), p.RepoSkills(), w.Where, pal)); err != nil {
+				if _, err := fmt.Fprintln(out, pal.dim("adopt: ")+formatWired(string(w.Harness), p.RepoSkills(), w.Where, pal)); err != nil {
 					return err
 				}
 			}
 			for _, l := range rep.Linked {
-				if _, err := fmt.Fprintln(out, formatLinkStyled(string(l.Harness), l, pal)); err != nil {
+				if _, err := fmt.Fprintln(out, pal.dim("adopt: ")+formatLinkStyled(string(l.Harness), l, pal)); err != nil {
 					return err
 				}
 			}

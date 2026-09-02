@@ -157,22 +157,24 @@ Moves a custom skill from the canonical store (`~/.agents/skills`) into the flee
 
 ```sh
 $ fleet skill adopt git-helper
-adopted "git-helper"
-opencode: wired "~/Developer/fleet/skills" as a skill source (skills)
-pi: wired "~/Developer/fleet/skills" as a skill source (skills)
-codex: linked "git-helper" → ~/Developer/fleet/skills/git-helper
-claude: linked "git-helper" → ~/Developer/fleet/skills/git-helper
-cursor: linked "git-helper" → ~/Developer/fleet/skills/git-helper
-bob: linked "git-helper" → ~/Developer/fleet/skills/git-helper
+adopt: adopted "git-helper"
+  from ~/.agents/skills/git-helper
+    → ~/Developer/fleet/skills/git-helper
+adopt: opencode: wired "~/Developer/fleet/skills" as a skill source (skills)
+adopt: pi: wired "~/Developer/fleet/skills" as a skill source (skills)
+adopt: codex: linked "git-helper" → ~/Developer/fleet/skills/git-helper
+adopt: claude: linked "git-helper" → ~/Developer/fleet/skills/git-helper
+adopt: cursor: linked "git-helper" → ~/Developer/fleet/skills/git-helper
+adopt: bob: linked "git-helper" → ~/Developer/fleet/skills/git-helper
 ```
 
-- The first line is the outcome: the skill now lives in the repo. On a terminal the verb is green and harness names are cyan; it is the lines to read. Managed links that were already correct stay quiet — only the wiring and the links that actually changed print, with `repointed "git-helper" (was ~/.agents/skills/git-helper) → ~/Developer/fleet/skills/git-helper` for a skills CLI link taken over, or a `— left alone` note when a real directory is in the way.
+- The first lines are the outcome: the skill now lives in the repo. On a terminal the `adopt:` prefix is dimmed, the verb is green and harness names are cyan; it is the lines to read. The headline breaks into three lines so both the original store path and the repo destination are visible. Managed links that were already correct stay quiet — only the wiring and the links that actually changed print, with `adopt: codex: repointed "git-helper" (was ~/.agents/skills/git-helper) → ~/Developer/fleet/skills/git-helper` for a skills CLI link taken over, or a `— left alone` note when a real directory is in the way.
 - Sync runs as part of the command, but ambient findings about other skills stay out of the report; `fleet skill sync` and `fleet skill doctor` are where they are listed.
 
 - The repo is found by walking up from the working directory to the nearest `.git`; `FLEET_REPO` overrides it. Outside any repo: `Error: no fleet repo found — run inside the repo or set FLEET_REPO`.
 - opencode and pi get the repo path in their own config (in the dialect the file already speaks). codex, claude code, Cursor, and Bob get a symlink named after the skill, pointing at the repo. Managed links never point into the canonical store, so opencode and pi never see an adopted skill twice.
 - Adoption records nothing in the state file: custom is defined by living in the repo. Disables recorded before adoption keep applying, because config rules target the skill's name wherever it lives.
-- Adopting an already-adopted skill moves nothing but re-ensures the wiring and links, so a partially failed run heals on the next `adopt`. The outcome line reads `"git-helper" is already adopted`.
+- Adopting an already-adopted skill moves nothing but re-ensures the wiring and links, so a partially failed run heals on the next `adopt`. The outcome line reads `adopt: "git-helper" is already adopted` followed by `  → ~/Developer/fleet/skills/git-helper`.
 - To undo, move the directory back into the store by hand; see [undo](undo.md#undo-an-adoption).
 
 ## fleet skill doctor
