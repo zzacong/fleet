@@ -46,7 +46,7 @@ type Report struct {
 // next adopt (Report.Moved is false in that case).
 func Adopt(p *paths.Paths, name string) (*Report, error) {
 	if p.RepoSkills() == "" {
-		return nil, fmt.Errorf("no fleet repo found — run inside the repo or set FLEET_REPO")
+		return nil, fmt.Errorf("no skills repo set — set with `fleet config set skills-repo <path>` or `FLEET_REPO`")
 	}
 
 	storeSkills, err := scan.ScanStore(p.SkillsStore())

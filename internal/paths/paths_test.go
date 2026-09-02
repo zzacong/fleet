@@ -128,27 +128,73 @@ func TestDiscoverRepoWalksUpToTheNearestGitRoot(t *testing.T) {
 	})
 }
 
-func TestFromEnvPrefersFleetRepoOverDiscovery(t *testing.T) {
-	t.Setenv("FLEET_HOME", "/home/sandbox")
-	t.Setenv("FLEET_REPO", "/repo/override")
+func TestFromEnvPrecedenceEnvOverConfigOverEmpty(t *testing.T) {
+	home := t.TempDir()
+	repoFile := filepath.Join(home, "repo-file")
+	repoEnv := filepath.Join(home, "repo-env")
+	for _, r := range []string{repoFile, repoEnv} {
+		if err := os.MkdirAll(filepath.Join(r, ".git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Write config file pointing at repoFile.
+	if err := os.MkdirAll(filepath.Join(home, ".config", "fleet"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".config", "fleet", "config.json"), []byte(`{"skillsRepo": "`+repoFile+`"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FLEET_HOME", home)
 
+	// env overrides config
+	t.Setenv("FLEET_REPO", repoEnv)
 	p, err := FromEnv()
 	if err != nil {
 		t.Fatalf("FromEnv() error = %v", err)
 	}
-	if p.Repo != "/repo/override" {
-		t.Errorf("Repo = %q, want the FLEET_REPO override", p.Repo)
+	if p.Repo != repoEnv {
+		t.Errorf("Repo = %q, want env %q", p.Repo, repoEnv)
 	}
-	if got := p.RepoSkills(); got != "/repo/override/skills" {
-		t.Errorf("RepoSkills() = %q, want it derived from FLEET_REPO", got)
+	if got := p.RepoSkills(); got != filepath.Join(repoEnv, "skills") {
+		t.Errorf("RepoSkills() = %q, want %q", got, filepath.Join(repoEnv, "skills"))
+	}
+
+	// without env, falls back to config
+	t.Setenv("FLEET_REPO", "")
+	p, err = FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
+	if p.Repo != repoFile {
+		t.Errorf("Repo = %q, want config %q", p.Repo, repoFile)
+	}
+	if got := p.RepoSkills(); got != filepath.Join(repoFile, "skills") {
+		t.Errorf("RepoSkills() = %q, want %q", got, filepath.Join(repoFile, "skills"))
+	}
+
+	// without env and without file, empty
+	if err := os.Remove(filepath.Join(home, ".config", "fleet", "config.json")); err != nil {
+		t.Fatal(err)
+	}
+	p, err = FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
+	if p.Repo != "" {
+		t.Errorf("Repo = %q, want empty when no env and no config", p.Repo)
+	}
+	if got := p.RepoSkills(); got != "" {
+		t.Errorf("RepoSkills() = %q, want empty when no repo", got)
 	}
 }
 
-func TestFromEnvDiscoversTheRepoFromTheWorkingDirectory(t *testing.T) {
-	t.Setenv("FLEET_HOME", "/home/sandbox")
+func TestFromEnvDoesNotPickUpUnrelatedGitCheckout(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("FLEET_HOME", home)
 	t.Setenv("FLEET_REPO", "")
 
-	repo := filepath.Join(t.TempDir(), "repo")
+	// No config file -> empty
+	repo := filepath.Join(t.TempDir(), "unrelated")
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -156,33 +202,74 @@ func TestFromEnvDiscoversTheRepoFromTheWorkingDirectory(t *testing.T) {
 	if err := os.MkdirAll(deep, 0o755); err != nil {
 		t.Fatal(err)
 	}
-
 	t.Chdir(deep)
-	p, err := FromEnv()
-	if err != nil {
-		t.Fatalf("FromEnv() error = %v", err)
-	}
-	if p.Repo != repo {
-		t.Errorf("Repo = %q, want the discovered root %q", p.Repo, repo)
-	}
-}
-
-func TestFromEnvWithoutARepoLeavesRepoEmpty(t *testing.T) {
-	t.Setenv("FLEET_HOME", "/home/sandbox")
-	t.Setenv("FLEET_REPO", "")
-
-	// Somewhere with no .git up the tree.
-	lonely := filepath.Join(t.TempDir(), "lonely")
-	if err := os.MkdirAll(lonely, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(lonely)
 
 	p, err := FromEnv()
 	if err != nil {
 		t.Fatalf("FromEnv() error = %v", err)
 	}
 	if p.Repo != "" {
-		t.Errorf("Repo = %q, want empty outside a checkout", p.Repo)
+		t.Errorf("Repo = %q, want empty when in unrelated checkout with no config", p.Repo)
+	}
+	if got := p.RepoSkills(); got != "" {
+		t.Errorf("RepoSkills() = %q, want empty", got)
+	}
+}
+
+func TestFromEnvResolvesRelativeFleetRepoToAbsolute(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("FLEET_HOME", home)
+	repoDir := filepath.Join(t.TempDir(), "myrepo")
+	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Create a temp wd and use a relative path to repoDir
+	wd := t.TempDir()
+	t.Chdir(wd)
+	rel, err := filepath.Rel(wd, repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.IsAbs(rel) {
+		t.Fatalf("expected relative path, got %q", rel)
+	}
+	t.Setenv("FLEET_REPO", rel)
+
+	p, err := FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
+	absWant, _ := filepath.Abs(rel)
+	if p.Repo != absWant {
+		t.Errorf("Repo = %q, want absolute %q", p.Repo, absWant)
+	}
+	if !filepath.IsAbs(p.Repo) {
+		t.Errorf("Repo %q is not absolute", p.Repo)
+	}
+	if got := p.RepoSkills(); got != filepath.Join(absWant, "skills") {
+		t.Errorf("RepoSkills() = %q, want %q", got, filepath.Join(absWant, "skills"))
+	}
+}
+
+func TestFleetConfigFileAndFleetHomeSkillsAreFleetHomeAware(t *testing.T) {
+	p := New("/home/fake")
+	if got := p.FleetConfigFile(); got != "/home/fake/.config/fleet/config.json" {
+		t.Errorf("FleetConfigFile() = %q, want /home/fake/.config/fleet/config.json", got)
+	}
+	if got := p.FleetHomeSkills(); got != "/home/fake/.config/fleet/skills" {
+		t.Errorf("FleetHomeSkills() = %q, want /home/fake/.config/fleet/skills", got)
+	}
+	sandbox := filepath.Join(t.TempDir(), "home2")
+	t.Setenv("FLEET_HOME", sandbox)
+	t.Setenv("FLEET_REPO", "")
+	p2, err := FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
+	if p2.FleetConfigFile() != filepath.Join(sandbox, ".config", "fleet", "config.json") {
+		t.Errorf("FleetConfigFile() = %q, want derived from FLEET_HOME", p2.FleetConfigFile())
+	}
+	if p2.FleetHomeSkills() != filepath.Join(sandbox, ".config", "fleet", "skills") {
+		t.Errorf("FleetHomeSkills() = %q, want derived from FLEET_HOME", p2.FleetHomeSkills())
 	}
 }

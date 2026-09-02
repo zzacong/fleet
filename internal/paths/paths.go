@@ -6,8 +6,10 @@
 package paths
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Paths holds the home root every fleet path derives from.
@@ -34,8 +36,9 @@ func WithRepo(home, repo string) *Paths {
 }
 
 // FromEnv resolves the home root for the real binary: FLEET_HOME when set,
-// otherwise the user's home directory. The repo root comes from FLEET_REPO,
-// or from walking up from the working directory to the nearest .git.
+// otherwise the user's home directory. The repo root is resolved as
+// FLEET_REPO env > ~/.config/fleet/config.json: skillsRepo > "" (no
+// value). There is no DiscoverRepo walk-up on the read path.
 func FromEnv() (*Paths, error) {
 	var p *Paths
 	if root := os.Getenv("FLEET_HOME"); root != "" {
@@ -54,17 +57,46 @@ func FromEnv() (*Paths, error) {
 			return nil, err
 		}
 		p.Repo = abs
-	} else if wd, err := os.Getwd(); err == nil {
-		// An unreadable working directory only means no repo discovery;
-		// commands that need the repo report that themselves.
-		p.Repo = DiscoverRepo(wd)
+		return p, nil
 	}
+	repo, err := loadSkillsRepo(p.FleetConfigFile())
+	if err != nil {
+		return nil, err
+	}
+	p.Repo = repo
 	return p, nil
+}
+
+func loadSkillsRepo(path string) (string, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	if len(strings.TrimSpace(string(body))) == 0 {
+		return "", nil
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return "", err
+	}
+	if repoRaw, ok := raw["skillsRepo"]; ok {
+		var repo string
+		if err := json.Unmarshal(repoRaw, &repo); err != nil {
+			return "", err
+		}
+		return repo, nil
+	}
+	return "", nil
 }
 
 // DiscoverRepo walks up from startDir to the filesystem root and returns
 // the first directory containing .git — a directory in a normal checkout,
-// a file in a git worktree. Empty when none is found.
+// a file in a git worktree. Empty when none is found. It is retained only
+// for fleet config suggestion text and is never called implicitly on the
+// read path.
 func DiscoverRepo(startDir string) string {
 	dir := startDir
 	for {
