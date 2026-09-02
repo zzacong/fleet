@@ -5,7 +5,7 @@ Fleet manages agent skills across AI coding agents — opencode, pi, codex, clau
 ## Install
 
 ```sh
-go install github.com/zzacong/fleet/cmd/fleet@latest
+go install github.com/zzacong/fleet/apps/cli/cmd/fleet@latest
 ```
 
 Fleet is a single static binary with no runtime dependencies. Release builds report their version through `fleet --version`; `go install` builds report `dev`.
@@ -43,14 +43,14 @@ source <(fleet completion zsh)   # also: bash, fish, powershell
 
 ## Documentation
 
-| Document                                                   | Audience                                                    |
-| ------------------------------------------------------------ | ----------------------------------------------------------- |
-| [Command reference](apps/docs/src/content/docs/cli.md)       | every verb, flag, and error, with examples                  |
+| Document                                                         | Audience                                                    |
+| ---------------------------------------------------------------- | ----------------------------------------------------------- |
+| [Command reference](apps/docs/src/content/docs/cli.md)           | every verb, flag, and error, with examples                  |
 | [Per-harness reference](apps/docs/src/content/docs/harnesses.md) | files touched, written shapes, limitations                  |
-| [Undo and escape hatches](apps/docs/src/content/docs/undo.md) | running `skills` by hand, resetting state, how sync decides |
-| [Architecture](docs/architecture.md)                       | state file → adapters → sync, adding a harness              |
-| [State file schema](apps/docs/src/content/docs/state-file.md) | versioned, forward-compatible format                        |
-| [Testing guide](docs/testing.md)                           | injected homes, fixture tests, `FLEET_HOME` sandboxes       |
+| [Undo and escape hatches](apps/docs/src/content/docs/undo.md)    | running `skills` by hand, resetting state, how sync decides |
+| [Architecture](docs/architecture.md)                             | state file → adapters → sync, adding a harness              |
+| [State file schema](apps/docs/src/content/docs/state-file.md)    | versioned, forward-compatible format                        |
+| [Testing guide](docs/testing.md)                                 | injected homes, fixture tests, `FLEET_HOME` sandboxes       |
 
 ## Development
 

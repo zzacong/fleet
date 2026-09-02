@@ -2,8 +2,8 @@
   "name": "fleet",
   "private": true,
   "scripts": {
-    "fmt:md": "oxfmt --write README.md CONTEXT.md docs/ skills/ .agents/skills/",
-    "check:md": "oxfmt --check README.md CONTEXT.md docs/ skills/ .agents/skills/"
+    "fmt:md": "oxfmt --write README.md CONTEXT.md docs/ skills/ .agents/skills/ apps/docs/src/content/docs/",
+    "check:md": "oxfmt --check README.md CONTEXT.md docs/ skills/ .agents/skills/ apps/docs/src/content/docs/"
   },
   "devDependencies": {
     "oxfmt": "^0.65.0"
