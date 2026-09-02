@@ -42,6 +42,7 @@ type updateMsg struct {
 // here survives it.
 func startUpdate(m *model) tea.Cmd {
 	m.phase = phaseUpdating
+	m.updateTarget = ""
 	p := m.p
 	return func() tea.Msg {
 		if _, err := skillscli.Update(newSkillsRunner()); err != nil {
@@ -59,6 +60,29 @@ func startUpdate(m *model) tea.Cmd {
 	}
 }
 
+// startUpdateOne runs the single-skill update: `skills update -g -y <name>`,
+// then the post-run sync and the own-state summary. The matrix refresh
+// rides separately like update-all, so the notice survives it.
+func startUpdateOne(m *model, name string) tea.Cmd {
+	m.phase = phaseUpdating
+	m.updateTarget = name
+	p := m.p
+	return func() tea.Msg {
+		if _, err := skillscli.UpdateOne(newSkillsRunner(), name); err != nil {
+			return updateMsg{err: err}
+		}
+		reports, err := fleetsync.Run(p)
+		if err != nil {
+			return updateMsg{err: fmt.Errorf("post-run sync: %w", err)}
+		}
+		summary, err := updateSummaryOne(p, reports, name)
+		if err != nil {
+			return updateMsg{err: err}
+		}
+		return updateMsg{summary: summary}
+	}
+}
+
 // applyUpdate lands the finished run. A failure leaves the matrix as it
 // was — the verb's stop-on-failure rule, a half-finished update is the
 // user's to resolve — with the raw output surfaced in the notice.
@@ -66,6 +90,7 @@ func startUpdate(m *model) tea.Cmd {
 // badges and states show while the notice survives the refresh.
 func (m model) applyUpdate(msg updateMsg) (tea.Model, tea.Cmd) {
 	m.phase = phaseIdle
+	m.updateTarget = ""
 	if msg.err != nil {
 		m.notice = notice{text: updateFailure(msg.err), kind: noticeErr}
 		return m, nil
@@ -104,6 +129,25 @@ func updateSummary(p *paths.Paths, reports []fleetsync.Report) (string, error) {
 	installed := scan.CountInstalled(skills, lock)
 	line := fmt.Sprintf("updated all — %d skill%s in %s (%d installed, %d custom)",
 		len(skills), plural(len(skills)), p.SkillsStore(), installed, len(skills)-installed)
+	if s := syncNotice(reports); s != "" {
+		line += " · " + s
+	}
+	return line, nil
+}
+
+// updateSummaryOne builds the success notice for a single-skill update.
+func updateSummaryOne(p *paths.Paths, reports []fleetsync.Report, name string) (string, error) {
+	skills, err := scan.ScanStore(p.SkillsStore())
+	if err != nil {
+		return "", fmt.Errorf("scan canonical store: %w", err)
+	}
+	lock, err := scan.ReadLockfile(p.SkillLock())
+	if err != nil {
+		return "", fmt.Errorf("read skills lockfile: %w", err)
+	}
+	installed := scan.CountInstalled(skills, lock)
+	line := fmt.Sprintf("updated %q — %d skill%s in %s (%d installed, %d custom)",
+		name, len(skills), plural(len(skills)), p.SkillsStore(), installed, len(skills)-installed)
 	if s := syncNotice(reports); s != "" {
 		line += " · " + s
 	}

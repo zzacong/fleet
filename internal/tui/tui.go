@@ -84,10 +84,11 @@ type model struct {
 	filterFocus bool
 	staged      map[cellKey]bool // value is the staged target: on or off
 
-	phase    phase // refreshing while a reload runs
-	helpOpen bool
-	notice   notice
-	quiet    bool // suppress the hero banner
+	phase        phase // refreshing while a reload runs
+	updateTarget string
+	helpOpen     bool
+	notice       notice
+	quiet        bool // suppress the hero banner
 
 	width, height int
 	seq           int // guards against late snapshot messages
@@ -369,7 +370,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// filter, staging, help, and quit still work.
 	if m.phase == phaseUpdating {
 		switch key {
-		case "u", "r", "enter":
+		case "u", "U", "r", "enter":
 			return m, nil
 		}
 	}
@@ -398,6 +399,16 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.applyStaged()
 	case "u":
 		return m, startUpdate(&m)
+	case "U":
+		if name := m.selectedName(); name == "" {
+			m.notice = notice{text: "no skill selected", kind: noticeInfo}
+			return m, nil
+		} else if m.isCustom(name) {
+			m.notice = notice{text: fmt.Sprintf("%q is a custom skill — nothing to update", name), kind: noticeInfo}
+			return m, nil
+		} else {
+			return m, startUpdateOne(&m, m.selectedName())
+		}
 	case "r":
 		return m, startRefresh(&m, "refreshed")
 	case "?":
@@ -470,6 +481,17 @@ func (m model) selectedName() string {
 		return fs[m.row].Name
 	}
 	return ""
+}
+
+// isCustom reports whether the named skill is a custom skill (lives in the
+// repo, not the canonical store). Custom skills have nothing to update.
+func (m model) isCustom(name string) bool {
+	for _, r := range m.rows {
+		if r.Name == name {
+			return r.Custom
+		}
+	}
+	return false
 }
 
 // filtered is the visible row list: the snapshot's rows, custom first and

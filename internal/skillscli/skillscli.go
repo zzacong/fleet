@@ -54,6 +54,12 @@ func Update(runner Runner) (Result, error) {
 	return run(runner, []string{"update", "-g", "-y"})
 }
 
+// UpdateOne runs `skills update -g -y <name>`: the same global,
+// non-interactive update for a single skill.
+func UpdateOne(runner Runner, name string) (Result, error) {
+	return run(runner, []string{"update", "-g", "-y", name})
+}
+
 // run builds the invocation for one skills CLI command and hands it to
 // the runner. Stdin is a pipe closed before the child starts, so a prompt
 // the explicit flags were meant to avoid reads EOF and fails fast.

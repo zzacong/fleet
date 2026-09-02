@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -30,11 +32,11 @@ var newSkillsRunner = func() skillscli.Runner { return skillscli.Exec{} }
 
 func newSkillUpdateCmd(p *paths.Paths) *cobra.Command {
 	return &cobra.Command{
-		Use:   "update",
+		Use:   "update [skill]",
 		Short: "Update installed skills with the skills CLI, then sync",
 		Long: "Run `skills update -g -y` — the skills CLI stays the update backend — then sync, so disabled skills stay disabled and cleaned links stay clean no matter what the wrapped run re-created.\n\n" +
-			"The wrapped call is fully explicit and non-interactive: stdin is piped closed, so an unexpected prompt fails fast instead of hanging. Its output is shown raw on failure and never parsed; fleet reports from its own post-run state (state file, lockfile, harness configs). The skills CLI lockfile is read-only, and running the skills CLI by hand keeps working.",
-		Args: cobra.NoArgs,
+			"With a skill name, only that skill is updated (`skills update -g -y <skill>`); otherwise every installed skill is updated. The wrapped call is fully explicit and non-interactive: stdin is piped closed, so an unexpected prompt fails fast instead of hanging. Its output is shown raw on failure and never parsed; fleet reports from its own post-run state (state file, lockfile, harness configs). The skills CLI lockfile is read-only, and running the skills CLI by hand keeps working.",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Snapshot before the wrapped run so the report can state
 			// what — if anything — actually changed. The lockfile is the
@@ -43,11 +45,21 @@ func newSkillUpdateCmd(p *paths.Paths) *cobra.Command {
 			beforeLock, _ := scan.ReadLockfile(p.SkillLock())
 			beforeSkills, _ := scan.ScanStore(p.SkillsStore())
 
-			// The wrapped run. A failure here is the headline: show the
-			// CLI's raw output and stop — a half-finished update is the
-			// user's to resolve before anything else runs.
-			if _, err := skillscli.Update(newSkillsRunner()); err != nil {
-				return showSkillsFailure(cmd, err)
+			if len(args) == 1 {
+				name := args[0]
+				if err := validateUpdateTarget(p, name, beforeSkills); err != nil {
+					return err
+				}
+				if _, err := skillscli.UpdateOne(newSkillsRunner(), name); err != nil {
+					return showSkillsFailure(cmd, err)
+				}
+			} else {
+				// The wrapped run. A failure here is the headline: show the
+				// CLI's raw output and stop — a half-finished update is the
+				// user's to resolve before anything else runs.
+				if _, err := skillscli.Update(newSkillsRunner()); err != nil {
+					return showSkillsFailure(cmd, err)
+				}
 			}
 
 			out := cmd.OutOrStdout()
@@ -63,6 +75,45 @@ func newSkillUpdateCmd(p *paths.Paths) *cobra.Command {
 			return printUpdateReport(out, p, beforeLock, beforeSkills)
 		},
 	}
+}
+
+func validateUpdateTarget(p *paths.Paths, name string, storeSkills []scan.Skill) error {
+	for _, s := range storeSkills {
+		if s.Name == name {
+			return nil
+		}
+	}
+	// Not in the canonical store — check if it's a custom skill in the repo.
+	if ok, _ := isRepoSkill(p, name); ok {
+		return fmt.Errorf("skill %q is a custom skill — nothing to update", name)
+	}
+	return fmt.Errorf("skill %q not found in %s", name, p.SkillsStore())
+}
+
+func isRepoSkill(p *paths.Paths, name string) (bool, error) {
+	repoSkills := p.RepoSkills()
+	if repoSkills == "" {
+		return false, nil
+	}
+	// Direct check for <repo>/skills/<name>/SKILL.md — the common case
+	// where Dir == Name.
+	if _, err := os.Stat(filepath.Join(repoSkills, name, "SKILL.md")); err == nil {
+		return true, nil
+	} else if !os.IsNotExist(err) {
+		return false, err
+	}
+	// Frontmatter name may differ from directory name; scan the repo and
+	// match by Skill.Name.
+	skills, err := scan.ScanStore(repoSkills)
+	if err != nil {
+		return false, err
+	}
+	for _, s := range skills {
+		if s.Name == name {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // showSkillsFailure prints the skills CLI's captured output — verbatim,

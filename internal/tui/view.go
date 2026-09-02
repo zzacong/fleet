@@ -99,12 +99,15 @@ func (m model) layout() layout {
 	return l
 }
 
+const footerText = "space toggle   ←/→ harness   enter apply staged   u update all   U update one   / filter   r refresh   ? help   q quit"
+
 // visibleRows is the body's row budget: everything else is fixed chrome.
-// The notice line can wrap to multiple lines, so the body shrinks to keep
-// the wrapped notice and footer visible.
+// The notice line and footer can wrap to multiple lines, so the body shrinks
+// to keep both visible.
 func (m model) visibleRows() int {
 	noticeH := m.noticeHeight()
-	fixed := 4 + noticeH // status, filter, column header, footer =4 + notice
+	footerH := m.footerHeight()
+	fixed := 3 + noticeH + footerH // status, filter, column header + notice + footer
 	if !m.quiet {
 		fixed += len(bannerLines())
 	}
@@ -123,6 +126,13 @@ func (m model) noticeHeight() int {
 		return 1 // blank line when no notice
 	}
 	return len(wrapLines(m.notice.text, m.width))
+}
+
+func (m model) footerHeight() int {
+	if m.width <= 0 {
+		return 1
+	}
+	return len(wrapLines(footerText, m.width))
 }
 
 func (m model) View() tea.View {
@@ -377,6 +387,9 @@ func (m model) hasStaged(skill, harnessName string) bool {
 
 func (m model) noticeLine() string {
 	if m.phase == phaseUpdating {
+		if m.updateTarget != "" {
+			return styDim.Render(fmt.Sprintf("updating %q…", m.updateTarget))
+		}
 		return styDim.Render("updating all skills…")
 	}
 	if m.phase == phaseRefreshing {
@@ -402,8 +415,11 @@ func (m model) noticeLine() string {
 }
 
 func (m model) footer() string {
-	text := "space toggle   ←/→ harness   enter apply staged   u update all   / filter   r refresh   ? help   q quit"
-	return styDim.Render(truncate(text, m.width))
+	lines := wrapLines(footerText, m.width)
+	for i, l := range lines {
+		lines[i] = styDim.Render(l)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m model) helpOverlay() string {
@@ -415,6 +431,7 @@ func (m model) helpOverlay() string {
 		"space          stage/unstage the selected cell",
 		"enter          apply staged changes (state file, then sync)",
 		"u              update all installed skills (skills update, then sync)",
+		"U              update the selected skill (skills update <skill>, then sync)",
 		"esc            discard staged, clear filter, or close this help",
 		"/              focus filter",
 		"r              refresh",
@@ -432,7 +449,36 @@ func (m model) helpOverlay() string {
 		"some harnesses pick up config changes on their next session",
 		"(opencode has no live reload).",
 	}
-	box := styHelpBox.Render(strings.Join(rows, "\n"))
+	// Wrap long rows to the available inner width so the legend and
+	// key descriptions never get horizontally truncated on narrow terminals.
+	availW := m.width - 6 // border (2) + padding (4)
+	if availW < 20 {
+		availW = 20
+	}
+	// Keep the box from stretching absurdly wide on large screens.
+	if availW > 60 {
+		availW = 60
+	}
+	var wrapped []string
+	for _, r := range rows {
+		if r == "" || r == "keybindings" || r == "columns" || r == "notes" {
+			wrapped = append(wrapped, r)
+			continue
+		}
+		if runeLen(r) <= availW {
+			wrapped = append(wrapped, r)
+		} else {
+			wrapped = append(wrapped, wrapLines(r, availW)...)
+		}
+	}
+	content := strings.Join(wrapped, "\n")
+	box := styHelpBox.Render(content)
+	// When the terminal is too short to center the box, top-align so the
+	// bottom legend/notes remain readable instead of being clipped equally
+	// on top and bottom.
+	if lipgloss.Height(box) > m.height {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, box)
+	}
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 

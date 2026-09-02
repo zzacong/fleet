@@ -21,6 +21,7 @@ Keys:
 | `space`           | stage or unstage the selected cell                          |
 | `enter`           | apply staged changes                                        |
 | `u`               | update all installed skills (wrapped skills CLI, then sync) |
+| `U`               | update the selected skill (wrapped `skills update <skill>`, then sync) |
 | `esc`             | discard staged changes, clear the filter, or close help     |
 | `/`               | filter by name or description                               |
 | `r`               | refresh                                                     |
@@ -29,7 +30,7 @@ Keys:
 
 Cells read `●` on, `○` off, `-` absent. Columns for Cursor and Bob render faint with a `!` in the header: they have no per-skill off switch, so toggles there are no-ops.
 
-`u` is the one-key update-all: it runs the same wrapped `skills update -g -y` the [update verb](#fleet-skill-update) runs, then sync, then reloads the matrix so the new badges and states show. A busy line takes over while it runs, the outcome notice reports fleet's own post-run state — the store scan and lockfile, never the skills CLI's prose — and a failed run shows the CLI's captured output raw.
+`u` is the one-key update-all: it runs the same wrapped `skills update -g -y` the [update verb](#fleet-skill-update) runs, then sync, then reloads the matrix so the new badges and states show. `U` does the same for the selected skill only (`skills update -g -y <skill>`). A busy line takes over while either runs, the outcome notice reports fleet's own post-run state — the store scan and lockfile, never the skills CLI's prose — and a failed run shows the CLI's captured output raw.
 
 The hero banner appears on launch only. `fleet --quiet` (or `-q`) keeps the matrix without it. With piped output fleet never enters the TUI: it prints the same listing as `fleet skill ls` instead, so `fleet | grep tdd` does what you mean.
 
@@ -253,10 +254,10 @@ sync: opencode: disabled "tdd" (was on)
 ## fleet skill update
 
 ```sh
-fleet skill update
+fleet skill update [skill]
 ```
 
-Runs `skills update -g -y` — the skills CLI stays the update backend — then syncs, so disabled skills stay disabled and cleaned links stay clean no matter what the wrapped run re-created.
+Runs `skills update -g -y` — the skills CLI stays the update backend — then syncs, so disabled skills stay disabled and cleaned links stay clean no matter what the wrapped run re-created. With a skill name, only that skill is updated (`skills update -g -y <skill>`).
 
 On success it reports from fleet's own post-run state — `skills update -g -y` runs first, then sync — so the `sync:` lines are the auto-sync repairing what the wrapped run re-created:
 
