@@ -100,12 +100,29 @@ func (m model) layout() layout {
 }
 
 // visibleRows is the body's row budget: everything else is fixed chrome.
+// The notice line can wrap to multiple lines, so the body shrinks to keep
+// the wrapped notice and footer visible.
 func (m model) visibleRows() int {
-	fixed := 5 // status, filter, column header, notice, footer
+	noticeH := m.noticeHeight()
+	fixed := 4 + noticeH // status, filter, column header, footer =4 + notice
 	if !m.quiet {
 		fixed += len(bannerLines())
 	}
 	return max(1, m.height-fixed)
+}
+
+// noticeHeight is how many terminal lines the notice occupies after wrapping.
+func (m model) noticeHeight() int {
+	if m.phase == phaseUpdating {
+		return 1
+	}
+	if m.phase == phaseRefreshing {
+		return 1
+	}
+	if m.notice.text == "" {
+		return 1 // blank line when no notice
+	}
+	return len(wrapLines(m.notice.text, m.width))
 }
 
 func (m model) View() tea.View {
@@ -368,15 +385,20 @@ func (m model) noticeLine() string {
 	if m.notice.text == "" {
 		return ""
 	}
-	text := truncate(m.notice.text, m.width)
+	lines := wrapLines(m.notice.text, m.width)
+	var sty lipgloss.Style
 	switch m.notice.kind {
 	case noticeErr:
-		return styErr.Render(text)
+		sty = styErr
 	case noticeGood:
-		return styGood.Render(text)
+		sty = styGood
 	default:
-		return styStaged.Render(text)
+		sty = styStaged
 	}
+	for i, l := range lines {
+		lines[i] = sty.Render(l)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m model) footer() string {
@@ -449,4 +471,63 @@ func truncate(s string, w int) string {
 		return "…"
 	}
 	return string(r[:w-1]) + "…"
+}
+
+// wrapLines word-wraps s to at most w runes per line, hard-breaking words
+// that exceed w. It returns at least one line for non-empty s so the caller
+// can render the notice without truncation.
+func wrapLines(s string, w int) []string {
+	if w <= 0 {
+		return []string{s}
+	}
+	if runeLen(s) <= w {
+		return []string{s}
+	}
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return []string{s}
+	}
+	var lines []string
+	var cur strings.Builder
+	curLen := 0
+	flush := func() {
+		if curLen > 0 {
+			lines = append(lines, cur.String())
+			cur.Reset()
+			curLen = 0
+		}
+	}
+	for _, word := range words {
+		wl := runeLen(word)
+		if wl > w {
+			// Hard-break an overlong word.
+			flush()
+			runes := []rune(word)
+			for len(runes) > 0 {
+				n := min(w, len(runes))
+				lines = append(lines, string(runes[:n]))
+				runes = runes[n:]
+			}
+			continue
+		}
+		if curLen == 0 {
+			cur.WriteString(word)
+			curLen = wl
+			continue
+		}
+		if curLen+1+wl <= w {
+			cur.WriteString(" ")
+			cur.WriteString(word)
+			curLen += 1 + wl
+		} else {
+			flush()
+			cur.WriteString(word)
+			curLen = wl
+		}
+	}
+	flush()
+	if len(lines) == 0 {
+		return []string{s}
+	}
+	return lines
 }
