@@ -40,6 +40,7 @@ func NewRoot(p *paths.Paths) *cobra.Command {
 	root.SetUsageTemplate(usageTemplate)
 	root.AddCommand(newSkillCmd(p))
 	root.AddCommand(newHarnessCmd(p))
+	root.AddCommand(newConfigCmd(p))
 	return root
 }
 
