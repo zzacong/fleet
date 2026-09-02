@@ -51,6 +51,7 @@ Turn `github.com/zzacong/fleet` into a monorepo with an explicit, non-magical ho
 29. As a future maintainer, I want `FLEET_HOME` to still override `~/.config/fleet` for sandboxes, so that tests never touch the real home.
 30. As a fleet user, I want `outdated` badges to remain tri-state and report unknown for customs and non-GitHub sources, so that version checks don't guess.
 31. As a project user, I want `.agents/skills/watcher` and any future project-local `.agents/skills/<name>` to stay out of `fleet skill ls`, so that per-project skills stay per-project.
+32. As a watcher user, I want `scripts/watcher/watch.py` and `.agents/skills/watcher/SKILL.md` to cover fleet home and the designated skills repo (not a hard-coded repo-skills path), so that snapshots and diffs stay accurate after the monorepo move.
 
 ## Implementation Decisions
 
@@ -67,11 +68,13 @@ Turn `github.com/zzacong/fleet` into a monorepo with an explicit, non-magical ho
 - **Module path.** Keep `module github.com/zzacong/fleet` (at `apps/cli/go.mod`) so imports remain stable; workspace indirection avoids `module github.com/zzacong/fleet/apps/cli` rename. Revisit if a second Go module is added.
 - **Schema changes.** `state.json` unchanged (version 1, disable-only, unknown-field preserving). `config.json` is independent, versioned implicitly by unknown-field preservation; no `version` field initially.
 - **No XDG split.** Fleet home stays `~/.config/fleet` for both state and custom fallback; no `~/.local/share` second root.
+- **Watcher.** `scripts/watcher/watch.py` `WATCH_TARGETS` and `.agents/skills/watcher/SKILL.md` watch table are updated for the new homes and the monorepo move: `fleet-config` continues to cover `~/.config/fleet` (now includes `config.json`, `skills/` fleet-home, `state.json`, `tree-cache.json`), `repo-skills` is retargeted to the monorepo `skills/` at the repo root (and after the move is resolved relative to the watcher location depth — `apps/cli` move changes the relative path), and harness targets stay derived from `internal/paths`. The watcher never reads `fleet config` implicitly — its repo-skills target is the checkout's `skills/` for dogfooding; fleet-home customs are already covered by the `fleet-config` dir walk.
 - **Proposed seam for fleet config.** New package owning the config file (load/save/validate) behind an interface the CLI and `paths` consume; the config read is a new highest seam alongside `paths.FromEnv`, `snapshot.Build` and `customs.Adopt` so tests can inject a fake home and a temp config.
 
 ## Testing Decisions
 
 - **What makes a good test.** Test external behavior (what a command prints, what files are written, what `snapshot.Build` returns for a given home), not internal parsing details. Fake homes via injected `FLEET_HOME` in `t.TempDir` are the harness for every test; no test touches the real home. Preserve-comments/formatting cases assert whole-file bytes plus the write report.
+- **Watcher is tested via its own script.** `scripts/watcher/watch.py` is verified by running `--initial` and `--label` against a fake home and a temp repo checkout and asserting the watch table and diff markers; `SKILL.md` table is kept in sync.
 - **Which modules will be tested.** The new fleet config package (load/save precedence `env > config > ""`, missing file is empty, malformed JSON is error, unknown fields preserved), `paths` resolution (absolute-path validation, `FleetConfigFile`, `FleetHomeSkills`), `snapshot.Build` union (canonical + fleet-home + skillsRepo, skills-repo precedence `skillsRepo > fleet-home > canonical`, doctor double-presence), `customs.Adopt` retargeting (move into the correct home, wire/link the correct target, collision and missing-skill errors), harness wiring/links with the new target, and the `fleet config` CLI verbs.
 - **Prior art.** Adapter fixture tests with fake homes (`internal/harness/*_test.go`), scan tests for `ScanStore`, state round-trip tests with unknown-field preservation, snapshot tests that build a fake home and assert rows/harnesses, and `customs/adopt_test.go` move+wire+link cases. New tests follow the same pattern: build a fake home, write fixtures, run through the seam, assert file bytes and reports.
 

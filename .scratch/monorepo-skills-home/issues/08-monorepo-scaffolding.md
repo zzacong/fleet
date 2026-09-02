@@ -1,8 +1,8 @@
-# 07: Monorepo scaffolding — `apps/cli` + `go.work` + `pnpm-workspace` + `apps/desktop` placeholder
+# 08: Monorepo scaffolding — `apps/cli` + `go.work` + `pnpm-workspace` + `apps/desktop` placeholder
 
 **What to build:** The repo becomes a monorepo without breaking `go test`, `make build`, or `go install`.
 
-**Blocked by:** 06: Update all docs for the new custom-home behavior
+**Blocked by:** 06: Update all docs for the new custom-home behavior, 07: Watcher fleet-home coverage — manual verification
 
 **Status:** ready-for-agent
 

@@ -1,8 +1,8 @@
-# 08: User docs to Starlight at `apps/docs`
+# 09: User docs to Starlight at `apps/docs`
 
 **What to build:** User-facing docs become a Starlight site at `apps/docs`, while contributor docs stay at the repo root.
 
-**Blocked by:** 07: Monorepo scaffolding — `apps/cli` + `go.work` + `pnpm-workspace` + `apps/desktop` placeholder
+**Blocked by:** 08: Monorepo scaffolding — `apps/cli` + `go.work` + `pnpm-workspace` + `apps/desktop` placeholder
 
 **Status:** ready-for-agent
 
