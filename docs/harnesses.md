@@ -1,6 +1,6 @@
 # Per-harness reference
 
-Fleet targets six harnesses. Each section states exactly which files fleet touches, what it writes, what it never touches, and where the harness's own limits show up. Vocabulary follows [CONTEXT.md](../CONTEXT.md): the canonical store is `~/.agents/skills`, the state file is fleet's source of truth, and sync projects that state into each harness's config.
+Fleet targets six harnesses. Each section states exactly which files fleet touches, what it writes, what it never touches, and where the harness's own limits show up. Vocabulary follows [CONTEXT.md](../CONTEXT.md): the canonical store is `~/.agents/skills`, custom homes are `~/.config/fleet/skills` (fleet-home, always) and `<skillsRepo>/skills` when a repo is set (`FLEET_REPO` env > `~/.config/fleet/config.json: skillsRepo` > `""`, no walk-up), the state file is fleet's source of truth, and sync projects that state into each harness's config.
 
 ## Overview
 
@@ -22,7 +22,7 @@ What fleet never touches, for every harness:
 - skill frontmatter: no `disable-model-invocation` or similar cross-harness levers, ever
 - config content fleet doesn't own: comments, unknown keys, formatting, and rules fleet didn't write are preserved or flagged, never silently changed
 
-Per-harness skills directories (`~/.config/opencode/skills`, `~/.pi/agent/skills`, `~/.codex/skills`, `~/.claude/skills`, `~/.cursor/skills`, `~/.bob/skills`) get two kinds of traffic: managed symlinks for custom skills where the harness discovers through links, and removal of redundant links where it doesn't. Details below.
+Per-harness skills directories (`~/.config/opencode/skills`, `~/.pi/agent/skills`, `~/.codex/skills`, `~/.claude/skills`, `~/.cursor/skills`, `~/.bob/skills`) get two kinds of traffic: managed symlinks for custom skills (always pointing at the resolved home — `<skillsRepo>/skills` when one is set, otherwise `~/.config/fleet/skills`) where the harness discovers through links, and removal of redundant links where it doesn't. Sync never removes fleet-home or skills-repo links. Details below.
 
 ## opencode
 
@@ -53,9 +53,9 @@ A string shorthand is converted to a map that keeps its meaning; a missing `perm
 
 **Enable** removes only fleet's own entries: exact-name keys in V1, and in V2 only rules that exactly match fleet's three-key shape. Pattern rules and blanket denies that still disable the skill are flagged and left alone.
 
-**Custom skills** are wired as an extra skill source in the matching dialect: `skills.paths` (V1) or the flat `skills` array (V2).
+**Custom skills** are wired as an extra skill source in the matching dialect — the resolved home (`<skillsRepo>/skills` when one is set, otherwise `~/.config/fleet/skills`) joins `skills.paths` (V1) or the flat `skills` array (V2), not per skill.
 
-**Never touched:** comments, unknown keys, formatting, and deny rules fleet didn't write (they surface as flags in sync's output). The `~/.config/opencode/skills` directory is never written to — links there into the canonical store are redundant (opencode scans the store natively) and sync removes them.
+**Never touched:** comments, unknown keys, formatting, and deny rules fleet didn't write (they surface as flags in sync's output). The `~/.config/opencode/skills` directory is never written to — links there into the canonical store are redundant (opencode scans the store natively) and sync removes them, but fleet-home or skills-repo links are never removed.
 
 **Limitation:** opencode has no live reload. Toggles take effect on the next session; the TUI says so after every apply. The V2 beta moves fast — config discovery and skill-ID resolution are still in flux upstream, so the adapter is re-probed on each beta bump. Skill directory names equal frontmatter names so one rule targets the skill under both ID schemes.
 
@@ -74,9 +74,9 @@ A string shorthand is converted to a map that keeps its meaning; a missing `perm
 
 **Enable** removes fleet's exact entries. The bare `!<glob>` exclusion form is recognized when reading (it does disable skills) but fleet never writes it, and a glob that still excludes a skill is flagged, not touched. Plain path entries in the array only add discovery sources; they never disable anything.
 
-**Custom skills** are wired as a plain path entry in the same `skills` array — the repo's `skills/` directory joins it once, not per skill.
+**Custom skills** are wired as a plain path entry in the same `skills` array — the resolved home (`<skillsRepo>/skills` when one is set, otherwise `~/.config/fleet/skills`) joins it once, not per skill.
 
-**Never touched:** unknown keys and formatting (the read-modify-write parses strictly and preserves both), glob exclusions, and the `~/.pi/agent/skills` directory's own contents beyond redundant-link removal.
+**Never touched:** unknown keys and formatting (the read-modify-write parses strictly and preserves both), glob exclusions, and the `~/.pi/agent/skills` directory's own contents beyond redundant-link removal (fleet-home / skills-repo links never removed).
 
 **Limitations:** the global file only — pi's project settings cannot reach user-scope skills. The exclusion mechanism is code-verified against pi (earendil-works/pi v0.84.4), not execution-tested; pi releases near-daily, and sync fixes any drift the next time it runs.
 
@@ -96,7 +96,7 @@ An existing fleet-shape block is flipped in place (`enabled = true` becomes `fal
 
 **Enable** removes fleet's blocks (simple `name`-selected tables). Blocks fleet doesn't recognize — `path` selectors, extra keys, multi-line values — are flagged and left exactly as they are. Codex ignores unknown keys at runtime, so nothing fleet leaves behind changes behavior.
 
-**Custom skills** get a symlink in `~/.codex/skills` pointing at the repo. codex scans the canonical store natively, so links there into the store are redundant and sync removes them.
+**Custom skills** get a symlink in `~/.codex/skills` pointing at the resolved home. codex scans the canonical store natively, so links there into the store are redundant and sync removes them, but fleet-home / skills-repo links are never removed.
 
 **Never touched:** every line outside fleet's own `[[skills.config]]` blocks passes through byte for byte — TOML has no comment-preserving encoder, so fleet edits at the line level instead of re-encoding the file.
 
@@ -118,13 +118,13 @@ The object is created when missing and dropped when the last entry leaves. **Ena
 
 The skills CLI's own store links in `~/.claude/skills` are load-bearing (they are claude's only path to installed skills), so they are never treated as redundant — only a link whose target is missing is reported, as a broken symlink.
 
-**Custom skills** get a managed symlink pointing at the repo — the same mechanism, pointed somewhere fleet owns.
+**Custom skills** get a managed symlink pointing at the resolved home — the same link mechanism, pointed at `<skillsRepo>/skills` when one is set or `~/.config/fleet/skills` otherwise.
 
 ## Cursor
 
 **Config written:** none. Cursor reads `~/.agents/skills` natively (documented) and has no config-level per-skill disable. The only documented lever, the `disable-model-invocation` frontmatter flag, would cross-talk with pi and claude, so per-skill disable for Cursor is out of scope. Every skill reads as `on`, toggles for Cursor are explicit no-ops, and the TUI marks the column `cursor!`.
 
-**Custom skills** get a symlink in `~/.cursor/skills` pointing at the repo (symlinks supported since IDE 2.5 / CLI 2026.02.27).
+**Custom skills** get a symlink in `~/.cursor/skills` pointing at the resolved home (symlinks supported since IDE 2.5 / CLI 2026.02.27).
 
 **Never touched:** any Cursor config file, ever. Redundant store links in `~/.cursor/skills` are removed by sync, since Cursor scans the canonical store natively.
 
@@ -132,9 +132,9 @@ The skills CLI's own store links in `~/.claude/skills` are load-bearing (they ar
 
 **Config written:** none. Bob reads `~/.agents/skills` natively — verified empirically on this machine; the docs only mention `~/.bob/skills` (and have an open bug about global skills, #288). No per-skill disable mechanism is documented or verified, so Bob behaves like Cursor: every skill reads as `on`, toggles are explicit no-ops, the column is marked `bob!`. Doctor surfaces the discovery picture if Bob's global-skill behavior ever changes.
 
-**Custom skills** get a symlink in `~/.bob/skills` pointing at the repo — repo skills are outside what Bob scans, so the link is Bob's only path to them.
+**Custom skills** get a symlink in `~/.bob/skills` pointing at the resolved home — repo skills are outside what Bob scans, so the link is Bob's only path to them.
 
-**Redundant links here are a judgment call:** the `skills` CLI auto-creates store links in `~/.bob/skills`, which double-cover skills Bob already sees through the canonical store. Sync removes those (a user decision, locked in the spec) while managed repo links for custom skills always stay — they point outside the store, so they are never classified as redundant.
+**Redundant links here are a judgment call:** the `skills` CLI auto-creates store links in `~/.bob/skills`, which double-cover skills Bob already sees through the canonical store. Sync removes those (a user decision, locked in the spec) while managed custom-home links for custom skills always stay — they point outside the store, so they are never classified as redundant.
 
 ## States across harnesses
 

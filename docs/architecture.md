@@ -1,43 +1,45 @@
 # Architecture
 
-Fleet is a Go CLI + TUI with one idea at its core: a versioned state file is the single source of truth for per-harness skill enablement, and six adapters project that state into each harness's own native config. Skills never move; the canonical store stays where the `skills` CLI puts it.
+Fleet is a Go CLI + TUI with one idea at its core: a versioned state file is the single source of truth for per-harness skill enablement, and six adapters project that state into each harness's own native config. Skills never move; the canonical store stays where the `skills` CLI puts it. A second file, `~/.config/fleet/config.json` (`FLEET_HOME`-aware), holds the machine-local pointer to the versioned skills repo and never touches enablement.
 
 ```
-                state file (~/.config/fleet/state.json)
-                     ▲ save                    │ read
-                     │                         ▼
-   toggle.Apply ─────┴────► sync.Run ──► harness.Adapter.Project ──► harness configs
-   (CLI on/off, TUI)        │
-                            ├─► redundant-link removal (skills dirs)
-                            └─► flags for entries it doesn't own
+             state file (~/.config/fleet/state.json)   config file (~/.config/fleet/config.json)
+                  ▲ save                    │ read           │ read (FLEET_REPO env > config > "")
+                  │                         ▼                ▼
+toggle.Apply ─────┴────► sync.Run ──► harness.Adapter.Project ──► harness configs
+(CLI on/off, TUI)        │
+                         ├─► redundant-link removal (canonical-store links only; fleet-home/skills-repo links never removed)
+                         └─► flags for entries it doesn't own
 
-   read side:  snapshot.Build ──► scan (store + lockfile)
-                             ├──► harness.Adapter.Read (per installed harness)
-                             └──► outdated.Check (GitHub, cached)
-                          ▲
-        fleet skill ls ───┤
-        bare fleet (TUI) ─┘
+read side:  snapshot.Build ──► scan (canonical + fleet-home + skillsRepo when set, precedence skillsRepo > fleet-home > canonical)
+                          ├──► scan lockfile (provenance)
+                          ├──► harness.Adapter.Read (per installed harness)
+                          └──► outdated.Check (GitHub, cached)
+                       ▲
+     fleet skill ls ───┤
+     bare fleet (TUI) ─┘
 ```
 
 ## Package map
 
-| Package                        | Owns                                                                                                                                                                       |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cmd/fleet`                    | `main`: resolve paths from the environment, hand them to the CLI. Nothing else.                                                                                            |
-| `internal/paths`               | Every filesystem location, derived from one injected home root plus the repo root. `FLEET_HOME` and `FLEET_REPO` override them. No other package calls `os.UserHomeDir()`. |
-| `internal/scan`                | Read-only listing of the canonical store and the skills CLI lockfile (provenance, sanitized dir names, frontmatter parsing).                                               |
-| `internal/state`               | The state file: versioned schema, unknown-field preservation, atomic save.                                                                                                 |
-| `internal/harness`             | The seam. The `Adapter` interface, six adapters with their read and write sides, link management and classification, skill-source wiring.                                  |
-| `internal/jsonc`               | Comment-, key-order-, and formatting-preserving JSONC editing, used by the JSON-config writers.                                                                            |
-| `internal/sync`                | State → adapters, plus redundant-link removal. Never edits the state file.                                                                                                 |
-| `internal/toggle`              | The one write path: record toggles in the state file, strip "on" markers directly, then sync. Shared by the CLI verbs and the TUI's staged apply.                          |
-| `internal/doctor`              | Read-only report of drift, links, and manual edits; keep-or-restore resolution for conflicts.                                                                              |
-| `internal/customs`             | `adopt`: move a custom skill into the repo, wire the repo path, manage the links.                                                                                          |
-| `internal/outdated`            | The update badge: lockfile hash vs GitHub tree hash, one call per repo, conditional requests, TTL cache.                                                                   |
-| `internal/snapshot`            | The read-side picture (rows × harness columns) that `ls` and the TUI both render.                                                                                          |
-| `internal/skillscli`           | The wrapped `skills` process call: explicit flags, stdin piped closed, output captured for failure display, never parsed.                                                  |
-| `internal/cli`, `internal/tui` | Faces. Cobra verbs and the Bubble Tea matrix over the same core; neither keeps its own copy of any business logic.                                                         |
-| `internal/buildinfo`           | The version stamp (`make build` and goreleaser set it via `-ldflags -X`).                                                                                                  |
+| Package                        | Owns                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cmd/fleet`                    | `main`: resolve paths from the environment, hand them to the CLI. Nothing else.                                                                                                                                                                                                                                              |
+| `internal/paths`               | Every filesystem location, derived from one injected home root plus the resolved skills repo. `FLEET_HOME` overrides home; `FLEET_REPO` env > `~/.config/fleet/config.json: skillsRepo` > `""` with no walk-up. Exposes `FleetConfigFile()`, `FleetHomeSkills()`, `RepoSkills()`. No other package calls `os.UserHomeDir()`. |
+| `internal/config`              | The machine-local config file `~/.config/fleet/config.json` (beside `state.json`): load/save, `skillsRepo` key, `EffectiveRepo` precedence `env > file > ""`, atomic write, unknown-field preservation, validation for `fleet config` verbs.                                                                                 |
+| `internal/scan`                | Read-only listing of the canonical store, fleet-home, and skills-repo stores plus the skills CLI lockfile (provenance, sanitized dir names, frontmatter parsing).                                                                                                                                                            |
+| `internal/state`               | The state file: versioned schema, unknown-field preservation, atomic save.                                                                                                                                                                                                                                                   |
+| `internal/harness`             | The seam. The `Adapter` interface, six adapters with their read and write sides, link management and classification, skill-source wiring.                                                                                                                                                                                    |
+| `internal/jsonc`               | Comment-, key-order-, and formatting-preserving JSONC editing, used by the JSON-config writers.                                                                                                                                                                                                                              |
+| `internal/sync`                | State → adapters, plus redundant-link removal (canonical-store links only; fleet-home/skills-repo links never removed). Never edits the state file.                                                                                                                                                                          |
+| `internal/toggle`              | The one write path: record toggles in the state file, strip "on" markers directly, then sync. Shared by the CLI verbs and the TUI's staged apply.                                                                                                                                                                            |
+| `internal/doctor`              | Read-only report of drift, links, and manual edits; keep-or-restore resolution for conflicts; double presence across canonical, fleet-home, and repo homes.                                                                                                                                                                  |
+| `internal/customs`             | `adopt`: move a custom skill into the resolved home (`RepoSkills()` when set else `FleetHomeSkills()`), wire that home, manage the links.                                                                                                                                                                                    |
+| `internal/outdated`            | The update badge: lockfile hash vs GitHub tree hash, one call per repo, conditional requests, TTL cache. Customs and non-GitHub sources are always unknown.                                                                                                                                                                  |
+| `internal/snapshot`            | The read-side picture (rows × harness columns) that `ls` and the TUI both render. Unions canonical + fleet-home + repo when set; precedence `skillsRepo > fleet-home > canonical`.                                                                                                                                           |
+| `internal/skillscli`           | The wrapped `skills` process call: explicit flags, stdin piped closed, output captured for failure display, never parsed.                                                                                                                                                                                                    |
+| `internal/cli`, `internal/tui` | Faces. Cobra verbs (`skill ls/on/off/adopt/update/sync/doctor`, `harness ls`, `config get/set/unset/list`) and the Bubble Tea matrix over the same core; neither keeps its own copy of any business logic.                                                                                                                   |
+| `internal/buildinfo`           | The version stamp (`make build` and goreleaser set it via `-ldflags -X`).                                                                                                                                                                                                                                                    |
 
 ## The adapter interface contract
 
@@ -76,9 +78,9 @@ It also reports `Linked` (names with a link in the harness's skills dir), `Disab
 | Strict JSON | pi, claude code | Parsed strictly first (comments are an error, matching the harness), then edited through the same tree editor; the writer never emits comments.                                                                                                  |
 | TOML        | codex           | No comment-preserving TOML encoder exists, so fleet edits at the line level: blocks it recognizes (header plus simple `name`/`path`/`enabled` lines, comments and blanks) are flipped or removed; every other line passes through byte for byte. |
 
-Two optional interfaces extend the seam for custom skills:
+Two optional interfaces extend the seam for custom skills, both targeting the resolved home (`RepoSkills()` when a repo is set, otherwise `FleetHomeSkills()`):
 
-- `SkillLinker.LinkSkill(name, target)` — keep `<harness skills dir>/<name>` a symlink to the repo: created when missing, repointed when it targets something else, never touching a real directory or file. Implemented by codex, claude code, Cursor, and Bob.
+- `SkillLinker.LinkSkill(name, target)` — keep `<harness skills dir>/<name>` a symlink to the resolved home: created when missing, repointed when it targets something else, never touching a real directory or file. Implemented by codex, claude code, Cursor, and Bob.
 - `SourceWiring.WireSkillSource(dir)` — add a directory as an extra skill-discovery source in the config shape the file already speaks. Implemented by opencode and pi.
 
 ## The write sequence for toggles
@@ -92,11 +94,11 @@ Two optional interfaces extend the seam for custom skills:
 
 ## Sync
 
-`sync.Run` reads the state file fresh, then: remove redundant links (symlinks provably resolving into the canonical store in harnesses that scan it natively — never claude code, never non-symlinks, never links pointing elsewhere), then project one off-entry per recorded disable into each installed writable harness. Unrecognized entries are flagged, not touched. The state file is never edited. Every command runs this ambiently, and `fleet skill sync` exposes the same run as an explicit verb. The full decision list lives in [undo and escape hatches](undo.md#how-sync-decides-what-to-touch).
+`sync.Run` reads the state file fresh, then: remove redundant links (symlinks provably resolving into the canonical store in harnesses that scan it natively — never claude code, never non-symlinks, never links into the fleet-home or skills-repo custom homes), then project one off-entry per recorded disable into each installed writable harness. Unrecognized entries are flagged, not touched. The state file is never edited. Every command runs this ambiently, and `fleet skill sync` exposes the same run as an explicit verb. The full decision list lives in [undo and escape hatches](undo.md#how-sync-decides-what-to-touch).
 
 ## Doctor
 
-`doctor.Analyze` runs the same link classification and config reads as sync, but writes nothing. Findings are grouped (redundant links, broken symlinks, unknown entries, manual edits fleet can't manage, state drift, store+repo double presence, stale lock entries for adopted skills, missing directories, unreadable configs). Manual-edit _conflicts_ — where config and state disagree and both are expressible — are reported with their keep/restore options by default; `fleet skill doctor -i` walks each one as a prompt: `keep` records the edit in the state file, `restore` re-projects the recorded intent. Everything else is reported for sync to fix or the user to handle.
+`doctor.Analyze` runs the same link classification and config reads as sync, but writes nothing. Findings are grouped (redundant links, broken symlinks, unknown entries, manual edits fleet can't manage, state drift, double presence across canonical / fleet-home / repo, stale lock entries for adopted skills, missing directories, unreadable configs). Manual-edit _conflicts_ — where config and state disagree and both are expressible — are reported with their keep/restore options by default; `fleet skill doctor -i` walks each one as a prompt: `keep` records the edit in the state file, `restore` re-projects the recorded intent. Everything else is reported for sync to fix or the user to handle.
 
 ## Adding a new harness
 

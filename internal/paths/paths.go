@@ -157,11 +157,11 @@ func (p *Paths) BobSkills() string { return join(p, ".bob", "skills") }
 
 // Fleet's own config home (state file, config file, tree cache, fallback skills).
 
-func (p *Paths) FleetConfigDir() string   { return join(p, ".config", "fleet") }
-func (p *Paths) FleetStateFile() string   { return join(p, ".config", "fleet", "state.json") }
-func (p *Paths) FleetConfigFile() string  { return join(p, ".config", "fleet", "config.json") }
+func (p *Paths) FleetConfigDir() string     { return join(p, ".config", "fleet") }
+func (p *Paths) FleetStateFile() string     { return join(p, ".config", "fleet", "state.json") }
+func (p *Paths) FleetConfigFile() string    { return join(p, ".config", "fleet", "config.json") }
 func (p *Paths) FleetTreeCacheFile() string { return join(p, ".config", "fleet", "tree-cache.json") }
-func (p *Paths) FleetHomeSkills() string  { return join(p, ".config", "fleet", "skills") }
+func (p *Paths) FleetHomeSkills() string    { return join(p, ".config", "fleet", "skills") }
 
 // The fleet repo (custom skills).
 

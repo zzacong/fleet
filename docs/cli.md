@@ -14,19 +14,19 @@ Opens the skill × harness matrix: one row per skill, one column per installed h
 
 Keys:
 
-| Key               | Action                                                      |
-| ----------------- | ----------------------------------------------------------- |
-| `j` / `k`, arrows | move the skill cursor                                       |
-| `h` / `l`, arrows | move the harness column                                     |
-| `space`           | stage or unstage the selected cell                          |
-| `enter`           | apply staged changes                                        |
-| `u`               | update all installed skills (wrapped skills CLI, then sync) |
+| Key               | Action                                                                 |
+| ----------------- | ---------------------------------------------------------------------- |
+| `j` / `k`, arrows | move the skill cursor                                                  |
+| `h` / `l`, arrows | move the harness column                                                |
+| `space`           | stage or unstage the selected cell                                     |
+| `enter`           | apply staged changes                                                   |
+| `u`               | update all installed skills (wrapped skills CLI, then sync)            |
 | `U`               | update the selected skill (wrapped `skills update <skill>`, then sync) |
-| `esc`             | discard staged changes, clear the filter, or close help     |
-| `/`               | filter by name or description                               |
-| `r`               | refresh                                                     |
-| `?`               | help overlay                                                |
-| `q`, `ctrl+c`     | quit (`q` is text while the filter holds input)             |
+| `esc`             | discard staged changes, clear the filter, or close help                |
+| `/`               | filter by name or description                                          |
+| `r`               | refresh                                                                |
+| `?`               | help overlay                                                           |
+| `q`, `ctrl+c`     | quit (`q` is text while the filter holds input)                        |
 
 Cells read `●` on, `○` off, `-` absent. Columns for Cursor and Bob render faint with a `!` in the header: they have no per-skill off switch, so toggles there are no-ops.
 
@@ -40,7 +40,7 @@ The hero banner appears on launch only. `fleet --quiet` (or `-q`) keeps the matr
 fleet skill ls [--json] [--quiet]
 ```
 
-Lists every skill in the canonical store, plus the fleet repo's custom skills, with a column per installed harness. Custom skills come first, then installed skills grouped by source repo.
+Lists every skill fleet discovers — the canonical store (`~/.agents/skills`), the fleet-home fallback (`~/.config/fleet/skills`), and the designated skills repo's `skills/` directory (`<skillsRepo>/skills` when a repo is set, `FLEET_HOME`-aware, resolved as `FLEET_REPO` env > `~/.config/fleet/config.json: skillsRepo` > unset) — with a column per installed harness. A name present in more than one source appears once with precedence `skillsRepo > fleet-home > canonical`; the other copy is doctor drift, not a silent overwrite. Custom skills come first, then installed skills grouped by source repo.
 
 ```sh
 $ fleet skill ls
@@ -50,7 +50,7 @@ tdd         on        on  on     -       on      on   ↑       example/tdd  Tes
 ```
 
 - The enablement columns sit right after the name — they are the table's point. The description goes last, truncated to whatever room the terminal has left, so no column ever wraps mid-word; piped output keeps the plain 60-column cap.
-- `SOURCE` is `custom` (the skill lives in the fleet repo's `skills/` directory, or has no lockfile entry) or the source repo the lockfile records.
+- `SOURCE` is `custom` (the skill lives in a custom home — `~/.config/fleet/skills/` or `<skillsRepo>/skills` when set — or has no lockfile entry) or the source repo the lockfile records.
 - `UPDATE` is the outdated badge: `↑` update available, `✓` current, `?` unknown, `—` never checked (custom skills). Non-GitHub sources and failed checks are `?` — fleet checks GitHub directly, one API call per source repo, cached for an hour under the fleet config dir, and reports unknown rather than guessing.
 - A harness column shows `on`, `off`, or `-`. `-` means the harness cannot discover the skill at all; for claude code that is the normal state until a link exists (see [claude code](harnesses.md#claude-code)).
 - Color on a terminal only: `on` green, `off` dim, `↑` yellow, `✓` green, custom cyan. Piped output is plain.
@@ -156,13 +156,13 @@ skill: codex: enabled "tdd"
 fleet skill adopt <name>
 ```
 
-Moves a custom skill from the canonical store (`~/.agents/skills`) into the fleet repo's `skills/` directory, where it stays versioned. Then it wires the repo in and links the skill everywhere it is needed:
+Moves a custom skill from the canonical store (`~/.agents/skills`) into the resolved custom home — the designated skills repo's `skills/` directory when a skills repo is set (`<skillsRepo>/skills`, resolved as `FLEET_REPO` env > `~/.config/fleet/config.json: skillsRepo` > unset), otherwise `~/.config/fleet/skills/` — where it stays versioned. Then it wires the resolved home in and links the skill everywhere it is needed:
 
 ```sh
 $ fleet skill adopt git-helper
 adopt: adopted "git-helper"
   from ~/.agents/skills/git-helper
-    → ~/Developer/fleet/skills/git-helper
+    → ~/Developer/fleet/skills/git-helper     # or ~/.config/fleet/skills/git-helper when no repo is set
 adopt: opencode: wired "~/Developer/fleet/skills" as a skill source (skills)
 adopt: pi: wired "~/Developer/fleet/skills" as a skill source (skills)
 adopt: codex: linked "git-helper" → ~/Developer/fleet/skills/git-helper
@@ -171,12 +171,12 @@ adopt: cursor: linked "git-helper" → ~/Developer/fleet/skills/git-helper
 adopt: bob: linked "git-helper" → ~/Developer/fleet/skills/git-helper
 ```
 
-- The first lines are the outcome: the skill now lives in the repo. On a terminal the `adopt:` prefix is dimmed, the verb is green and harness names are cyan; it is the lines to read. The headline breaks into three lines so both the original store path and the repo destination are visible. Managed links that were already correct stay quiet — only the wiring and the links that actually changed print, with `adopt: codex: repointed "git-helper" (was ~/.agents/skills/git-helper) → ~/Developer/fleet/skills/git-helper` for a skills CLI link taken over, or a `— left alone` note when a real directory is in the way.
+- The first lines are the outcome: the skill now lives in the resolved home. On a terminal the `adopt:` prefix is dimmed, the verb is green and harness names are cyan; it is the lines to read. The headline breaks into three lines so both the original store path and the destination are visible. Managed links that were already correct stay quiet — only the wiring and the links that actually changed print, with `adopt: codex: repointed "git-helper" (was ~/.agents/skills/git-helper) → ~/Developer/fleet/skills/git-helper` for a skills CLI link taken over, or a `— left alone` note when a real directory is in the way.
 - Sync runs as part of the command, but ambient findings about other skills stay out of the report; `fleet skill sync` and `fleet skill doctor` are where they are listed.
 
-- The repo is found by walking up from the working directory to the nearest `.git`; `FLEET_REPO` overrides it. Outside any repo: `Error: no fleet repo found — run inside the repo or set FLEET_REPO`.
-- opencode and pi get the repo path in their own config (in the dialect the file already speaks). codex, claude code, Cursor, and Bob get a symlink named after the skill, pointing at the repo. Managed links never point into the canonical store, so opencode and pi never see an adopted skill twice.
-- Adoption records nothing in the state file: custom is defined by living in the repo. Disables recorded before adoption keep applying, because config rules target the skill's name wherever it lives.
+- The target home is the resolved home the next `ls` will scan; no walk-up to `.git` — set it once with `fleet config set skills-repo ~/Developer/fleet` or `FLEET_REPO` env. There is no "run inside the repo" requirement; when no repo is set the missing fleet-home dir is created on demand. A name already present in the resolved home or in any other scanned source is a double-presence error — resolve by hand before adopting.
+- opencode and pi get the resolved home's path in their own config (in the dialect the file already speaks). codex, claude code, Cursor, and Bob get a symlink named after the skill, pointing at that home. Managed links never point into the canonical store, so opencode and pi never see an adopted skill twice.
+- Adoption records nothing in the state file: custom is defined by living in the resolved home (repo's `skills/` or fleet-home `skills/`). Disables recorded before adoption keep applying, because config rules target the skill's name wherever it lives.
 - Adopting an already-adopted skill moves nothing but re-ensures the wiring and links, so a partially failed run heals on the next `adopt`. The outcome line reads `adopt: "git-helper" is already adopted` followed by `  → ~/Developer/fleet/skills/git-helper`.
 - To undo, move the directory back into the store by hand; see [undo](undo.md#undo-an-adoption).
 
@@ -281,6 +281,37 @@ Error: skills update -g -y: exit status 1
 
 The wrapped call is fully explicit and non-interactive: stdin is piped closed, so an unexpected prompt fails fast instead of hanging. Fleet never parses the CLI's prose, never writes the skills CLI lockfile, and `skills check` (an undocumented alias of `update`) is not used.
 
+## fleet config
+
+```sh
+fleet config get <key> [--json]
+fleet config set <key> <value>
+fleet config unset <key>
+fleet config list [--json]
+```
+
+Manages fleet's machine-local pointer at `~/.config/fleet/config.json` (`FLEET_HOME`-aware). The file holds the pointer to the versioned skills repo; one key today: `skills-repo` (aliases `skillsRepo`), value is an absolute path to the skills repo root (the directory whose `skills/` is the collection). Resolution everywhere else is `FLEET_REPO` env > `config.json: skillsRepo` > `""` (no repo set), with no walk-up to `.git`.
+
+```sh
+$ fleet config set skills-repo ~/Developer/fleet
+$ fleet config get skills-repo
+/home/you/Developer/fleet
+$ fleet config list
+skills-repo = /home/you/Developer/fleet
+$ fleet config list --json
+{
+  "skillsRepo": "/home/you/Developer/fleet"
+}
+$ fleet config unset skills-repo
+```
+
+- `get <key>` prints the effective value (`FLEET_REPO` overrides the file) or empty when unset. Exit 0 even when unset; unknown keys fail with `unknown config key "foo" (want skills-repo)`.
+- `set <key> <value>` validates the path is absolute, the directory exists, and warns when it lacks `.git` (`"… does not contain .git — not a git repo root"` on stderr); then writes atomically (`temp + rename`), preserving unknown fields. `~/` expands against the user's home.
+- `unset <key>` clears the pointer and writes atomically (unknown fields stay).
+- `list` prints `skills-repo = <path>` or nothing when unset; `list --json` emits `{"skillsRepo": "<path>"}` or `{}` when unset, two-space indent.
+
+The file `~/.config/fleet/config.json` is the machine-local pointer; a missing file means no repo is set (`""`), not an error. It sits beside `state.json` and `tree-cache.json` and is `FLEET_HOME`-aware. Custom skills without a repo set live in `~/.config/fleet/skills/` — the unversioned fleet-home fallback — and `fleet skill ls` / `adopt` target that home until a repo is set.
+
 ## fleet harness ls
 
 ```sh
@@ -355,7 +386,7 @@ Release builds stamp the version at build time; `go install` builds report `dev`
 Sync runs on every fleet command and after every wrapped `skills` call, and [`fleet skill sync`](#fleet-skill-sync) runs the same machinery on demand. Its decision rules are short and [documented in full](undo.md#how-sync-decides-what-to-touch):
 
 1. Load the state file fresh.
-2. Remove redundant links: symlinks into the canonical store in harnesses that scan it natively. Never claude's; never anything else in those dirs.
+2. Remove redundant links: symlinks that provably resolve into the canonical store in harnesses that scan it natively (`nativeScanHarnesses`: opencode, pi, codex, Cursor, Bob — never claude code). Links into the fleet-home or skills-repo custom homes are never redundant and are never removed; broken links, real dirs/files, and foreign links stay.
 3. For each installed harness with a write side, write the harness's own off-entry for each state-recorded disable. Nothing else — an absent entry means on, and sync never writes "on" markers.
 4. Flag (never touch) entries it doesn't recognize: patterns, blankets, foreign shapes.
 5. Never edit the state file.
@@ -364,11 +395,18 @@ Sync runs on every fleet command and after every wrapped `skills` call, and [`fl
 
 ## Error reference
 
-| Situation                                | Message                                                                           | Exit |
-| ---------------------------------------- | --------------------------------------------------------------------------------- | ---- |
-| Unknown `--harness` value                | `unknown harness "emacs" (want one of: opencode, pi, codex, claude, cursor, bob)` | 1    |
-| `--harness` names an uninstalled harness | `opencode is not installed on this machine`                                       | 1    |
-| `off` for a skill not in the store       | `skill "typo-skill" not found in ~/.agents/skills`                                | 1    |
-| `adopt` outside a repo                   | `no fleet repo found — run inside the repo or set FLEET_REPO`                     | 1    |
-| `adopt` for a missing skill              | `skill "git-helper" not found in ~/.agents/skills`                                | 1    |
-| Wrapped `skills` failure                 | CLI's raw output, then `Error: skills update -g -y: …`                            | 1    |
+| Situation                                | Message                                                                                                  | Exit |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------- | ---- |
+| Unknown `--harness` value                | `unknown harness "emacs" (want one of: opencode, pi, codex, claude, cursor, bob)`                        | 1    |
+| `--harness` names an uninstalled harness | `opencode is not installed on this machine`                                                              | 1    |
+| `off` for a skill not in the store       | `skill "typo-skill" not found in ~/.agents/skills`                                                       | 1    |
+| `adopt` for a missing skill              | `skill "git-helper" not found in ~/.agents/skills`                                                       | 1    |
+| `adopt` double presence                  | `skill "x" exists in both ~/.agents/skills and ~/.config/fleet/skills — resolve by hand before adopting` | 1    |
+| Unknown config key                       | `unknown config key "foo" (want skills-repo)`                                                            | 1    |
+| `config set` with non-absolute path      | `skills repo path must be absolute: "relative/path"`                                                     | 1    |
+| `config set` with missing path           | `skills repo path does not exist: "/no/such/dir/xyz"`                                                    | 1    |
+| `config set` with file not dir           | `skills repo path is not a directory: "/tmp/file"`                                                       | 1    |
+| `config set` with non-git warning        | `warning: "/tmp/xyz" does not contain .git — not a git repo root` (stderr, exit 0)                       | 0    |
+| Wrapped `skills` failure                 | CLI's raw output, then `Error: skills update -g -y: …`                                                   | 1    |
+
+No "no fleet repo found — run inside the repo" error remains: the resolved home is `FLEET_REPO` env > `~/.config/fleet/config.json: skillsRepo` > `""`, never a walk-up. When no skills repo is set, `adopt` targets `~/.config/fleet/skills/` (created on demand) and `ls` shows canonical plus fleet-home customs alone. Set the pointer once with `fleet config set skills-repo ~/Developer/fleet`.
