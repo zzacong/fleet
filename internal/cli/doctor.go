@@ -418,17 +418,27 @@ func restoreConflictReceipt(out io.Writer, p *paths.Paths, c doctor.Conflict, pa
 	if err != nil {
 		return err
 	}
+	relevantChanged := 0
 	for _, ch := range rep.Changed {
+		if ch.Skill != c.Skill {
+			continue
+		}
 		if _, err := fmt.Fprintf(out, "  restored: %s\n", restoreChange(c.Harness, ch)); err != nil {
 			return err
 		}
+		relevantChanged++
 	}
+	relevantFlags := 0
 	for _, f := range rep.Flags {
+		if f.Skill != c.Skill {
+			continue
+		}
 		if _, err := fmt.Fprintf(out, "  restored: %s: %s\n", c.Harness, f.Message); err != nil {
 			return err
 		}
+		relevantFlags++
 	}
-	if len(rep.Changed) == 0 && len(rep.Flags) == 0 {
+	if relevantChanged == 0 && relevantFlags == 0 {
 		if _, err := fmt.Fprintf(out, "  restored: %s already matches the state\n", c.Harness); err != nil {
 			return err
 		}
