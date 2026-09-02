@@ -1,6 +1,6 @@
 # Spec: Monorepo with designated skills repo and fleet-home fallback
 
-Status: ready-for-agent
+Status: resolved
 
 ## Problem Statement
 
