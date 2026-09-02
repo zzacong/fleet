@@ -29,13 +29,16 @@ import time
 
 HOME = os.path.expanduser("~")
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-# Fleet repo root is two levels above scripts/watcher/
+# Fleet repo root is two levels above scripts/watcher/ (scripts/watcher -> repo
+# root). After the monorepo move Go code lives at apps/cli/internal/paths but
+# the watcher stays at scripts/watcher/watch.py, so depth is unchanged — two
+# levels still resolves to the monorepo root's skills/ publishable collection.
 REPO = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
 # State lives inside the repo (gitignored) so the watcher is self-contained.
 STATE_DIR = os.path.join(SCRIPT_DIR, ".state")
 CONTENT_DIR = os.path.join(STATE_DIR, "contents")
 
-# (label, absolute path) — paths derived from fleet's internal/paths/paths.go
+# (label, absolute path) — paths derived from fleet's apps/cli/internal/paths/paths.go
 WATCH_TARGETS = [
     ("fleet-config",   os.path.join(HOME, ".config/fleet")),
     ("agents-store",   os.path.join(HOME, ".agents")),
