@@ -158,9 +158,15 @@ Moves a custom skill from the canonical store (`~/.agents/skills`) into the flee
 ```sh
 $ fleet skill adopt git-helper
 adopted "git-helper"
+opencode: wired "~/Developer/fleet/skills" as a skill source (skills)
+pi: wired "~/Developer/fleet/skills" as a skill source (skills)
+codex: linked "git-helper" → ~/Developer/fleet/skills/git-helper
+claude: linked "git-helper" → ~/Developer/fleet/skills/git-helper
+cursor: linked "git-helper" → ~/Developer/fleet/skills/git-helper
+bob: linked "git-helper" → ~/Developer/fleet/skills/git-helper
 ```
 
-- The first line is the outcome: the skill now lives in the repo. On a terminal the verb is green; it is the one line to read. Wiring the repo into opencode/pi and linking it for codex, claude code, Cursor, and Bob happens quietly — only a repointed link (the skills CLI's old link taken over) or a skipped link (a real directory in the way) prints an extra line: `codex: repointed "git-helper" (was ~/.agents/skills/git-helper) → ~/Developer/fleet/skills/git-helper`.
+- The first line is the outcome: the skill now lives in the repo. On a terminal the verb is green and harness names are cyan; it is the lines to read. Managed links that were already correct stay quiet — only the wiring and the links that actually changed print, with `repointed "git-helper" (was ~/.agents/skills/git-helper) → ~/Developer/fleet/skills/git-helper` for a skills CLI link taken over, or a `— left alone` note when a real directory is in the way.
 - Sync runs as part of the command, but ambient findings about other skills stay out of the report; `fleet skill sync` and `fleet skill doctor` are where they are listed.
 
 - The repo is found by walking up from the working directory to the nearest `.git`; `FLEET_REPO` overrides it. Outside any repo: `Error: no fleet repo found — run inside the repo or set FLEET_REPO`.
@@ -178,8 +184,8 @@ fleet skill doctor
 The read-only report of what's wrong. It inspects every installed harness, the canonical store, and the repo's `skills/` directory, and reports:
 
 - **redundant links** — per-agent symlinks into the canonical store in harnesses that scan it natively; sync removes them on the next command
-- **broken symlinks** — targets missing or looping
-- **unknown entries** — anything else in a skills dir; reported, never touched
+- **broken symlinks** — targets missing or looping; `fleet skill doctor -i` offers to remove them
+- **unknown entries** — anything else in a skills dir (excluding managed custom-skill links to the fleet repo's `skills/` dir); reported, never touched
 - **manual edits fleet can't manage** — pattern or blanket rules that disable a skill
 - **state drift** — state and config disagreeing in ways sync will resolve
 - **double presence** — a skill name that exists in both the canonical store and the repo's `skills/` dir, so opencode and pi would see it twice and one copy's rules may shadow the other; remove one of the copies by hand
@@ -215,7 +221,9 @@ $ fleet skill doctor -i
   [x] skip all 12 pi conflicts
 ```
 
-`keep` adopts your hand edit as the new intent; `restore` re-projects the recorded intent. When one harness has several conflicts, `[a]` and `[x]` apply the choice to all of that harness's conflicts at once — and never beyond it: the next harness's conflicts are prompted separately, so one keypress never adopts edits from a config you haven't been shown. There is no restore-all because that is exactly what `fleet skill sync` does. In interactive mode with piped input, conflicts are reported and left as is (`left as is (no input)`), and the command still exits 0. A clean home reports `no problems found`.
+`keep` adopts your hand edit as the new intent; `restore` re-projects the recorded intent. When one harness has several conflicts, `[a]` and `[x]` apply the choice to all of that harness's conflicts at once — and never beyond it: the next harness's conflicts are prompted separately, so one keypress never adopts edits from a config you haven't been shown. There is no restore-all because that is exactly what `fleet skill sync` does. In interactive mode with piped input, conflicts are reported and left as is (`left as is (no input)`), and the command still exits 0.
+
+Broken symlinks are handled the same way in interactive mode: each broken link is offered as `[r] remove` or `[s] skip`, with `[a] remove all` and `[x] skip all` per harness. A clean home reports `no problems found`.
 
 Doctor never runs ambient sync — the point is to show what sync _would_ do before it does it.
 

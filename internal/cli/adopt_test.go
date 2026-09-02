@@ -98,20 +98,22 @@ func TestAdoptMovesWiresAndLinksEveryHarness(t *testing.T) {
 		t.Errorf("canonical store = %v, %v; want just tdd", entries, err)
 	}
 
-	// The command reports what it did: one outcome line, quiet wiring/links.
+	// The command reports what it did.
 	if !strings.Contains(out, `adopted "my-notes"`) {
 		t.Errorf("output missing adopted headline:\n%s", out)
 	}
-	for _, noisy := range []string{
+	for _, want := range []string{
 		`opencode: wired "` + repoSkills,
 		`pi: wired "` + repoSkills,
 		`codex: linked "my-notes"`,
 		`bob: linked "my-notes"`,
-		"moved " + filepath.Join(p.SkillsStore(), "my-notes"),
 	} {
-		if strings.Contains(out, noisy) {
-			t.Errorf("output should be quiet, but contains %q:\n%s", noisy, out)
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "moved "+filepath.Join(p.SkillsStore(), "my-notes")) {
+		t.Errorf("output should not contain moved line:\n%s", out)
 	}
 
 	// The adopted skill still parses as a skill, marked custom with no

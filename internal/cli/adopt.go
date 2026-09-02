@@ -44,12 +44,14 @@ func newSkillAdoptCmd(p *paths.Paths) *cobra.Command {
 					return err
 				}
 			}
+			for _, w := range rep.Wired {
+				if _, err := fmt.Fprintln(out, formatWired(string(w.Harness), p.RepoSkills(), w.Where, pal)); err != nil {
+					return err
+				}
+			}
 			for _, l := range rep.Linked {
-				switch l.Change.Action {
-				case harness.LinkRepointed, harness.LinkSkipped:
-					if _, err := fmt.Fprintln(out, formatLink(string(l.Harness), l)); err != nil {
-						return err
-					}
+				if _, err := fmt.Fprintln(out, formatLinkStyled(string(l.Harness), l, pal)); err != nil {
+					return err
 				}
 			}
 
@@ -72,6 +74,21 @@ func formatLink(harnessName string, l harness.LinkResult) string {
 		return fmt.Sprintf("%s: %s", harnessName, l.Change.Note)
 	default:
 		return fmt.Sprintf("%s: linked %q → %s", harnessName, l.Name, l.Target)
+	}
+}
+
+func formatWired(harness, dir, where string, pal palette) string {
+	return fmt.Sprintf("%s: %s %q as a skill source %s", pal.info(harness), pal.good("wired"), dir, pal.dim("("+where+")"))
+}
+
+func formatLinkStyled(harnessName string, l harness.LinkResult, pal palette) string {
+	switch l.Change.Action {
+	case harness.LinkRepointed:
+		return fmt.Sprintf("%s: %s %q %s → %s", pal.info(harnessName), pal.warn("repointed"), l.Name, pal.dim("(was "+l.Change.From+")"), l.Target)
+	case harness.LinkSkipped:
+		return fmt.Sprintf("%s: %s", pal.info(harnessName), pal.dim(l.Change.Note))
+	default:
+		return fmt.Sprintf("%s: %s %q → %s", pal.info(harnessName), pal.good("linked"), l.Name, l.Target)
 	}
 }
 

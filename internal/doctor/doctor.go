@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/paths"
@@ -62,6 +63,8 @@ type Finding struct {
 	// Skill names the skill involved; empty when none.
 	Skill   string
 	Message string
+	// Path is the filesystem path for link findings; empty otherwise.
+	Path string
 }
 
 // Conflict is a manual edit that disagrees with the state file, offered to
@@ -105,6 +108,19 @@ func Analyze(p *paths.Paths) (Report, error) {
 	}
 
 	// Links: what's in each installed harness's skills dir.
+	// Repo skills are needed to filter managed custom links from unknown entries.
+	var repoSkills []scan.Skill
+	if p.RepoSkills() != "" {
+		if rs, err := scan.ScanStore(p.RepoSkills()); err == nil {
+			repoSkills = rs
+		}
+	}
+	repoByDir := map[string]string{}
+	repoByName := map[string]bool{}
+	for _, s := range repoSkills {
+		repoByDir[s.Dir] = s.Name
+		repoByName[s.Name] = true
+	}
 	for _, d := range harness.SkillDirs(p) {
 		entries, err := harness.ScanSkillDir(d, p.SkillsStore())
 		if err != nil {
@@ -121,6 +137,9 @@ func Analyze(p *paths.Paths) (Report, error) {
 			}
 		}
 		for _, e := range entries {
+			if isManagedRepoLink(e, p, repoByDir, repoByName) {
+				continue
+			}
 			f, ok := linkFinding(e)
 			if ok {
 				rep.Findings = append(rep.Findings, f)
@@ -150,7 +169,7 @@ func Analyze(p *paths.Paths) (Report, error) {
 // that are exactly as they should be (claude's live store links) produce
 // none.
 func linkFinding(e harness.Entry) (Finding, bool) {
-	f := Finding{Harness: string(e.Harness), Skill: e.Name}
+	f := Finding{Harness: string(e.Harness), Skill: e.Name, Path: e.Path}
 	target := ""
 	if e.Target != "" {
 		target = fmt.Sprintf(" → %s", e.Target)
@@ -169,6 +188,74 @@ func linkFinding(e harness.Entry) (Finding, bool) {
 		return Finding{}, false
 	}
 	return f, true
+}
+
+// isManagedRepoLink reports whether the entry is a managed custom-skill
+// link pointing into the fleet repo's skills/ dir. Such links are fleet's
+// own discovery path for adopted skills, not unknown entries.
+func isManagedRepoLink(e harness.Entry, p *paths.Paths, repoByDir map[string]string, repoByName map[string]bool) bool {
+	if e.Class != harness.EntryForeign {
+		return false
+	}
+	repoSkills := p.RepoSkills()
+	if repoSkills == "" || e.Target == "" {
+		return false
+	}
+	// Target must be inside the repo skills dir (absolute, cleaned).
+	if !pathInside(e.Target, repoSkills) && e.Target != repoSkills {
+		return false
+	}
+	// The link name should match a repo skill (by dir or frontmatter name).
+	if _, ok := repoByDir[e.Name]; ok {
+		return true
+	}
+	if repoByName[e.Name] {
+		return true
+	}
+	// Also handle the case where target's leaf matches the link name.
+	if filepath.Base(e.Target) == e.Name {
+		if _, err := os.Stat(e.Target); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// pathInside reports whether path is inside dir. Local copy to avoid
+// importing harness's unexported helper; lexical plus symlink-evaluated
+// check mirrors harness.pathInside.
+func pathInside(path, dir string) bool {
+	if under(path, dir) {
+		return true
+	}
+	evaled, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return false
+	}
+	evalDir := dir
+	if evaledDir, err := filepath.EvalSymlinks(dir); err == nil {
+		evalDir = evaledDir
+	}
+	return under(evaled, evalDir)
+}
+
+func under(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// RemoveBroken removes the broken symlink at the finding's path.
+func RemoveBroken(f Finding) error {
+	if f.Path == "" {
+		return fmt.Errorf("broken link has no path")
+	}
+	if err := os.Remove(f.Path); err != nil {
+		return fmt.Errorf("remove broken link %s: %w", f.Path, err)
+	}
+	return nil
 }
 
 // analyzeConfigs compares each writable harness's own config against the

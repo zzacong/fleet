@@ -2,9 +2,10 @@
 // run ambient sync — the point is to surface everything sync would change
 // before sync changes it. By default it reports everything, conflicts
 // included, and touches nothing. With --interactive it walks each
-// manual-edit conflict as a prompt: keep adopts the edit into the state
-// file, restore syncs the state back into the config. Unknown entries and
-// unmanageable rules are reported and never touched either way.
+// broken symlink (offering to remove it) and each manual-edit conflict as a
+// prompt: keep adopts the edit into the state file, restore syncs the state
+// back into the config. Unknown entries and unmanageable rules are reported
+// and never touched either way.
 
 package cli
 
@@ -33,8 +34,8 @@ func newSkillDoctorCmd(p *paths.Paths) *cobra.Command {
 			"Doctor is read-only: it reports without changing anything, so you see what sync would " +
 			"do before sync does it (sync runs on every other command).\n\n" +
 			"By default everything is reported at once and nothing is asked — manual-edit conflicts " +
-			"are listed with their options and left as is. Pass --interactive to walk each conflict " +
-			"as a prompt: \"keep my change\" records the edit in the state file, \"restore\" syncs " +
+			"are listed with their options and left as is. Pass --interactive to walk each broken symlink and each conflict " +
+			"as a prompt: broken links offer \"remove\" to delete the dangling symlink; conflicts offer \"keep my change\" to record the edit in the state file and \"restore\" to sync " +
 			"the state back into the config, and skipping changes nothing.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -51,7 +52,18 @@ func newSkillDoctorCmd(p *paths.Paths) *cobra.Command {
 			}
 			resolved := 0
 			if interactive {
-				resolved, err = resolveConflicts(cmd, p, rep.Conflicts, pal)
+				scanner := bufio.NewScanner(cmd.InOrStdin())
+				inputEnded := false
+				noted := false
+				brokenResolved, err := resolveBrokenLinks(out, scanner, &inputEnded, &noted, p, rep.Findings, pal)
+				if err != nil {
+					return err
+				}
+				conflictsResolved, err := resolveConflictsShared(out, scanner, &inputEnded, &noted, p, rep.Conflicts, pal)
+				if err != nil {
+					return err
+				}
+				resolved = brokenResolved + conflictsResolved
 			} else {
 				err = reportConflicts(out, rep.Conflicts, pal)
 			}
@@ -62,7 +74,7 @@ func newSkillDoctorCmd(p *paths.Paths) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false,
-		"resolve each manual-edit conflict with a keep/restore prompt instead of reporting it")
+		"resolve each broken symlink and manual-edit conflict with a prompt instead of reporting it")
 	return cmd
 }
 
@@ -210,6 +222,14 @@ func resolveConflicts(cmd *cobra.Command, p *paths.Paths, conflicts []doctor.Con
 	in := bufio.NewScanner(cmd.InOrStdin())
 	inputEnded := false
 	noted := false
+	return resolveConflictsShared(out, in, &inputEnded, &noted, p, conflicts, pal)
+}
+
+// resolveConflictsShared is the shared scanner version of resolveConflicts.
+func resolveConflictsShared(out io.Writer, in *bufio.Scanner, inputEnded *bool, noted *bool, p *paths.Paths, conflicts []doctor.Conflict, pal palette) (int, error) {
+	if len(conflicts) == 0 {
+		return 0, nil
+	}
 	resolved := 0
 
 	for i := 0; i < len(conflicts); {
@@ -243,11 +263,11 @@ func resolveConflicts(cmd *cobra.Command, p *paths.Paths, conflicts []doctor.Con
 			}
 		}
 
-		if inputEnded || !in.Scan() {
-			inputEnded = true
+		if *inputEnded || !in.Scan() {
+			*inputEnded = true
 			note := "  left as is (no input)"
-			if !noted {
-				noted = true
+			if !*noted {
+				*noted = true
 				note += "; run `fleet skill doctor -i` from a terminal to resolve"
 			}
 			if _, err := fmt.Fprintln(out, note); err != nil {
@@ -279,6 +299,96 @@ func resolveConflicts(cmd *cobra.Command, p *paths.Paths, conflicts []doctor.Con
 			next = batchEnd + 1
 		case "x":
 			if _, err := fmt.Fprintf(out, "  skipped %d %s conflict%s\n", batch, c.Harness, plural(batch)); err != nil {
+				return resolved, err
+			}
+			next = batchEnd + 1
+		default:
+			if _, err := fmt.Fprintln(out, "  skipped"); err != nil {
+				return resolved, err
+			}
+		}
+		i = next
+	}
+	return resolved, nil
+}
+
+// resolveBrokenLinks walks the broken symlink findings and offers to remove
+// them. Like conflicts, broken links are grouped per harness so "all" acts
+// on the current harness's remaining batch.
+func resolveBrokenLinks(out io.Writer, in *bufio.Scanner, inputEnded *bool, noted *bool, p *paths.Paths, findings []doctor.Finding, pal palette) (int, error) {
+	var broken []doctor.Finding
+	for _, f := range findings {
+		if f.Kind == doctor.KindBrokenLink {
+			broken = append(broken, f)
+		}
+	}
+	if len(broken) == 0 {
+		return 0, nil
+	}
+	resolved := 0
+	for i := 0; i < len(broken); {
+		f := broken[i]
+		batchEnd := i
+		for batchEnd+1 < len(broken) && broken[batchEnd+1].Harness == f.Harness {
+			batchEnd++
+		}
+		batch := batchEnd - i + 1
+
+		if _, err := fmt.Fprintf(out, "\n%s %s: %s\n", pal.broken("✖"), pal.info(f.Harness), f.Message); err != nil {
+			return resolved, err
+		}
+		if _, err := fmt.Fprintf(out, "  %s remove — delete the broken symlink\n", pal.broken("[r]")); err != nil {
+			return resolved, err
+		}
+		if _, err := fmt.Fprintf(out, "  %s skip — leave it as is\n", pal.dim("[s]")); err != nil {
+			return resolved, err
+		}
+		if batch > 1 {
+			if _, err := fmt.Fprintf(out, "  %s remove all %d %s broken links\n", pal.broken("[a]"), batch, f.Harness); err != nil {
+				return resolved, err
+			}
+			if _, err := fmt.Fprintf(out, "  %s skip all %d %s broken links\n", pal.dim("[x]"), batch, f.Harness); err != nil {
+				return resolved, err
+			}
+		}
+
+		if *inputEnded || !in.Scan() {
+			*inputEnded = true
+			note := "  left as is (no input)"
+			if !*noted {
+				*noted = true
+				note += "; run `fleet skill doctor -i` from a terminal to resolve"
+			}
+			if _, err := fmt.Fprintln(out, note); err != nil {
+				return resolved, err
+			}
+			i++
+			continue
+		}
+
+		next := i + 1
+		switch strings.ToLower(strings.TrimSpace(in.Text())) {
+		case "r":
+			if err := doctor.RemoveBroken(f); err != nil {
+				return resolved, err
+			}
+			if _, err := fmt.Fprintf(out, "  removed: %s\n", f.Path); err != nil {
+				return resolved, err
+			}
+			resolved++
+		case "a":
+			for _, fj := range broken[i : batchEnd+1] {
+				if err := doctor.RemoveBroken(fj); err != nil {
+					return resolved, err
+				}
+				if _, err := fmt.Fprintf(out, "  removed: %s\n", fj.Path); err != nil {
+					return resolved, err
+				}
+				resolved++
+			}
+			next = batchEnd + 1
+		case "x":
+			if _, err := fmt.Fprintf(out, "  skipped %d %s broken link%s\n", batch, f.Harness, plural(batch)); err != nil {
 				return resolved, err
 			}
 			next = batchEnd + 1
