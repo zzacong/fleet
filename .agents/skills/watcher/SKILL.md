@@ -12,15 +12,16 @@ touches and report diffs on every `go`.
 
 ## Tool
 
-`scripts/watcher/watch.py` (`scripts/watcher/watch.py:2-19`) — single
-Python script, stdlib only.
+`scripts/watcher/watch.ts` (`scripts/watcher/watch.ts:2-19`) — single
+TypeScript file, Node stdlib only, no dependencies.
 
 ```
-python3 scripts/watcher/watch.py --initial --label=baseline  # record baseline
-python3 scripts/watcher/watch.py --label=go-1  # snapshot + diff vs previous
+node scripts/watcher/watch.ts --initial --label=baseline  # record baseline
+node scripts/watcher/watch.ts --label=go-1  # snapshot + diff vs previous
 ```
 
-`make watch` / `make watch-baseline` also work (see `Makefile`).
+Runs directly with Node 22+ — no install step, no Makefile targets (dev
+tool only, not CI).
 
 State lives in `scripts/watcher/.state/` (gitignored at `.gitignore:17`):
 `snap-*.json` snapshots + `contents/<sha1>` deduped file contents for line
@@ -32,7 +33,7 @@ Targets mirror fleet's `Paths` — every location fleet derives from an injected
 home root plus the repo root. Only the config file + skills dir per harness are
 watched (full harness dirs are not). Harness targets remain derived from
 `apps/cli/internal/paths` after the monorepo move (Go code at `apps/cli`, watcher
-stays at `scripts/watcher/watch.py`).
+stays at `scripts/watcher/watch.ts`).
 
 | Label             | Path                                | Kind                                                                                                                                                   |
 | ----------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -82,7 +83,7 @@ Line diffs are capped at 120 lines per file. Minified blobs (any line
 
 - Group diffs by target label (`## fleet-config (…)`).
 - For `~` files, show the unified diff (`-`/`+` lines) already provided by
-  `content_diff()` — do not re-implement diffing.
+  `contentDiff()` — do not re-implement diffing.
 - Call out fleet-relevant signals: `state.json` creates/updates, harness deny
   entries (`-skills/<name>/SKILL.md` in pi, `{"action":"skill"}` in opencode,
   `[[skills.config]]` in codex), symlink creation, and redundant-link removal.
@@ -95,4 +96,4 @@ Line diffs are capped at 120 lines per file. Minified blobs (any line
 
 State persists in `scripts/watcher/.state/` across sessions on the same
 checkout (not across a fresh `git clone`). No prior chat history needed
-— this file + `scripts/watcher/watch.py` is sufficient.
+— this file + `scripts/watcher/watch.ts` is sufficient.
