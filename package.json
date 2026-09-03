@@ -4,7 +4,7 @@
   "scripts": {
     "fmt": "oxfmt --write . && prettier --write \"**/*.astro\"",
     "lint": "oxlint .",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm -r typecheck && tsc -p scripts/watcher/tsconfig.json",
     "check": "oxfmt --check . && prettier --check \"**/*.astro\" && pnpm run lint && pnpm -r typecheck && make fmt-check && make lint && make test",
     "check:ci": "pnpm run lint && pnpm -r typecheck && make lint && make test",
     "docs:dev": "pnpm --filter docs dev",
@@ -12,10 +12,14 @@
     "docs:preview": "pnpm --filter docs preview"
   },
   "devDependencies": {
+    "@types/node": "^24.13.3",
     "oxfmt": "^0.65.0",
     "oxlint": "^1.81.0",
     "prettier": "^3.9.6",
     "prettier-plugin-astro": "^0.14.1",
     "typescript": "^6.0.3"
+  },
+  "engines": {
+    "node": ">=22.18"
   }
 }

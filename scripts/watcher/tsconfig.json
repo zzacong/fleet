@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "strict": true,
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    // The watcher runs directly under Node type-stripping with no build step.
+    // This rejects non-erasable syntax (enums, namespaces, parameter
+    // properties, ...) at check time so it stays runnable as-is.
+    "erasableSyntaxOnly": true
+  },
+  "include": ["watch.ts"]
+}
