@@ -1,5 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/prettierrc",
+  "printWidth": 80,
   "astroAllowShorthand": true,
   "plugins": ["prettier-plugin-astro"],
   "overrides": [
