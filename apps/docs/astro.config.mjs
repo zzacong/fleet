@@ -8,15 +8,11 @@ export default defineConfig({
     starlight({
       title: "Fleet",
       description: "Fleet manages agent skills across AI coding agents.",
-      social: [
-        { icon: "github", label: "GitHub", href: "https://github.com/zzacong/fleet" },
-      ],
+      social: [{ icon: "github", label: "GitHub", href: "https://github.com/zzacong/fleet" }],
       sidebar: [
         {
           label: "Start Here",
-          items: [
-            { label: "Introduction", link: "/" },
-          ],
+          items: [{ label: "Introduction", link: "/" }],
         },
         {
           label: "Reference",
@@ -29,9 +25,7 @@ export default defineConfig({
         },
         {
           label: "Skills",
-          items: [
-            { label: "Skills Catalog", slug: "skills" },
-          ],
+          items: [{ label: "Skills Catalog", slug: "skills" }],
         },
       ],
       customCss: [],

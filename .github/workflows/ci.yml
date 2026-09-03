@@ -29,15 +29,14 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - name: Install markdown tooling
+      - name: Install JS/TS tooling
         run: pnpm install --frozen-lockfile
 
-      - name: fmt, vet, test, lint, build
-        run: make check
+      - name: lint · typecheck · test
+        run: pnpm run check:ci
+
+      - name: Build
+        run: make build
 
       - name: Build docs (Starlight)
-        run: pnpm -F docs build
-
-      # fmt rewrites in place; a dirty tree means something was unformatted.
-      - name: Fail on unformatted files
-        run: git diff --exit-code
+        run: pnpm --filter docs build

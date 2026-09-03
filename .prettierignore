@@ -1,0 +1,10 @@
+node_modules
+dist
+build
+bin
+.scratch
+.scratch/**
+.worktrees
+apps/docs/dist
+apps/docs/.astro
+pnpm-lock.yaml

@@ -1,4 +1,9 @@
 {
-  "recommendations": ["golang.go", "oxc.oxc-vscode"],
+  "recommendations": [
+    "golang.go",
+    "oxc.oxc-vscode",
+    "esbenp.prettier-vscode",
+    "astro-build.astro-vscode"
+  ],
   "unwantedRecommendations": []
 }

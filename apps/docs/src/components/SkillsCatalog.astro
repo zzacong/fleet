@@ -13,7 +13,10 @@ function parseFrontmatter(text: string): Record<string, string> {
     if (idx === -1) continue;
     const k = line.slice(0, idx).trim();
     let v = line.slice(idx + 1).trim();
-    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+    if (
+      (v.startsWith('"') && v.endsWith('"')) ||
+      (v.startsWith("'") && v.endsWith("'"))
+    ) {
       v = v.slice(1, -1);
     }
     out[k] = v;
@@ -77,9 +80,11 @@ if (skillsDir) {
     </CardGrid>
   ) : (
     <Card title="No skills yet" icon="open-book">
-      No skills are shipped yet. Add a directory <code>skills/&lt;name&gt;/SKILL.md</code>{" "}
-      with frontmatter <code>name</code> and <code>description</code> and it will appear here on
-      the next build. See <code>CONTEXT.md</code> and ADR 0001 for the skills collection contract.
+      No skills are shipped yet. Add a directory{" "}
+      <code>skills/&lt;name&gt;/SKILL.md</code> with frontmatter{" "}
+      <code>name</code> and <code>description</code> and it will appear here on
+      the next build. See <code>CONTEXT.md</code> and ADR 0001 for the skills
+      collection contract.
     </Card>
   )
 }

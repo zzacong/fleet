@@ -1,5 +1,15 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "proseWrap": "preserve",
-  "ignorePatterns": [".scratch/**"]
+  "ignorePatterns": [
+    ".scratch/**",
+    ".astro/**",
+    "apps/docs/.astro/**",
+    "apps/docs/dist/**",
+    "dist/**",
+    "build/**",
+    "bin/**",
+    "node_modules/**",
+    "**/*.astro"
+  ]
 }
