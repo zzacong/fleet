@@ -135,16 +135,9 @@ function scan(target: string): Record<string, Entry> {
     for (const d of dirents) {
       const full = path.join(dir, d.name);
       if (d.isSymbolicLink()) {
-        // Matches watch.py: symlink-to-dir is neither descended nor recorded
-        // (its dirnames filter drops it before the record-if-link loop, which
-        // is dead code); symlink-to-file is recorded.
-        let pointsAtDir = false;
-        try {
-          pointsAtDir = fs.statSync(full).isDirectory();
-        } catch {
-          pointsAtDir = false; // broken link — record it like readlink does
-        }
-        if (pointsAtDir) continue;
+        // Record all symlinks, including links-to-dir: fleet links skills
+        // as dir symlinks (e.g. ~/.bob/skills/<name> -> repo skills/<name>).
+        // Never descend into dir links — their contents belong to the target.
         entries[full] = { type: "symlink", target: fs.readlinkSync(full) };
         continue;
       }
