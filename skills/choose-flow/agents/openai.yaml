@@ -1,0 +1,5 @@
+interface:
+  display_name: "Choose Flow"
+  short_description: "Estimate work and choose the next flow"
+policy:
+  allow_implicit_invocation: false

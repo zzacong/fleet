@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Document title</title>
+<style>
+  :root {
+    --bg: #faf9f7;
+    --text: #1c1b1a;
+    --muted: #6b6862;
+    --line: #e4e1db;
+    --accent: #0f766e;
+    --accent-soft: #eef7f5;
+    --code-bg: #f1efe9;
+    --warn-soft: #fdf3e7;
+    --warn: #b45309;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161513;
+      --text: #e8e5df;
+      --muted: #9a958c;
+      --line: #2c2a26;
+      --accent: #4fd1c5;
+      --accent-soft: #1d2a28;
+      --code-bg: #211f1c;
+      --warn-soft: #2d2318;
+      --warn: #f59e0b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 46rem; margin: 0 auto; padding: 48px 24px 96px; }
+  .wide { width: min(92vw, 70rem); position: relative; left: 50%; transform: translateX(-50%); margin-left: 0; margin-right: 0; }
+  header { margin-bottom: 36px; }
+  h1, h2, h3 { font-family: Charter, "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif; }
+  h1 { font-size: 31px; font-weight: 700; line-height: 1.25; margin: 0 0 8px; letter-spacing: -0.02em; }
+  .subtitle { color: var(--muted); font-size: 15px; margin: 0; }
+  h2 { font-size: 21px; font-weight: 700; margin: 44px 0 12px; padding-top: 24px; border-top: 1px solid var(--line); letter-spacing: -0.01em; }
+  h3 { font-size: 17px; font-weight: 700; margin: 26px 0 8px; }
+  p { margin: 0 0 14px; }
+  a { color: var(--accent); }
+  strong { font-weight: 600; }
+  ul, ol { padding-left: 22px; margin: 0 0 14px; }
+  li { margin-bottom: 6px; }
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.86em;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 5px;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 18px;
+    overflow-x: auto;
+    margin: 0 0 16px;
+  }
+  pre code { background: none; padding: 0; font-size: 13.5px; line-height: 1.55; }
+  table { width: 100%; border-collapse: collapse; margin: 0 0 16px; font-size: 14.5px; }
+  th {
+    text-align: left; font-weight: 600; padding: 8px 12px 8px 0;
+    border-bottom: 2px solid var(--line); color: var(--muted);
+    font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  td { padding: 10px 12px 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .note {
+    background: var(--accent-soft);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 14px 18px; margin: 0 0 16px; font-size: 15px;
+  }
+  .note p:last-child { margin-bottom: 0; }
+  .warnbox {
+    background: var(--warn-soft);
+    border-left: 3px solid var(--warn);
+    border-radius: 0 8px 8px 0;
+    padding: 14px 18px; margin: 0 0 16px; font-size: 15px;
+  }
+  .warnbox p:last-child { margin-bottom: 0; }
+  footer {
+    margin-top: 56px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 13.5px;
+  }
+</style>
+</head>
+<body>
+<main>
+<header>
+<!-- Replace this header. h1 is the document title; the subtitle is one line of context. -->
+<h1>Document title</h1>
+<p class="subtitle">One-line subtitle describing the document.</p>
+</header>
+
+<!-- Write body sections here. h2 for sections, h3 for subsections. Tables, pre/code,
+     lists inherit the frozen styles. Use class="note" for asides and class="warnbox"
+     for warnings. If the document draws on sources, keep the Sources section below;
+     delete it otherwise. -->
+
+<h2>Sources</h2>
+<ul>
+<li>Named source one</li>
+<li>Named source two</li>
+</ul>
+
+<!-- Keep the stamp; replace <purpose> with what this document was generated for.
+     Optionally add one short contextual phrase. No date. -->
+<footer>Drafted with Postplan &middot; generated for &lt;purpose&gt;</footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Ticket Sweep"
+  short_description: "Execute a whole series of open tickets in parallel"
+policy:
+  allow_implicit_invocation: false
