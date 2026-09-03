@@ -23,6 +23,7 @@ Use this skill as the first step for work that should happen on a new branch. It
    ```
 
    If `git status --short` prints anything, stop and ask the user to commit, stash, or otherwise account for those changes. `git worktree add` starts from `HEAD`; it does not copy uncommitted changes.
+
 5. Confirm that `opencode2` is available and that the current session can be read through the V2 API. Use the current conversation session ID supplied in the session context, not a newly created session or an arbitrary session from the list:
 
    ```sh

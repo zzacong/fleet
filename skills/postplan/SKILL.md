@@ -16,10 +16,13 @@ Publish one complete static HTML document as a Postplan draft and hand back the 
    - If the document draws on sources, end `<main>` with an `<h2>Sources</h2>` section. Each source is a link when it has a public HTTPS page — descriptive link text plus what it contributed:
 
      ```html
-     <li><a href="https://…">pi's docs/packages.md</a> — tool schema cost figures</li>
+     <li>
+       <a href="https://…">pi's docs/packages.md</a> — tool schema cost figures
+     </li>
      ```
 
      Fall back to a plain descriptive name only when no public page exists. Never raw local filesystem paths, secrets, or private URLs. Omit the section if there are no sources.
+
    - In the `<footer>`, keep the "Drafted with Postplan" stamp and fill in what the document was generated for. You may add one short contextual phrase. No date.
 3. Save to `/tmp/postplan-<slug>.html`, where slug is the kebab-case document title trimmed to 40 characters. The path is deterministic: same title, same path.
 4. Upload:
