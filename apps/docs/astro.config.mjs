@@ -1,9 +1,10 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 
+// https://astro.build/config
 // https://starlight.astro.build/reference/configuration/
 export default defineConfig({
-  site: "https://fleet.example.com",
+  site: "https://fleet.zzacong.com",
   integrations: [
     starlight({
       title: "Fleet",
