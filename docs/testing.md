@@ -97,12 +97,14 @@ To write an adapter test for a new harness, copy the pattern: a `run<Name>Projec
 ## Running the suite
 
 ```sh
-go test ./...                                    # everything
-go test ./internal/harness -run TestCodex -v     # one slice
-make check                                       # fmt, vet, test, lint, build — what CI runs
+pnpm run check     # fmt-check + lint + typecheck + Go lint/test — single entrypoint
+pnpm run check:ci  # lint + typecheck + Go lint/test — what CI runs (no fmt)
+go test ./...      # Go only
+go test ./internal/harness -run TestCodex -v # one slice
+make check         # fmt + test + lint + build — Go only
 ```
 
-CI runs `make check` and then `git diff --exit-code`: `make fmt` rewrites in place, so a dirty tree after it means something was committed unformatted. Run `make fmt` before committing — it covers Go (`gofumpt`) and markdown (`oxfmt` over README, CONTEXT.md, and `docs/`).
+CI runs `pnpm run check:ci` then `make build` and `pnpm --filter docs build`; format checks are `oxfmt --check` / `prettier --check` (no `git diff` guard). Run `pnpm run fmt` (JS/TS/MD/Astro) and `make fmt` (Go) before committing.
 
 ## Manual sandbox runs with FLEET_HOME
 

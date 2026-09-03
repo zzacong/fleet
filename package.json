@@ -2,10 +2,10 @@
   "name": "fleet",
   "private": true,
   "scripts": {
-    "fmt": "oxfmt --write . && prettier --write \"**/*.astro\" && make fmt",
+    "fmt": "oxfmt --write . && prettier --write \"**/*.astro\"",
     "lint": "oxlint .",
     "typecheck": "pnpm -r typecheck",
-    "check": "oxfmt --check . && prettier --check \"**/*.astro\" && pnpm run lint && pnpm -r typecheck && make lint && make test",
+    "check": "oxfmt --check . && prettier --check \"**/*.astro\" && pnpm run lint && pnpm -r typecheck && make fmt-check && make lint && make test",
     "check:ci": "pnpm run lint && pnpm -r typecheck && make lint && make test",
     "docs:dev": "pnpm --filter docs dev",
     "docs:build": "pnpm --filter docs build",

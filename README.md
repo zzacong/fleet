@@ -55,9 +55,11 @@ source <(fleet completion zsh)   # also: bash, fish, powershell
 ## Development
 
 ```sh
-make check    # fmt, vet, test, lint, build — everything CI runs
-make fmt      # gofumpt + oxfmt (markdown)
-make build    # bin/fleet, version stamped from git
+pnpm run check    # fmt-check + lint + typecheck + Go lint/test — single entrypoint
+pnpm run check:ci # lint + typecheck + Go lint/test — what CI runs (no fmt)
+pnpm run fmt      # oxfmt + prettier (JS/TS/MD/Astro)
+make fmt          # gofumpt (Go only)
+make build        # bin/fleet, version stamped from git
 ```
 
 The [architecture overview](docs/architecture.md) explains how the core fits together, and the [testing guide](docs/testing.md) covers the injected-home rule every test follows.
