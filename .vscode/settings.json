@@ -1,8 +1,14 @@
 {
+  "editor.codeActionsOnSave": {
+    "source.fixAll.oxlint": "always"
+  },
   "editor.defaultFormatter": "oxc.oxc-vscode",
   "editor.formatOnSave": true,
   "[astro]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.codeActionsOnSave": {
+      "source.format.oxc": "never"
+    }
   },
   "[go]": {
     "editor.defaultFormatter": "golang.go"

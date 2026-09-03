@@ -8,7 +8,13 @@ export default defineConfig({
     starlight({
       title: "Fleet",
       description: "Fleet manages agent skills across AI coding agents.",
-      social: [{ icon: "github", label: "GitHub", href: "https://github.com/zzacong/fleet" }],
+      social: [
+        {
+          icon: "github",
+          label: "GitHub",
+          href: "https://github.com/zzacong/fleet",
+        },
+      ],
       sidebar: [
         {
           label: "Start Here",
