@@ -13,6 +13,7 @@ dist/
 /fleet
 *.test
 *.out
+/go.work.sum
 
 # watcher artifacts (snapshots + deduped file contents)
 scripts/watcher/.state/
