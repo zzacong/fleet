@@ -27,9 +27,10 @@ func newSkillDoctorCmd(p *paths.Paths) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Report what's wrong: drift, redundant links, broken links, unknown entries, manual edits",
-		Long: "Inspect every installed harness, the canonical store, and the fleet repo's skills, and report what is wrong: " +
+		Long: "Inspect every installed harness, the canonical store, and the tracked custom homes, and report what is wrong: " +
 			"redundant per-agent links, broken symlinks, unknown entries in skills dirs, " +
-			"a skill name present in both the store and the repo, stale lockfile entries for adopted skills, " +
+			"a skill name present in more than one source, stale lockfile entries for adopted skills, " +
+			"an adopt target outside the scanned homes, explicit repos that are not git checkouts, " +
 			"missing directories, and manual config edits that disagree with the state file.\n\n" +
 			"Doctor is read-only: it reports without changing anything, so you see what sync would " +
 			"do before sync does it (sync runs on every other command).\n\n" +
@@ -92,8 +93,10 @@ var findingSections = []struct {
 	{doctor.KindUnknownEntry, "unknown entries", "reported, never touched", "info"},
 	{doctor.KindManualEdit, "manual edits fleet can't manage", "", "warn"},
 	{doctor.KindDrift, "state drift", "", "warn"},
-	{doctor.KindDoublePresence, "double presence (store and repo)", "", "warn"},
+	{doctor.KindDoublePresence, "double presence", "", "warn"},
 	{doctor.KindStaleLock, "stale lockfile entries", "fleet never writes the lockfile", "warn"},
+	{doctor.KindUnscannedAdoptTarget, "unscanned adopt target", "", "warn"},
+	{doctor.KindNonGitRepo, "non-git explicit repos", "bare pull skips them", "warn"},
 	{doctor.KindMissingDir, "missing directories", "", "warn"},
 	{doctor.KindBrokenConfig, "unreadable configs", "", "broken"},
 }
@@ -529,6 +532,10 @@ func findingLabel(kind doctor.Kind, n int) string {
 		return pluralized("drift finding", n)
 	case doctor.KindDoublePresence:
 		return pluralized("double-presence finding", n)
+	case doctor.KindUnscannedAdoptTarget:
+		return pluralized("unscanned adopt target", n)
+	case doctor.KindNonGitRepo:
+		return pluralized("non-git explicit repo", n)
 	case doctor.KindStaleLock:
 		return pluralized("stale lockfile entry", n)
 	case doctor.KindMissingDir:

@@ -1,6 +1,7 @@
 // Package snapshot builds the read-side picture of the world every fleet
-// face renders: the canonical store's skills plus the fleet repo's custom
-// skills, each with its per-harness enablement and update status. The ls
+// face renders: the canonical store's skills plus custom skills from the
+// tracked set and the fleet-home fallback, each with its per-harness
+// enablement and update status. The ls
 // verb and the TUI both render a snapshot; neither keeps its own copy of
 // the scan, read, grouping, or badge logic. Building one writes only
 // fleet's own update-check cache; nothing else is touched.
@@ -52,13 +53,16 @@ func DefaultTreeClient(p *paths.Paths) outdated.TreeClient {
 	return outdated.NewCachingClient(outdated.NewHTTPClient(""), filepath.Join(p.FleetConfigDir(), "tree-cache.json"))
 }
 
-// Build scans the canonical store, the fleet-home fallback, and the
-// designated skills repo when one is set, then every installed harness's
-// own config, and classifies each installed skill's update state. Check
-// failures come back as warnings, not errors. Display uses skills-repo
-// precedence skillsRepo > fleet-home > canonical: a name present in more
-// than one source appears once, from the highest-precedence source. The
-// other copy is not shown — its existence is doctor drift.
+// Build scans the canonical store, every tracked custom home (the explicit
+// repo list in order, then the auto-tracked fleet-home checkouts
+// alphabetically, via Paths.TrackedRepos), and the unversioned fleet-home
+// fallback, then every installed harness's own config, and classifies each
+// installed skill's update state. Check failures come back as warnings, not
+// errors. Display precedence is explicit-list order, then fleet-home
+// checkouts alphabetically, then the unversioned fallback, then the
+// canonical store. A name present in more than one source appears once, from
+// the highest-precedence source. The other copy is not shown — its existence
+// is doctor drift.
 func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Report, []string, error) {
 	storeSkills, err := scan.ScanStore(p.SkillsStore())
 	if err != nil {
@@ -68,16 +72,34 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 	if err != nil {
 		return nil, nil, fmt.Errorf("scan fleet home: %w", err)
 	}
-	var repoSkills []scan.Skill
-	if p.Repo != "" {
-		repoSkills, err = scan.ScanStore(p.RepoSkills())
-		if err != nil {
-			return nil, nil, fmt.Errorf("scan repo skills: %w", err)
-		}
+	// Tracked repos, highest precedence first (env, explicit list order,
+	// fleet-home checkouts alphabetical). Each root contributes its
+	// collection subdir when present; a missing collection is empty.
+	tracked, err := p.TrackedRepos()
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve tracked repos: %w", err)
 	}
-
-	// Union with precedence repo > fleet-home > canonical.
-	skillsByName := make(map[string]scan.Skill, len(storeSkills)+len(fleetSkills)+len(repoSkills))
+	type repoScan struct {
+		skills []scan.Skill
+	}
+	var trackedScans []repoScan
+	seenCollections := map[string]bool{}
+	for _, root := range tracked {
+		collection := filepath.Join(root, "skills")
+		clean := filepath.Clean(collection)
+		if seenCollections[clean] {
+			continue
+		}
+		seenCollections[clean] = true
+		ss, err := scan.ScanStore(collection)
+		if err != nil {
+			return nil, nil, fmt.Errorf("scan tracked repo %s: %w", root, err)
+		}
+		trackedScans = append(trackedScans, repoScan{skills: ss})
+	}
+	// Union with precedence tracked order > fleet-home > canonical: apply
+	// lowest first so the highest-precedence source wins.
+	skillsByName := make(map[string]scan.Skill, len(storeSkills)+len(fleetSkills))
 	customHomeNames := map[string]bool{}
 	for _, s := range storeSkills {
 		if _, ok := skillsByName[s.Name]; !ok {
@@ -88,9 +110,11 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 		skillsByName[s.Name] = s
 		customHomeNames[s.Name] = true
 	}
-	for _, s := range repoSkills {
-		skillsByName[s.Name] = s
-		customHomeNames[s.Name] = true
+	for i := len(trackedScans) - 1; i >= 0; i-- {
+		for _, s := range trackedScans[i].skills {
+			skillsByName[s.Name] = s
+			customHomeNames[s.Name] = true
+		}
 	}
 	skills := make([]scan.Skill, 0, len(skillsByName))
 	for _, s := range skillsByName {
@@ -124,8 +148,8 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 
 	// One update check for every skill in the store, grouped inside the
 	// checker: installed skills carry their lockfile provenance, customs
-	// stay the zero entry (unknown by definition, no API call). Fleet-home
-	// and repo customs are zero entries — a lingering lock entry from a
+	// stay the zero entry (unknown by definition, no API call). Tracked-set
+	// and fleet-home customs are zero entries — a lingering lock entry from a
 	// pre-adoption install must not make fleet check (or misreport) a
 	// skill that now lives in a custom home.
 	entries := make(map[string]outdated.Entry, len(skills))

@@ -17,7 +17,7 @@ Every test builds a fake home in `t.TempDir()`. Nothing outside the project dire
 Two consequences worth keeping:
 
 - **Assert external behavior** — the written config file's content, the returned report — never internal call order. A refactor that reorders writes must not break a test; a behavior change must.
-- **The network is a seam, not a dependency.** GitHub calls and `skills` process calls are injected vars, stubbed in tests.
+- **The network is a seam, not a dependency.** GitHub calls, `skills` process calls, and git calls are injected vars, stubbed in tests.
 
 ## Anatomy of an adapter test
 
@@ -74,25 +74,30 @@ To write an adapter test for a new harness, copy the pattern: a `run<Name>Projec
 
 ## Where each behavior is tested
 
-| Area                                                             | Files                                                                                                                                      |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Adapter detection, read/write per harness                        | `internal/harness/*_test.go` (one pair per harness, plus `disables_test.go`, `links_test.go`, `wiring_test.go` for cross-harness behavior) |
-| State file round-trips, unknown fields, version rules            | `internal/state/state_test.go`                                                                                                             |
-| Sync drift scenarios (re-created links, manual edits)            | `internal/sync/sync_test.go`                                                                                                               |
-| Doctor problem classes, keep/restore                             | `internal/doctor/doctor_test.go`                                                                                                           |
-| Store scan, lockfile parsing, sanitized names                    | `internal/scan/*_test.go`                                                                                                                  |
-| Wrapped skills CLI (explicit args, closed stdin, failure output) | `internal/skillscli/exec_test.go`, `update_test.go`                                                                                        |
-| Adopt/move wiring and links                                      | `internal/customs/*_test.go`                                                                                                               |
-| CLI verbs, JSON output, completion                               | `internal/cli/*_test.go`                                                                                                                   |
-| TUI keys, staged apply, pipe fallback                            | `internal/tui/tui_test.go`, `guard_test.go`                                                                                                |
+| Area                                                                 | Files                                                                                                                                      |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Adapter detection, read/write per harness                            | `internal/harness/*_test.go` (one pair per harness, plus `disables_test.go`, `links_test.go`, `wiring_test.go` for cross-harness behavior) |
+| State file round-trips, unknown fields, version rules                | `internal/state/state_test.go`                                                                                                             |
+| Config list/scalar round-trips, aliases, home expansion, retired key | `internal/config/config_test.go`                                                                                                           |
+| Tracked-set resolution (explicit order, checkout scan, env prepend)  | `internal/paths/paths_test.go`                                                                                                             |
+| Pull flow via the stubbed git runner, per-repo reports               | `internal/pull/pull_test.go`, `internal/cli/pull_test.go`                                                                                  |
+| Snapshot union and precedence across the tracked set                 | `internal/snapshot/*_test.go`                                                                                                              |
+| Adopt destination (`--into`, target, prompt, save-back)              | `internal/customs/*_test.go`, `internal/cli/adopt*_test.go`                                                                                |
+| Sync drift scenarios (re-created links, manual edits)                | `internal/sync/sync_test.go`                                                                                                               |
+| Doctor problem classes, keep/restore                                 | `internal/doctor/doctor_test.go`                                                                                                           |
+| Store scan, lockfile parsing, sanitized names                        | `internal/scan/*_test.go`                                                                                                                  |
+| Wrapped skills CLI (explicit args, closed stdin, failure output)     | `internal/skillscli/exec_test.go`, `update_test.go`                                                                                        |
+| CLI verbs, JSON output, completion                                   | `internal/cli/*_test.go`                                                                                                                   |
+| TUI keys, staged apply, pipe fallback                                | `internal/tui/tui_test.go`, `guard_test.go`                                                                                                |
 
 ## The seams tests stub
 
-| Var               | Replaces                                   | Used by                                      |
-| ----------------- | ------------------------------------------ | -------------------------------------------- |
-| `newSkillsRunner` | the `skills` process (absent in sandboxes) | `fleet skill update`                         |
-| `newTreeClient`   | the GitHub trees API                       | `ls --json`, `ls`, the TUI's update badges   |
-| `stdoutTTY`       | terminal detection                         | the summary line, the piped `fleet` fallback |
+| Var               | Replaces                                    | Used by                                                        |
+| ----------------- | ------------------------------------------- | -------------------------------------------------------------- |
+| `newSkillsRunner` | the `skills` process (absent in sandboxes)  | `fleet skill update`                                           |
+| `newTreeClient`   | the GitHub trees API                        | `ls --json`, `ls`, the TUI's update badges                     |
+| `newPullRunner`   | the git binary (never shelled out in tests) | `fleet skill pull` (clone, fast-forward-only)                  |
+| `stdoutTTY`       | terminal detection                          | the summary line, the piped `fleet` fallback, the adopt prompt |
 
 ## Running the suite
 
@@ -123,10 +128,11 @@ cat $sandbox/.config/opencode/opencode.jsonc      # see the written shape
 FLEET_HOME=$sandbox ./bin/fleet skill doctor      # inspect without changing anything
 ```
 
-`FLEET_REPO` overrides the repo root (normally found by walking up from the working directory to the nearest `.git`), which keeps `adopt` pointed at a scratch repo instead of the real one:
+`FLEET_HOME` sandboxes fleet, and `skill pull` accepts any git URL — including a local path — so the customs flow works end to end in a sandbox:
 
 ```sh
-FLEET_HOME=$sandbox FLEET_REPO=/tmp/fake-repo ./bin/fleet skill adopt my-skill
+FLEET_HOME=$sandbox ./bin/fleet skill pull /tmp/fake-customs
+FLEET_HOME=$sandbox ./bin/fleet skill adopt my-skill --into /tmp/fake-customs/skills
 ```
 
 One trap: **`FLEET_HOME` sandboxes fleet, not the `skills` CLI.** `fleet skill update` shells out to the real `skills update -g -y`, which ignores `FLEET_HOME` and operates on your actual home. When testing `update` in a sandbox, put a stub `skills` executable earlier on `PATH` first.

@@ -17,4 +17,4 @@ Shipped skills:
 - `worktree-finish` — squash-merge a worktree branch into main, clean up.
 - `worktree-session` — create a worktree and move the session there.
 
-See `CONTEXT.md` and ADR 0001 for the skills-repo and fleet-home model.
+See `CONTEXT.md` and the multi-repo ADR (`docs/adr/0002-multi-repo-customs-and-adopt-target.md`) for the tracked-set model.

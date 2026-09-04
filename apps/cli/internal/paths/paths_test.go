@@ -69,20 +69,6 @@ func TestFromEnvFallsBackToUserHomeWithoutFleetHome(t *testing.T) {
 	}
 }
 
-func TestRepoSkillsDerivesFromTheRepoRoot(t *testing.T) {
-	p := WithRepo("/home/fake", "/repo")
-	if got := p.RepoSkills(); got != "/repo/skills" {
-		t.Errorf("RepoSkills() = %q, want /repo/skills", got)
-	}
-
-	// No repo: RepoSkills is empty and callers must guard, so the rest of
-	// fleet keeps working outside a checkout.
-	homeOnly := New("/home/fake")
-	if got := homeOnly.RepoSkills(); got != "" {
-		t.Errorf("RepoSkills() without a repo = %q, want empty", got)
-	}
-}
-
 func TestDiscoverRepoWalksUpToTheNearestGitRoot(t *testing.T) {
 	root := t.TempDir()
 
@@ -128,63 +114,33 @@ func TestDiscoverRepoWalksUpToTheNearestGitRoot(t *testing.T) {
 	})
 }
 
-func TestFromEnvPrecedenceEnvOverConfigOverEmpty(t *testing.T) {
+func TestFromEnvIgnoresUnknownFileKeys(t *testing.T) {
 	home := t.TempDir()
-	repoFile := filepath.Join(home, "repo-file")
-	repoEnv := filepath.Join(home, "repo-env")
-	for _, r := range []string{repoFile, repoEnv} {
-		if err := os.MkdirAll(filepath.Join(r, ".git"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// Write config file pointing at repoFile.
+	// A config carrying only unknown keys behaves as unset: no tracked
+	// repos come from it. (The retired single-pointer key is covered at
+	// the config seam; here the read path must simply not choke.)
 	if err := os.MkdirAll(filepath.Join(home, ".config", "fleet"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(home, ".config", "fleet", "config.json"), []byte(`{"skillsRepo": "`+repoFile+`"}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(home, ".config", "fleet", "config.json"), []byte(`{"future": 123}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("FLEET_HOME", home)
+	t.Setenv("FLEET_REPO", "")
 
-	// env overrides config
-	t.Setenv("FLEET_REPO", repoEnv)
 	p, err := FromEnv()
 	if err != nil {
 		t.Fatalf("FromEnv() error = %v", err)
 	}
-	if p.Repo != repoEnv {
-		t.Errorf("Repo = %q, want env %q", p.Repo, repoEnv)
+	if p.Home != home {
+		t.Errorf("Home = %q, want %q", p.Home, home)
 	}
-	if got := p.RepoSkills(); got != filepath.Join(repoEnv, "skills") {
-		t.Errorf("RepoSkills() = %q, want %q", got, filepath.Join(repoEnv, "skills"))
-	}
-
-	// without env, falls back to config
-	t.Setenv("FLEET_REPO", "")
-	p, err = FromEnv()
+	tracked, err := p.TrackedRepos()
 	if err != nil {
-		t.Fatalf("FromEnv() error = %v", err)
+		t.Fatalf("TrackedRepos() error = %v", err)
 	}
-	if p.Repo != repoFile {
-		t.Errorf("Repo = %q, want config %q", p.Repo, repoFile)
-	}
-	if got := p.RepoSkills(); got != filepath.Join(repoFile, "skills") {
-		t.Errorf("RepoSkills() = %q, want %q", got, filepath.Join(repoFile, "skills"))
-	}
-
-	// without env and without file, empty
-	if err := os.Remove(filepath.Join(home, ".config", "fleet", "config.json")); err != nil {
-		t.Fatal(err)
-	}
-	p, err = FromEnv()
-	if err != nil {
-		t.Fatalf("FromEnv() error = %v", err)
-	}
-	if p.Repo != "" {
-		t.Errorf("Repo = %q, want empty when no env and no config", p.Repo)
-	}
-	if got := p.RepoSkills(); got != "" {
-		t.Errorf("RepoSkills() = %q, want empty when no repo", got)
+	if len(tracked) != 0 {
+		t.Errorf("TrackedRepos() = %q, want empty (old file key behaves as unset)", tracked)
 	}
 }
 
@@ -208,17 +164,14 @@ func TestFromEnvDoesNotPickUpUnrelatedGitCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromEnv() error = %v", err)
 	}
-	if p.Repo != "" {
-		t.Errorf("Repo = %q, want empty when in unrelated checkout with no config", p.Repo)
-	}
-	if got := p.RepoSkills(); got != "" {
-		t.Errorf("RepoSkills() = %q, want empty", got)
+	if p.Home != home {
+		t.Errorf("Home = %q, want %q (an unrelated checkout must not leak in)", p.Home, home)
 	}
 }
 
-func TestFromEnvResolvesRelativeFleetRepoToAbsolute(t *testing.T) {
+func TestTrackedReposResolvesRelativeEnvToAbsolute(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("FLEET_HOME", home)
+	p := New(home)
 	repoDir := filepath.Join(t.TempDir(), "myrepo")
 	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755); err != nil {
 		t.Fatal(err)
@@ -235,19 +188,53 @@ func TestFromEnvResolvesRelativeFleetRepoToAbsolute(t *testing.T) {
 	}
 	t.Setenv("FLEET_REPO", rel)
 
-	p, err := FromEnv()
+	got, err := p.TrackedRepos()
 	if err != nil {
-		t.Fatalf("FromEnv() error = %v", err)
+		t.Fatalf("TrackedRepos() error = %v", err)
 	}
 	absWant, _ := filepath.Abs(rel)
-	if p.Repo != absWant {
-		t.Errorf("Repo = %q, want absolute %q", p.Repo, absWant)
+	if len(got) != 1 || got[0] != absWant {
+		t.Errorf("TrackedRepos() = %q, want absolute [%q]", got, absWant)
 	}
-	if !filepath.IsAbs(p.Repo) {
-		t.Errorf("Repo %q is not absolute", p.Repo)
+	if !filepath.IsAbs(got[0]) {
+		t.Errorf("TrackedRepos()[0] %q is not absolute", got[0])
 	}
-	if got := p.RepoSkills(); got != filepath.Join(absWant, "skills") {
-		t.Errorf("RepoSkills() = %q, want %q", got, filepath.Join(absWant, "skills"))
+}
+
+func TestFleetReposDirDerivesFromInjectedHome(t *testing.T) {
+	p := New("/home/fake")
+	if got := p.FleetReposDir(); got != "/home/fake/.config/fleet/repos" {
+		t.Errorf("FleetReposDir() = %q, want /home/fake/.config/fleet/repos", got)
+	}
+}
+
+func TestInsideFleetHomeClassifiesWithFakeHomeOnly(t *testing.T) {
+	home := t.TempDir()
+	p := New(home)
+	fleetDir := filepath.Join(home, ".config", "fleet")
+	inside := []string{
+		filepath.Join(fleetDir, "repos", "customs"),
+		filepath.Join(fleetDir, "repos", "customs", "skills"),
+		fleetDir,
+		fleetDir + string(filepath.Separator) + ".",
+		filepath.Join(fleetDir, "repos", "..", "repos", "team"),
+	}
+	for _, path := range inside {
+		if !p.InsideFleetHome(path) {
+			t.Errorf("InsideFleetHome(%q) = false, want true", path)
+		}
+	}
+	outside := []string{
+		home,
+		filepath.Join(home, "Developer", "fleet"),
+		filepath.Join(t.TempDir(), "elsewhere"),
+		"relative/path",
+		filepath.Join(fleetDir, "..", "opencode"),
+	}
+	for _, path := range outside {
+		if p.InsideFleetHome(path) {
+			t.Errorf("InsideFleetHome(%q) = true, want false", path)
+		}
 	}
 }
 
@@ -271,5 +258,88 @@ func TestFleetConfigFileAndFleetHomeSkillsAreFleetHomeAware(t *testing.T) {
 	}
 	if p2.FleetHomeSkills() != filepath.Join(sandbox, ".config", "fleet", "skills") {
 		t.Errorf("FleetHomeSkills() = %q, want derived from FLEET_HOME", p2.FleetHomeSkills())
+	}
+}
+
+func writeTrackedConfig(t *testing.T, p *Paths, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(p.FleetConfigFile()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.FleetConfigFile(), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTrackedReposEmptyWhenNothingSet(t *testing.T) {
+	p := New(t.TempDir())
+	t.Setenv("FLEET_REPO", "")
+	got, err := p.TrackedRepos()
+	if err != nil {
+		t.Fatalf("TrackedRepos() error = %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("TrackedRepos() = %q, want empty", got)
+	}
+}
+
+func TestTrackedReposKeepsExplicitOrderThenScansFleetHomeAlphabetically(t *testing.T) {
+	home := t.TempDir()
+	p := New(home)
+	t.Setenv("FLEET_REPO", "")
+	outsideB := filepath.Join(t.TempDir(), "explicit-b")
+	outsideA := filepath.Join(t.TempDir(), "explicit-a")
+	writeTrackedConfig(t, p, `{"skillsRepos": ["`+outsideB+`", "`+outsideA+`"]}`)
+	for _, name := range []string{"zeta", "alpha", "mid"} {
+		if err := os.MkdirAll(filepath.Join(p.FleetReposDir(), name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A stray file in the checkout parent is not a slot.
+	if err := os.WriteFile(filepath.Join(p.FleetReposDir(), "notes.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.TrackedRepos()
+	if err != nil {
+		t.Fatalf("TrackedRepos() error = %v", err)
+	}
+	want := []string{
+		outsideB, outsideA,
+		filepath.Join(p.FleetReposDir(), "alpha"),
+		filepath.Join(p.FleetReposDir(), "mid"),
+		filepath.Join(p.FleetReposDir(), "zeta"),
+	}
+	if len(got) != len(want) {
+		t.Fatalf("TrackedRepos() = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("TrackedRepos() = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestTrackedReposPrependsEnvAndDedupes(t *testing.T) {
+	home := t.TempDir()
+	p := New(home)
+	envRepo := filepath.Join(t.TempDir(), "env-repo")
+	explicit := filepath.Join(t.TempDir(), "explicit")
+	writeTrackedConfig(t, p, `{"skillsRepos": ["`+envRepo+`", "`+explicit+`"]}`)
+	if err := os.MkdirAll(filepath.Join(p.FleetReposDir(), "auto"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FLEET_REPO", envRepo)
+	got, err := p.TrackedRepos()
+	if err != nil {
+		t.Fatalf("TrackedRepos() error = %v", err)
+	}
+	want := []string{envRepo, explicit, filepath.Join(p.FleetReposDir(), "auto")}
+	if len(got) != len(want) {
+		t.Fatalf("TrackedRepos() = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("TrackedRepos() = %q, want %q", got, want)
+		}
 	}
 }

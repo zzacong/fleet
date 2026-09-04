@@ -26,7 +26,7 @@ func newSkillLsCmd(p *paths.Paths) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ls",
 		Short: "List every skill and where it is active",
-		Long: "List every skill — the canonical store's, plus the fleet repo's custom skills when run inside the repo — marked custom or installed and grouped by source repo, with a per-harness on/off column for each installed harness.\n" +
+		Long: "List every skill — the canonical store's plus custom skills from the tracked set (explicit repos in list order, auto-tracked fleet-home checkouts, and the unversioned fleet-home fallback) — marked custom or installed and grouped by source repo, with a per-harness on/off column for each installed harness.\n" +
 			"\nSync runs first: the state file is projected into each harness config, and entries fleet doesn't recognize are reported on stderr, never touched.\n" +
 			"\n" +
 			"UPDATE marks skills whose source repo has moved on: ↑ update available, ✓ current, ? unknown. Fleet checks the skills CLI lockfile's recorded hash against GitHub's current tree hash for the skill folder — one API call per source repo, cached for an hour so repeated runs don't hammer the API. Custom skills and non-GitHub sources are always ?, never guessed; a failed check degrades to ? without failing the command.\n" +

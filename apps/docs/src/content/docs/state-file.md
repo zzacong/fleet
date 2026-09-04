@@ -8,7 +8,7 @@ description: Versioned, forward-compatible format.
 Fleet's state file is the single source of truth for per-harness skill enablement. Harness config files are outputs derived from it; sync projects it, doctor compares against it, and nothing else writes it.
 
 - **Location:** `~/.config/fleet/state.json` (`FLEET_HOME` overrides the home root)
-- **Companion:** `~/.config/fleet/config.json` sits beside it and holds the machine-local pointer to the versioned skills repo (`{"skillsRepo": "/abs/path"}`, `FLEET_HOME`-aware, `FLEET_REPO` env > file > `""`). It is not part of the state file — see `fleet config get/set/unset/list` in the [command reference](cli.md#fleet-config). Enablement stays in `state.json`; the repo pointer stays in `config.json`.
+- **Companion:** `~/.config/fleet/config.json` sits beside it and holds the machine-local customs settings (`{"skillsRepos": ["/abs/repo"], "adoptTarget": "/abs/repo/skills"}`, `FLEET_HOME`-aware): the explicit non-fleet-home repo-root list in precedence order (managed by `fleet skill pull`) and the adopt-target collection dir (absent means the fleet-home fallback). It is not part of the state file — see `fleet config get/set/unset/list` in the [command reference](cli.md#fleet-config). Enablement stays in `state.json`; the tracked set and adopt default stay in `config.json`.
 - **Version:** 1
 
 ## Example

@@ -56,42 +56,42 @@ After this, fleet treats every skill as enabled and stops writing disables. Note
 
 The same applies to hand-edits generally: doctor surfaces them, sync never silently overwrites them. Manual edits you _keep_ become the state's new intent.
 
-`~/.config/fleet/` also holds `config.json` (the machine-local skills-repo pointer), `skills/` (the unversioned fleet-home fallback when no repo is set), and `tree-cache.json` (the update-check cache). Deleting `tree-cache.json` costs a few GitHub API calls on the next `ls`, nothing more; `config.json` and `skills/` survive a state reset by design.
+`~/.config/fleet/` also holds `config.json` (the machine-local customs settings: explicit repo list + adopt target), `skills/` (the unversioned fleet-home fallback), `repos/` (auto-tracked customs checkouts), and `tree-cache.json` (the update-check cache). Deleting `tree-cache.json` costs a few GitHub API calls on the next `ls`, nothing more; `config.json`, `skills/`, and `repos/` survive a state reset by design.
 
 ## How sync decides what to touch
 
 Sync's rules, in the order it applies them:
 
 1. **Load the state file fresh**, so commands that just wrote it sync their own change.
-2. **Remove redundant links.** In each installed harness's skills dir, a symlink counts as redundant only when it provably resolves into the canonical store _and_ that harness scans the store natively (opencode, pi, codex, Cursor, Bob — never claude code, whose store links are its only discovery path). Everything else in those dirs survives: real directories and files, links into the fleet-home (`~/.config/fleet/skills`) or skills-repo (`<skillsRepo>/skills`) custom homes, links pointing anywhere else (including your own and fleet's managed custom-home links), and broken links, which doctor reports instead. Sync never removes fleet-home or skills-repo links.
+2. **Remove redundant links.** In each installed harness's skills dir, a symlink counts as redundant only when it provably resolves into the canonical store _and_ that harness scans the store natively (opencode, pi, codex, Cursor, Bob — never claude code, whose store links are its only discovery path). Everything else in those dirs survives: real directories and files, links into any tracked collection or the fleet-home fallback (including your own and fleet's managed adopt/pull links), links pointing anywhere else, and broken links, which doctor reports instead. Sync never removes tracked-collection or fallback links.
 3. **Project the disables.** For each installed harness with a write side (opencode, pi, codex, claude code), write that harness's own off-entry for every disable the state records. Nothing else. An absent entry means on; sync never writes "on" markers, because "on" is what every harness does by default.
 4. **Flag what it doesn't recognize.** Pattern and blanket rules, glob exclusions, codex blocks with extra keys — anything that affects enablement but isn't fleet's exact shape is printed as a flag and left untouched. Sync reports; you decide.
-5. **Never edit the state file.** Sync is one-directional on purpose: state is the source of truth, configs are outputs. (`~/.config/fleet/config.json` is the separate machine-local pointer — `fleet config` manages it, sync never touches it.)
+5. **Never edit the state file.** Sync is one-directional on purpose: state is the source of truth, configs are outputs. (`~/.config/fleet/config.json` is the separate machine-local customs file — `fleet config` and `fleet skill pull` manage it, sync never touches it.)
 
 `fleet skill doctor` runs the same inspection read-only, so you can see all of it before any of it happens.
 
 ## Uninstall fleet
 
-Fleet is one static binary plus a config dir. Remove the binary, then optionally `rm -rf ~/.config/fleet` to forget the state, the config pointer (`config.json`), the fleet-home customs (`skills/`), and the update cache. Nothing else needs cleaning:
+Fleet is one static binary plus a config dir. Remove the binary, then optionally `rm -rf ~/.config/fleet` to forget the state, the customs config (`config.json`), the fleet-home customs (`skills/`), the pulled checkouts (`repos/`), and the update cache. Nothing else needs cleaning:
 
 - harness configs keep fleet's entries, which are their own native format — every harness works without fleet knowing about it
 - installed skills stay in the canonical store, updating through the skills CLI as always
-- custom skills stay in the resolved home (`<skillsRepo>/skills` when one was set, otherwise `~/.config/fleet/skills`), still linked or wired wherever adopt wired them (remove those entries or links by hand if you want them gone; doctor would flag the leftovers as unknown entries, but nothing breaks)
+- custom skills stay in their collections (a tracked repo's `skills/` or `~/.config/fleet/skills`), still linked or wired wherever adopt wired them (remove those entries or links by hand if you want them gone; doctor would flag the leftovers as unknown entries, but nothing breaks)
 
 ## Undo an adoption
 
-Adoption moves a skill directory into the resolved home (`<skillsRepo>/skills` when one is set, otherwise `~/.config/fleet/skills`) and wires it in. Reversing it is manual by design — the skill is yours now, and fleet never moves files back on its own:
+Adoption moves a skill directory into the adopt destination (a tracked collection or `~/.config/fleet/skills`) and wires it in. Reversing it is manual by design — the skill is yours now, and fleet never moves files back on its own:
 
-1. Move the directory back into the canonical store (or `git mv` it, if it lived in the repo):
+1. Move the directory back into the canonical store (or `git mv` it, if it lived in a customs repo):
    ```sh
-   mv ~/Developer/fleet/skills/my-skill ~/.agents/skills/my-skill
-   mv ~/.config/fleet/skills/my-skill ~/.agents/skills/my-skill  # when no skills repo was set
+   mv ~/.config/fleet/repos/my-customs/skills/my-skill ~/.agents/skills/my-skill
+   mv ~/.config/fleet/skills/my-skill ~/.agents/skills/my-skill  # when the fallback was the destination
    ```
-2. Remove the wiring and links if you want them gone: the resolved home's path entry in opencode's and pi's configs, and the per-harness symlinks named after the skill in `~/.codex/skills`, `~/.claude/skills`, `~/.cursor/skills`, `~/.bob/skills`.
+2. Remove the wiring and links if you want them gone: the destination's path entry in opencode's and pi's configs, and the per-harness symlinks named after the skill in `~/.codex/skills`, `~/.claude/skills`, `~/.cursor/skills`, `~/.bob/skills`.
 
 Doctor reports any leftovers as unknown entries and never deletes them. It also flags the two things an adoption leaves behind that nothing else reports:
 
-- The skills CLI lockfile still carries the skill's install entry while the skill lives in the resolved home, so the CLI keeps trying to update a skill that moved. Remove the entry from `~/.agents/.skill-lock.json` by hand; fleet reads the lockfile and never writes it.
-- If the store copy comes back while a custom-home copy remains — a half-finished move in either direction — or a name exists in both custom homes, opencode and pi would see the skill twice. Doctor flags the double presence (canonical vs fleet-home vs repo); remove one of the copies by hand.
+- The skills CLI lockfile still carries the skill's install entry while the skill lives in a custom home, so the CLI keeps trying to update a skill that moved. Remove the entry from `~/.agents/.skill-lock.json` by hand; fleet reads the lockfile and never writes it.
+- If the store copy comes back while a custom-home copy remains — a half-finished move in either direction — or a name exists in two scanned sources, opencode and pi would see the skill twice. Doctor flags the double presence; remove one of the copies by hand.
 
 Once the skill is back in the store, the skills CLI and fleet treat it like any other installed (or custom, if it has no lock entry) skill.

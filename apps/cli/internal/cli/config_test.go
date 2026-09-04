@@ -31,7 +31,7 @@ func runConfig(t *testing.T, p *paths.Paths, args ...string) (string, string, er
 
 func TestConfigGetEmptyWhenUnset(t *testing.T) {
 	p := configHome(t)
-	out, _, err := runConfig(t, p, "get", "skills-repo")
+	out, _, err := runConfig(t, p, "get", "adopt-target")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -42,65 +42,72 @@ func TestConfigGetEmptyWhenUnset(t *testing.T) {
 
 func TestConfigSetAndGetRoundTrip(t *testing.T) {
 	p := configHome(t)
-	repo := filepath.Join(t.TempDir(), "repo")
-	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := runConfig(t, p, "set", "skills-repo", repo); err != nil {
+	target := filepath.Join(t.TempDir(), "customs", "skills")
+	if _, _, err := runConfig(t, p, "set", "adopt-target", target); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	out, _, err := runConfig(t, p, "get", "skills-repo")
+	out, _, err := runConfig(t, p, "get", "adopt-target")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if strings.TrimSpace(out) != repo {
-		t.Errorf("get = %q, want %q", strings.TrimSpace(out), repo)
+	if strings.TrimSpace(out) != target {
+		t.Errorf("get = %q, want %q", strings.TrimSpace(out), target)
 	}
 	// file should be canonical
 	body, _ := os.ReadFile(p.FleetConfigFile())
-	if !strings.Contains(string(body), "\"skillsRepo\": \""+repo+"\"") {
-		t.Errorf("config file missing skillsRepo:\n%s", body)
+	if !strings.Contains(string(body), "\"adoptTarget\": \""+target+"\"") {
+		t.Errorf("config file missing adoptTarget:\n%s", body)
 	}
 }
 
-func TestConfigSetWarnsWithoutGit(t *testing.T) {
+func TestConfigSetAcceptsMissingDirAndExpandsHome(t *testing.T) {
 	p := configHome(t)
-	repo := filepath.Join(t.TempDir(), "repo-nogit")
-	if err := os.MkdirAll(repo, 0o755); err != nil {
+	// adopt creates the target on demand, so set must not require it.
+	target := filepath.Join(t.TempDir(), "not-yet", "skills")
+	if _, _, err := runConfig(t, p, "set", "adopt-target", target); err != nil {
+		t.Fatalf("set with missing dir should succeed: %v", err)
+	}
+	out, _, err := runConfig(t, p, "get", "adopt-target")
+	if err != nil {
 		t.Fatal(err)
 	}
-	_, errOut, err := runConfig(t, p, "set", "skills-repo", repo)
-	if err != nil {
-		t.Fatalf("set without .git should still succeed: %v", err)
+	if strings.TrimSpace(out) != target {
+		t.Errorf("get = %q, want %q", strings.TrimSpace(out), target)
 	}
-	if !strings.Contains(errOut, "does not contain .git") {
-		t.Errorf("expected warning about missing .git, got %q", errOut)
+	// ~/ expands to the home directory.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runConfig(t, p, "set", "adopt-target", "~/customs/skills"); err != nil {
+		t.Fatalf("set with ~ should succeed: %v", err)
+	}
+	out, _, err = runConfig(t, p, "get", "adopt-target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != filepath.Join(home, "customs", "skills") {
+		t.Errorf("get = %q, want home-expanded", strings.TrimSpace(out))
 	}
 }
 
-func TestConfigSetRejectsRelativeAndMissing(t *testing.T) {
+func TestConfigSetRejectsRelative(t *testing.T) {
 	p := configHome(t)
-	if _, _, err := runConfig(t, p, "set", "skills-repo", "relative/path"); err == nil {
+	if _, _, err := runConfig(t, p, "set", "adopt-target", "relative/path"); err == nil {
 		t.Error("relative path should be rejected")
-	}
-	if _, _, err := runConfig(t, p, "set", "skills-repo", "/no/such/dir/xyz"); err == nil {
-		t.Error("missing path should be rejected")
 	}
 }
 
 func TestConfigUnsetClears(t *testing.T) {
 	p := configHome(t)
-	repo := filepath.Join(t.TempDir(), "repo")
-	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+	target := filepath.Join(t.TempDir(), "customs", "skills")
+	if _, _, err := runConfig(t, p, "set", "adopt-target", target); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := runConfig(t, p, "set", "skills-repo", repo); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := runConfig(t, p, "unset", "skills-repo"); err != nil {
+	if _, _, err := runConfig(t, p, "unset", "adopt-target"); err != nil {
 		t.Fatalf("unset: %v", err)
 	}
-	out, _, err := runConfig(t, p, "get", "skills-repo")
+	out, _, err := runConfig(t, p, "get", "adopt-target")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,65 +116,61 @@ func TestConfigUnsetClears(t *testing.T) {
 	}
 }
 
-func TestConfigListAndJSON(t *testing.T) {
+func TestConfigRetiredSinglePointerKeyFailsWithHint(t *testing.T) {
 	p := configHome(t)
-	repo := filepath.Join(t.TempDir(), "repo")
-	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+	for _, key := range []string{"skills-repo", "skillsRepo"} {
+		if _, _, err := runConfig(t, p, "get", key); err == nil || !strings.Contains(err.Error(), "retired") {
+			t.Errorf("get %s err = %v, want the retired-key hint", key, err)
+		}
+		if _, _, err := runConfig(t, p, "set", key, "/tmp/x"); err == nil || !strings.Contains(err.Error(), "retired") {
+			t.Errorf("set %s err = %v, want the retired-key hint", key, err)
+		}
+		if _, _, err := runConfig(t, p, "unset", key); err == nil || !strings.Contains(err.Error(), "retired") {
+			t.Errorf("unset %s err = %v, want the retired-key hint", key, err)
+		}
+	}
+}
+
+func TestConfigListShowsTrackedListAndTarget(t *testing.T) {
+	p := configHome(t)
+	repoA := filepath.Join(t.TempDir(), "repo-a")
+	repoB := filepath.Join(t.TempDir(), "repo-b")
+	target := filepath.Join(t.TempDir(), "customs", "skills")
+	body, _ := json.Marshal(map[string]any{
+		"skillsRepos": []string{repoA, repoB},
+		"adoptTarget": target,
+	})
+	if err := os.MkdirAll(filepath.Dir(p.FleetConfigFile()), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := runConfig(t, p, "set", "skills-repo", repo); err != nil {
+	if err := os.WriteFile(p.FleetConfigFile(), body, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out, _, err := runConfig(t, p, "list")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if !strings.Contains(out, repo) {
-		t.Errorf("list missing repo %q in %q", repo, out)
+	for _, want := range []string{"skills-repos = " + repoA, "skills-repos = " + repoB, "adopt-target = " + target} {
+		if !strings.Contains(out, want) {
+			t.Errorf("list missing %q in %q", want, out)
+		}
 	}
 	out, _, err = runConfig(t, p, "list", "--json")
 	if err != nil {
 		t.Fatalf("list --json: %v", err)
 	}
-	var obj map[string]string
+	var obj struct {
+		Repos  []string `json:"skillsRepos"`
+		Target string   `json:"adoptTarget"`
+	}
 	if err := json.Unmarshal([]byte(out), &obj); err != nil {
 		t.Fatalf("list --json not JSON: %v\n%s", err, out)
 	}
-	if obj["skillsRepo"] != repo {
-		t.Errorf("list --json skillsRepo = %q, want %q", obj["skillsRepo"], repo)
+	if len(obj.Repos) != 2 || obj.Repos[0] != repoA || obj.Repos[1] != repoB {
+		t.Errorf("list --json skillsRepos = %q, want order-preserved [%q %q]", obj.Repos, repoA, repoB)
 	}
-}
-
-func TestConfigGetRespectsEnvOverride(t *testing.T) {
-	p := configHome(t)
-	repoFile := filepath.Join(t.TempDir(), "repo-file")
-	repoEnv := filepath.Join(t.TempDir(), "repo-env")
-	for _, r := range []string{repoFile, repoEnv} {
-		if err := os.MkdirAll(filepath.Join(r, ".git"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, _, err := runConfig(t, p, "set", "skills-repo", repoFile); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("FLEET_REPO", repoEnv)
-	out, _, err := runConfig(t, p, "get", "skills-repo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(out) != repoEnv {
-		t.Errorf("get with env = %q, want %q", strings.TrimSpace(out), repoEnv)
-	}
-	out, _, err = runConfig(t, p, "list", "--json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var obj map[string]string
-	if err := json.Unmarshal([]byte(out), &obj); err != nil {
-		t.Fatal(err)
-	}
-	if obj["skillsRepo"] != repoEnv {
-		t.Errorf("list --json with env = %q, want %q", obj["skillsRepo"], repoEnv)
+	if obj.Target != target {
+		t.Errorf("list --json adoptTarget = %q, want %q", obj.Target, target)
 	}
 }
 

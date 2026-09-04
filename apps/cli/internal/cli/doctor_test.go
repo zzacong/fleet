@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -220,11 +221,16 @@ func TestDoctorReportsRedundantLinks(t *testing.T) {
 
 func TestDoctorFlagsAdoptionFollowups(t *testing.T) {
 	// Ticket 03's doctor follow-ups: the store copy came back while the
-	// adopted repo copy stayed, and the lockfile still carries the
+	// adopted tracked copy stayed, and the lockfile still carries the
 	// pre-adoption install entry.
 	p := doctorHome(t)
-	p.Repo = filepath.Join(t.TempDir(), "repo")
-	writeSkillDir(t, p.RepoSkills(), "tdd", "Red-green-refactor workflow.")
+	tracked := filepath.Join(t.TempDir(), "tracked")
+	trackedCollection := filepath.Join(tracked, "skills")
+	if err := os.MkdirAll(filepath.Join(tracked, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"]}`)
+	writeSkillDir(t, trackedCollection, "tdd", "Red-green-refactor workflow.")
 	lock := `{"skills": {"tdd": {"source": "mattpocock/skills", "sourceType": "github", "skillFolderHash": "abc123"}}}`
 	if err := os.WriteFile(p.SkillLock(), []byte(lock), 0o644); err != nil {
 		t.Fatal(err)
@@ -232,7 +238,7 @@ func TestDoctorFlagsAdoptionFollowups(t *testing.T) {
 
 	out := runDoctor(t, p, "")
 
-	if !strings.Contains(out, "double presence (store and repo) (1)") || !strings.Contains(out, `"tdd" exists in both`) {
+	if !strings.Contains(out, "double presence (1)") || !strings.Contains(out, `"tdd" exists in both`) {
 		t.Errorf("output missing the double-presence finding:\n%s", out)
 	}
 	if !strings.Contains(out, "stale lockfile entries (1) · fleet never writes the lockfile") {
@@ -248,8 +254,8 @@ func TestDoctorFlagsAdoptionFollowups(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(p.SkillsStore(), "tdd")); err != nil {
 		t.Errorf("store copy disturbed: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(p.RepoSkills(), "tdd")); err != nil {
-		t.Errorf("repo copy disturbed: %v", err)
+	if _, err := os.Stat(filepath.Join(trackedCollection, "tdd")); err != nil {
+		t.Errorf("tracked copy disturbed: %v", err)
 	}
 }
 
@@ -419,5 +425,40 @@ func TestDoctorBatchOptionsNeverCrossHarnesses(t *testing.T) {
 	}
 	if strings.Count(out, "kept:") != 3 {
 		t.Errorf("want three keep receipts:\n%s", out)
+	}
+}
+
+func TestDoctorReportsTrackedSetWarnings(t *testing.T) {
+	p := doctorHome(t)
+	t.Setenv("FLEET_REPO", "")
+	plain := filepath.Join(t.TempDir(), "plain") // no .git inside
+	if err := os.MkdirAll(plain, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "elsewhere", "skills")
+	cfg, err := json.Marshal(map[string]any{
+		"skillsRepos": []string{plain},
+		"adoptTarget": target,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(p.FleetConfigFile()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.FleetConfigFile(), cfg, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runDoctor(t, p, "")
+
+	if !strings.Contains(out, "unscanned adopt target (1)") || !strings.Contains(out, target) {
+		t.Errorf("output missing the unscanned adopt target section:\n%s", out)
+	}
+	if !strings.Contains(out, "non-git explicit repos (1)") || !strings.Contains(out, plain) {
+		t.Errorf("output missing the non-git explicit repo section:\n%s", out)
+	}
+	if !strings.Contains(out, "1 unscanned adopt target, 1 non-git explicit repo") {
+		t.Errorf("output missing the count summary:\n%s", out)
 	}
 }

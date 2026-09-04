@@ -610,16 +610,28 @@ func TestLsWithEmptyHomeReportsNoSkills(t *testing.T) {
 	}
 }
 
-func TestLsMarksRepoCustomsAndPrefersTheStoreOnNameClashes(t *testing.T) {
+func TestLsMarksTrackedCustomsAndPrefersTheStoreOnNameClashes(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
-	repo := filepath.Join(t.TempDir(), "repo")
-	p := paths.WithRepo(home, repo)
+	p := paths.New(home)
+	t.Setenv("FLEET_REPO", "")
+	explicit := filepath.Join(t.TempDir(), "explicit")
+	cfg, err := json.Marshal(map[string]any{"skillsRepos": []string{explicit}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(p.FleetConfigFile()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.FleetConfigFile(), cfg, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tracked := filepath.Join(explicit, "skills")
 
-	// A repo skill that was never adopted by fleet (hand-placed), and an
+	// A tracked skill that was never adopted by fleet (hand-placed), and an
 	// adopted skill whose lockfile entry lingers from its pre-adoption
 	// install (the store copy moved away with it).
-	writeSkillDir(t, p.RepoSkills(), "my-notes", "Personal note-taking conventions.")
-	writeSkillDir(t, p.RepoSkills(), "tdd", "Forked and adopted.")
+	writeSkillDir(t, tracked, "my-notes", "Personal note-taking conventions.")
+	writeSkillDir(t, tracked, "tdd", "Forked and adopted.")
 	if err := os.MkdirAll(p.AgentsDir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -666,17 +678,17 @@ func TestLsMarksRepoCustomsAndPrefersTheStoreOnNameClashes(t *testing.T) {
 	if c := byName["my-notes"]; !c.custom || c.source != "" {
 		t.Errorf("my-notes = %+v, want custom with no source", c)
 	}
-	// The lingering lock entry is stale provenance: the repo copy is
+	// The lingering lock entry is stale provenance: the tracked copy is
 	// custom, and no API call is spent on it.
 	if c := byName["tdd"]; !c.custom || c.source != "" {
 		t.Errorf("tdd = %+v, want custom with no source despite the stale lock entry", c)
 	}
 
 	// A name present in more than one source appears once, from the highest
-	// precedence source (repo > canonical). Its existence in the lower
+	// precedence source (tracked > canonical). Its existence in the lower
 	// source is doctor drift, not a second row.
 	writeSkillDir(t, p.SkillsStore(), "clash", "canonical description")
-	writeSkillDir(t, p.RepoSkills(), "clash", "repo description")
+	writeSkillDir(t, tracked, "clash", "tracked description")
 	out, _, _ = runLsCapture(t, p, &fakeTrees{}, "--json")
 	if strings.Count(out, `"name": "clash"`) != 1 {
 		t.Errorf("a name in both places must report once:\n%s", out)
@@ -691,17 +703,17 @@ func TestLsMarksRepoCustomsAndPrefersTheStoreOnNameClashes(t *testing.T) {
 		t.Fatalf("bad JSON: %v\n%s", err, out)
 	}
 	for _, s := range clashReport.Skills {
-		if s.Name == "clash" && s.Description != "repo description" {
-			t.Errorf("clash description = %q, want repo description (repo > canonical)", s.Description)
+		if s.Name == "clash" && s.Description != "tracked description" {
+			t.Errorf("clash description = %q, want tracked description (tracked > canonical)", s.Description)
 		}
 	}
 }
 
-func TestLsSkipsRepoScanOutsideARepo(t *testing.T) {
-	p := fakeHome(t) // built with paths.New: no repo bound
+func TestLsListsStoreWithoutTrackedRepos(t *testing.T) {
+	p := fakeHome(t) // built with paths.New: nothing tracked
 	out := runLs(t, p)
 	if !strings.Contains(out, "my-notes") {
-		t.Errorf("ls outside a repo should still list the store:\n%s", out)
+		t.Errorf("ls without tracked repos should still list the store:\n%s", out)
 	}
 }
 
@@ -836,10 +848,22 @@ func TestLsFleetHomeAndCanonicalCollisionPrefersFleet(t *testing.T) {
 	}
 }
 
-func TestLsThreeWayCollisionPrefersRepo(t *testing.T) {
+func TestLsThreeWayCollisionPrefersExplicit(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
-	repo := filepath.Join(t.TempDir(), "repo")
-	p := paths.WithRepo(home, repo)
+	p := paths.New(home)
+	t.Setenv("FLEET_REPO", "")
+	explicit := filepath.Join(t.TempDir(), "explicit")
+	cfg, err := json.Marshal(map[string]any{"skillsRepos": []string{explicit}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(p.FleetConfigFile()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.FleetConfigFile(), cfg, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tracked := filepath.Join(explicit, "skills")
 	writeNamedSkill := func(store, dir, name, desc string) {
 		path := filepath.Join(store, dir, "SKILL.md")
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -852,7 +876,7 @@ func TestLsThreeWayCollisionPrefersRepo(t *testing.T) {
 	}
 	writeNamedSkill(p.SkillsStore(), "canon-clash", "tri", "canonical desc")
 	writeNamedSkill(p.FleetHomeSkills(), "fleet-clash", "tri", "fleet desc")
-	writeNamedSkill(p.RepoSkills(), "repo-clash", "tri", "repo desc")
+	writeNamedSkill(tracked, "repo-clash", "tri", "explicit desc")
 	for _, dir := range []string{p.OpenCodeDir()} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
@@ -873,14 +897,98 @@ func TestLsThreeWayCollisionPrefersRepo(t *testing.T) {
 	if len(report.Skills) != 1 {
 		t.Fatalf("three-way collision should dedupe to 1, got %d", len(report.Skills))
 	}
-	if report.Skills[0].Description != "repo desc" {
-		t.Errorf("tri description = %q, want repo desc (repo > fleet > canonical)", report.Skills[0].Description)
+	if report.Skills[0].Description != "explicit desc" {
+		t.Errorf("tri description = %q, want explicit desc (explicit > fleet > canonical)", report.Skills[0].Description)
 	}
 	if !report.Skills[0].Custom {
-		t.Errorf("repo winner should be custom")
+		t.Errorf("explicit winner should be custom")
 	}
 	if report.Skills[0].Outdated != nil {
-		t.Errorf("repo custom outdated should be null")
+		t.Errorf("explicit custom outdated should be null")
+	}
+}
+
+func TestLsListsTrackedSetUnionWithExplicitPrecedence(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	p := paths.New(home)
+	t.Setenv("FLEET_REPO", "")
+	explicit := filepath.Join(t.TempDir(), "explicit")
+	cfg, err := json.Marshal(map[string]any{"skillsRepos": []string{explicit}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(p.FleetConfigFile()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.FleetConfigFile(), cfg, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeSkillDir(t, p.SkillsStore(), "canon-one", "Canonical one.")
+	writeSkillDir(t, p.FleetHomeSkills(), "fallback-one", "Fallback one.")
+	writeSkillDir(t, filepath.Join(explicit, "skills"), "explicit-one", "Explicit one.")
+	writeSkillDir(t, filepath.Join(p.FleetReposDir(), "alpha", "skills"), "checkout-one", "Checkout one.")
+	// A name in both the canonical store and an explicit repo reports
+	// once, from the explicit repo.
+	writeSkillDir(t, p.SkillsStore(), "clash", "canonical description")
+	writeNamedSkillCLI(t, filepath.Join(explicit, "skills"), "clash-explicit", "clash", "explicit description")
+	for _, dir := range []string{p.OpenCodeDir()} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	out, _, _ := runLsCapture(t, p, &fakeTrees{}, "--json")
+	var report struct {
+		Skills []struct {
+			Name        string `json:"name"`
+			Custom      bool   `json:"custom"`
+			Description string `json:"description"`
+			Outdated    *bool  `json:"outdated"`
+		} `json:"skills"`
+	}
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("bad JSON: %v\n%s", err, out)
+	}
+	byName := map[string]struct {
+		custom bool
+		desc   string
+	}{}
+	for _, s := range report.Skills {
+		byName[s.Name] = struct {
+			custom bool
+			desc   string
+		}{s.Custom, s.Description}
+		if s.Outdated != nil {
+			t.Errorf("%s outdated = %v, want null (all customs)", s.Name, *s.Outdated)
+		}
+	}
+	for _, name := range []string{"canon-one", "fallback-one", "explicit-one", "checkout-one", "clash"} {
+		c, ok := byName[name]
+		if !ok {
+			t.Errorf("skill %s missing from the union", name)
+			continue
+		}
+		if !c.custom {
+			t.Errorf("%s should be custom", name)
+		}
+	}
+	if c, ok := byName["clash"]; ok && c.desc != "explicit description" {
+		t.Errorf("clash description = %q, want explicit description (explicit > canonical)", c.desc)
+	}
+	if len(report.Skills) != 5 {
+		t.Errorf("skills = %d, want 5 winner-only rows", len(report.Skills))
+	}
+}
+
+func writeNamedSkillCLI(t *testing.T, store, dir, name, desc string) {
+	t.Helper()
+	path := filepath.Join(store, dir, "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\nname: " + name + "\ndescription: " + desc + "\n---\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/zzacong/fleet/internal/customs"
 	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/scan"
@@ -83,34 +84,39 @@ func validateUpdateTarget(p *paths.Paths, name string, storeSkills []scan.Skill)
 			return nil
 		}
 	}
-	// Not in the canonical store — check if it's a custom skill in the repo.
-	if ok, _ := isRepoSkill(p, name); ok {
+	// Not in the canonical store — check if it's a custom skill in the
+	// tracked set or the fleet-home fallback.
+	if ok, _ := isCustomSkill(p, name); ok {
 		return fmt.Errorf("skill %q is a custom skill — nothing to update", name)
 	}
 	return fmt.Errorf("skill %q not found in %s", name, p.SkillsStore())
 }
 
-func isRepoSkill(p *paths.Paths, name string) (bool, error) {
-	repoSkills := p.RepoSkills()
-	if repoSkills == "" {
-		return false, nil
-	}
-	// Direct check for <repo>/skills/<name>/SKILL.md — the common case
-	// where Dir == Name.
-	if _, err := os.Stat(filepath.Join(repoSkills, name, "SKILL.md")); err == nil {
-		return true, nil
-	} else if !os.IsNotExist(err) {
-		return false, err
-	}
-	// Frontmatter name may differ from directory name; scan the repo and
-	// match by Skill.Name.
-	skills, err := scan.ScanStore(repoSkills)
+func isCustomSkill(p *paths.Paths, name string) (bool, error) {
+	// Every custom home: each tracked collection plus the fleet-home
+	// fallback, in adopt-candidate order.
+	homes, err := customs.AdoptCandidates(p)
 	if err != nil {
 		return false, err
 	}
-	for _, s := range skills {
-		if s.Name == name {
+	for _, home := range homes {
+		// Direct check for <home>/<name>/SKILL.md — the common case
+		// where Dir == Name.
+		if _, err := os.Stat(filepath.Join(home, name, "SKILL.md")); err == nil {
 			return true, nil
+		} else if !os.IsNotExist(err) {
+			return false, err
+		}
+		// Frontmatter name may differ from directory name; scan the home
+		// and match by Skill.Name.
+		skills, err := scan.ScanStore(home)
+		if err != nil {
+			return false, err
+		}
+		for _, s := range skills {
+			if s.Name == name {
+				return true, nil
+			}
 		}
 	}
 	return false, nil

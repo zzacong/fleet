@@ -12,13 +12,18 @@ import (
 	"github.com/zzacong/fleet/internal/state"
 )
 
-// adoptHome builds a fake home with every harness installed and a fake
-// repo root, with the given skills in the canonical store.
-func adoptHome(t *testing.T, storeSkills ...string) *paths.Paths {
+// adoptHome builds a fake home with every harness installed, one explicit
+// tracked repo, the adopt target set to that repo's collection (so bare
+// adopt resolves with no prompt), and the given skills in the canonical
+// store. It returns the paths and the tracked collection dir.
+func adoptHome(t *testing.T, storeSkills ...string) (*paths.Paths, string) {
 	t.Helper()
+	t.Setenv("FLEET_REPO", "")
 	home := filepath.Join(t.TempDir(), "home")
-	repo := filepath.Join(t.TempDir(), "repo")
-	p := paths.WithRepo(home, repo)
+	p := paths.New(home)
+	tracked := filepath.Join(t.TempDir(), "tracked")
+	collection := filepath.Join(tracked, "skills")
+	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"], "adoptTarget": "`+collection+`"}`)
 	for _, name := range storeSkills {
 		writeSkillDir(t, p.SkillsStore(), name, "Does "+name+" things.")
 	}
@@ -27,7 +32,7 @@ func adoptHome(t *testing.T, storeSkills ...string) *paths.Paths {
 			t.Fatal(err)
 		}
 	}
-	return p
+	return p, collection
 }
 
 func runAdopt(t *testing.T, p *paths.Paths, args ...string) (string, error) {
@@ -43,18 +48,18 @@ func runAdopt(t *testing.T, p *paths.Paths, args ...string) (string, error) {
 }
 
 func TestAdoptMovesWiresAndLinksEveryHarness(t *testing.T) {
-	// The ticket's integration scenario: fake home + fake repo root; adopt;
+	// The ticket's integration scenario: fake home + tracked collection; adopt;
 	// verify every harness's config/link state; verify the moved skill
 	// still parses as a skill.
-	p := adoptHome(t, "my-notes", "tdd")
-	repoSkills := p.RepoSkills()
+	p, collection := adoptHome(t, "my-notes", "tdd")
+	repoSkills := collection
 
 	out, err := runAdopt(t, p, "my-notes")
 	if err != nil {
 		t.Fatalf("fleet skill adopt my-notes: %v", err)
 	}
 
-	// The move: out of the canonical store, into the repo, byte-identical
+	// The move: out of the canonical store, into the tracked collection, byte-identical
 	// SKILL.md.
 	if _, err := os.Stat(filepath.Join(p.SkillsStore(), "my-notes")); !os.IsNotExist(err) {
 		t.Errorf("the skill is still in the canonical store: %v", err)
@@ -70,18 +75,18 @@ func TestAdoptMovesWiresAndLinksEveryHarness(t *testing.T) {
 		t.Errorf("a skill that was not adopted must not move: %v", err)
 	}
 
-	// opencode: the repo path wired as a V1 skill source (the fresh config
+	// opencode: the collection path wired as a V1 skill source (the fresh config
 	// has no dialect markers, so V1 is the safe default).
 	oc := readFile(t, p.OpenCodeConfig())
 	if !strings.Contains(oc, `"skills"`) || !strings.Contains(oc, `"`+repoSkills+`"`) {
-		t.Errorf("opencode config missing the wired repo path:\n%s", oc)
+		t.Errorf("opencode config missing the wired collection path:\n%s", oc)
 	}
 	// pi: a plain path entry in the skills array.
 	pi := readFile(t, p.PiSettings())
 	if !strings.Contains(pi, `"`+repoSkills+`"`) {
-		t.Errorf("pi settings missing the wired repo path:\n%s", pi)
+		t.Errorf("pi settings missing the wired collection path:\n%s", pi)
 	}
-	// Managed links in every link-based harness, pointing at the repo.
+	// Managed links in every link-based harness, pointing at the tracked collection.
 	for name, dir := range map[string]string{
 		"codex":  p.CodexSkills(),
 		"claude": p.ClaudeSkills(),
@@ -159,7 +164,7 @@ func TestAdoptMovesWiresAndLinksEveryHarness(t *testing.T) {
 }
 
 func TestAdoptIsIdempotent(t *testing.T) {
-	p := adoptHome(t, "my-notes")
+	p, _ := adoptHome(t, "my-notes")
 
 	if _, err := runAdopt(t, p, "my-notes"); err != nil {
 		t.Fatal(err)
@@ -189,11 +194,11 @@ func TestAdoptIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestAdoptRepointsTheSkillsCLIsLinkAtTheRepo(t *testing.T) {
+func TestAdoptRepointsTheSkillsCLIsLinkAtTheCollection(t *testing.T) {
 	// Adopting an installed (forked) skill: the skills CLI's per-agent link
 	// points at the canonical store, which the move empties. Adopt must
 	// take the link over.
-	p := adoptHome(t, "my-notes")
+	p, collection := adoptHome(t, "my-notes")
 	if err := os.MkdirAll(p.CodexSkills(), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -206,8 +211,8 @@ func TestAdoptRepointsTheSkillsCLIsLinkAtTheRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := os.Readlink(filepath.Join(p.CodexSkills(), "my-notes")); got != filepath.Join(p.RepoSkills(), "my-notes") {
-		t.Errorf("codex link = %q, want the repo", got)
+	if got, _ := os.Readlink(filepath.Join(p.CodexSkills(), "my-notes")); got != filepath.Join(collection, "my-notes") {
+		t.Errorf("codex link = %q, want the tracked collection", got)
 	}
 	if !strings.Contains(out, `codex: repointed "my-notes" (was `+stale+`)`) {
 		t.Errorf("output should report the repoint:\n%s", out)
@@ -215,7 +220,7 @@ func TestAdoptRepointsTheSkillsCLIsLinkAtTheRepo(t *testing.T) {
 }
 
 func TestAdoptLeavesARealDirectoryAloneAndSaysSo(t *testing.T) {
-	p := adoptHome(t, "my-notes")
+	p, _ := adoptHome(t, "my-notes")
 	real := filepath.Join(p.ClaudeSkills(), "my-notes")
 	if err := os.MkdirAll(real, 0o755); err != nil {
 		t.Fatal(err)
@@ -236,7 +241,7 @@ func TestAdoptLeavesARealDirectoryAloneAndSaysSo(t *testing.T) {
 func TestAdoptKeepsExistingDisablesWorking(t *testing.T) {
 	// Disables recorded before adoption target the skill's name; they must
 	// survive the move untouched.
-	p := adoptHome(t, "my-notes")
+	p, _ := adoptHome(t, "my-notes")
 	if err := runToggleErr(t, p, "off", "my-notes", "--harness", "opencode"); err != nil {
 		t.Fatal(err)
 	}
@@ -263,8 +268,10 @@ func TestAdoptKeepsExistingDisablesWorking(t *testing.T) {
 
 func TestAdoptOnlyTouchesInstalledHarnesses(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
-	repo := filepath.Join(t.TempDir(), "repo")
-	p := paths.WithRepo(home, repo)
+	p := paths.New(home)
+	tracked := filepath.Join(t.TempDir(), "tracked")
+	collection := filepath.Join(tracked, "skills")
+	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"], "adoptTarget": "`+collection+`"}`)
 	writeSkillDir(t, p.SkillsStore(), "my-notes", "desc.")
 	if err := os.MkdirAll(p.OpenCodeDir(), 0o755); err != nil {
 		t.Fatal(err)
@@ -277,12 +284,12 @@ func TestAdoptOnlyTouchesInstalledHarnesses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if body := readFile(t, p.OpenCodeConfig()); !strings.Contains(body, p.RepoSkills()) {
+	if body := readFile(t, p.OpenCodeConfig()); !strings.Contains(body, collection) {
 		t.Errorf("opencode was not wired:\n%s", body)
 	}
 	if got, err := os.Readlink(filepath.Join(p.CodexSkills(), "my-notes")); err != nil {
 		t.Errorf("codex link missing: %v", err)
-	} else if got != filepath.Join(p.RepoSkills(), "my-notes") {
+	} else if got != filepath.Join(collection, "my-notes") {
 		t.Errorf("codex link = %q", got)
 	}
 	for _, dir := range []string{p.PiDir(), p.ClaudeDir(), p.CursorDir(), p.BobDir()} {
@@ -294,8 +301,10 @@ func TestAdoptOnlyTouchesInstalledHarnesses(t *testing.T) {
 
 func TestAdoptByFrontmatterNameKeepsTheDirName(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
-	repo := filepath.Join(t.TempDir(), "repo")
-	p := paths.WithRepo(home, repo)
+	p := paths.New(home)
+	tracked := filepath.Join(t.TempDir(), "tracked")
+	collection := filepath.Join(tracked, "skills")
+	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"], "adoptTarget": "`+collection+`"}`)
 	skillDir := filepath.Join(p.SkillsStore(), "notes")
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -308,26 +317,26 @@ func TestAdoptByFrontmatterNameKeepsTheDirName(t *testing.T) {
 	if _, err := runAdopt(t, p, "my-notes"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(p.RepoSkills(), "notes", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(collection, "notes", "SKILL.md")); err != nil {
 		t.Errorf("the directory must keep its name: %v", err)
 	}
 }
 
 func TestAdoptRefusesUnknownSkillsAndAmbiguity(t *testing.T) {
-	p := adoptHome(t, "other")
+	p, collection := adoptHome(t, "other")
 	if _, err := runAdopt(t, p, "my-notes"); err == nil {
 		t.Error("adopting an unknown skill should fail")
 	}
 
 	// A copy left in both places is ambiguous; adopt refuses instead of
 	// guessing.
-	writeSkillDir(t, p.RepoSkills(), "other", "desc.")
+	writeSkillDir(t, collection, "other", "desc.")
 	if _, err := runAdopt(t, p, "other"); err == nil || !strings.Contains(err.Error(), "both") {
 		t.Errorf("adopt with the skill in both places should refuse, got %v", err)
 	}
 }
 
-func TestAdoptWithoutARepoAdoptsIntoFleetHome(t *testing.T) {
+func TestAdoptWithoutTrackedReposAdoptsIntoFleetHome(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
 	p := paths.New(home)
 	writeSkillDir(t, p.SkillsStore(), "my-notes", "desc.")
@@ -340,7 +349,7 @@ func TestAdoptWithoutARepoAdoptsIntoFleetHome(t *testing.T) {
 
 	out, err := runAdopt(t, p, "my-notes")
 	if err != nil {
-		t.Fatalf("adopt without repo should succeed into fleet-home: %v", err)
+		t.Fatalf("adopt without tracked repos should succeed into fleet-home: %v", err)
 	}
 	fleetDir := filepath.Join(p.FleetHomeSkills(), "my-notes")
 	if _, err := os.Stat(filepath.Join(fleetDir, "SKILL.md")); err != nil {
@@ -367,11 +376,11 @@ func TestAdoptWithoutARepoAdoptsIntoFleetHome(t *testing.T) {
 func TestAdoptIsReversibleByHand(t *testing.T) {
 	// Moving the directory back into the store must not break fleet: ls
 	// still works and shows the skill, adopt can redo the migration.
-	p := adoptHome(t, "my-notes")
+	p, collection := adoptHome(t, "my-notes")
 	if _, err := runAdopt(t, p, "my-notes"); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Rename(filepath.Join(p.RepoSkills(), "my-notes"), filepath.Join(p.SkillsStore(), "my-notes")); err != nil {
+	if err := os.Rename(filepath.Join(collection, "my-notes"), filepath.Join(p.SkillsStore(), "my-notes")); err != nil {
 		t.Fatal(err)
 	}
 

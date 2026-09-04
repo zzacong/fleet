@@ -19,23 +19,36 @@ import (
 )
 
 // tuiHome builds a home with every harness installed, two installed skills
-// ("tdd", "git-helper") with lockfile provenance, and a repo custom
+// ("tdd", "git-helper") with lockfile provenance, and a tracked custom
 // ("my-notes") — the grouping the matrix renders.
 func tuiHome(t *testing.T) *paths.Paths {
 	t.Helper()
 	home := filepath.Join(t.TempDir(), "home")
-	repo := filepath.Join(t.TempDir(), "repo")
-	p := paths.WithRepo(home, repo)
+	p := paths.New(home)
+	t.Setenv("FLEET_REPO", "")
+	tracked := filepath.Join(t.TempDir(), "tracked")
 	writeSkillDir(t, p.SkillsStore(), "tdd", "Red-green-refactor workflow for tests.")
 	writeSkillDir(t, p.SkillsStore(), "git-helper", "Wraps common git workflows.")
-	writeSkillDir(t, p.RepoSkills(), "my-notes", "Personal note-taking conventions.")
+	writeSkillDir(t, filepath.Join(tracked, "skills"), "my-notes", "Personal note-taking conventions.")
 	for _, dir := range []string{p.OpenCodeDir(), p.PiDir(), p.CodexDir(), p.ClaudeDir(), p.CursorDir(), p.BobDir()} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
+	writeFile(t, p.FleetConfigFile(), `{"skillsRepos": ["`+tracked+`"]}`)
 	writeLock(t, p)
 	return p
+}
+
+// writeFile writes body to path, creating the parent dir.
+func writeFile(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func writeSkillDir(t *testing.T, store, dir, description string) {
@@ -232,7 +245,7 @@ func TestStageThenApplyWritesStateAndHarnessConfigs(t *testing.T) {
 	p := tuiHome(t)
 	m := newTestModel(t, p)
 
-	// Focus the tdd row: the repo custom and git-helper don't match.
+	// Focus the tdd row: the tracked custom and git-helper don't match.
 	m = selectSkill(m, "tdd")
 	if got := m.selectedName(); got != "tdd" {
 		t.Fatalf("selected %q, want tdd", got)

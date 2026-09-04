@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zzacong/fleet/internal/config"
 	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/scan"
@@ -67,26 +68,33 @@ func symlink(t *testing.T, target, link string) {
 	}
 }
 
-// fakeRepo binds a fake repo root to p and returns it. The repo's
-// skills/ dir is not created unless the test does it.
+// fakeRepo records a fake explicit repo root in the home's config file and
+// returns it. The repo's skills/ dir is not created unless the test does
+// it. A .git marker is created so the entry counts as a git checkout (no
+// non-git warning).
 func fakeRepo(t *testing.T, p *paths.Paths) string {
 	t.Helper()
-	p.Repo = filepath.Join(t.TempDir(), "repo")
-	return p.Repo
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFleetConfig(t, p, []string{repo}, "")
+	return repo
 }
 
-// repoSkill writes a skill into the repo's skills/ dir, mirroring
-// storeSkill.
+// repoSkill writes a skill into the fake explicit repo's skills/ dir,
+// mirroring storeSkill.
 func repoSkill(t *testing.T, p *paths.Paths, name string) {
 	t.Helper()
-	dir := filepath.Join(p.RepoSkills(), name)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	f, err := config.Load(p.FleetConfigFile())
+	if err != nil {
 		t.Fatal(err)
 	}
-	md := "---\nname: " + name + "\ndescription: test skill " + name + "\n---\n\nbody\n"
-	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(md), 0o644); err != nil {
-		t.Fatal(err)
+	repos := f.SkillsRepos()
+	if len(repos) == 0 {
+		t.Fatal("repoSkill without a fakeRepo explicit entry")
 	}
+	collectionSkill(t, filepath.Join(repos[0], "skills"), name)
 }
 
 // fleetSkill writes a skill into the fleet-home skills dir.
@@ -100,6 +108,45 @@ func fleetSkill(t *testing.T, p *paths.Paths, name string) {
 	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(md), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// collectionSkill writes a skill into an arbitrary collection dir (an
+// explicit repo's skills/ or a fleet-home checkout's skills/).
+func collectionSkill(t *testing.T, collection, name string) {
+	t.Helper()
+	dir := filepath.Join(collection, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	md := "---\nname: " + name + "\ndescription: test skill " + name + "\n---\n\nbody\n"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(md), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// checkoutCollection returns the collection dir of one auto-tracked
+// fleet-home checkout slot.
+func checkoutCollection(p *paths.Paths, name string) string {
+	return filepath.Join(p.FleetReposDir(), name, "skills")
+}
+
+// writeFleetConfig records the explicit repo-root list and adopt target in
+// the fake home's config file.
+func writeFleetConfig(t *testing.T, p *paths.Paths, repos []string, target string) {
+	t.Helper()
+	t.Setenv("FLEET_REPO", "")
+	cfg := map[string]any{}
+	if repos != nil {
+		cfg["skillsRepos"] = repos
+	}
+	if target != "" {
+		cfg["adoptTarget"] = target
+	}
+	body, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, p.FleetConfigFile(), string(body))
 }
 
 // writeLock writes a skills CLI lockfile with the given provenance
@@ -390,11 +437,11 @@ func TestAnalyzeUnreadableConfigIsAFinding(t *testing.T) {
 	}
 }
 
-func TestAnalyzeFlagsSkillInBothStoreAndRepo(t *testing.T) {
+func TestAnalyzeFlagsSkillInBothStoreAndTracked(t *testing.T) {
 	// The half-done adoption reversal: the store copy came back (or never
-	// left) while the repo copy stayed — the same name in both places.
+	// left) while the tracked copy stayed — the same name in both places.
 	p := fakeHome(t)
-	fakeRepo(t, p)
+	repo := fakeRepo(t, p)
 	storeSkill(t, p, "tdd")
 	repoSkill(t, p, "tdd")
 
@@ -415,7 +462,7 @@ func TestAnalyzeFlagsSkillInBothStoreAndRepo(t *testing.T) {
 		t.Errorf("finding = %+v, want the skill name and no harness scope", *found)
 	}
 	if !strings.Contains(found.Message, filepath.Join(p.SkillsStore(), "tdd")) ||
-		!strings.Contains(found.Message, filepath.Join(p.RepoSkills(), "tdd")) {
+		!strings.Contains(found.Message, filepath.Join(repo, "skills", "tdd")) {
 		t.Errorf("message must name both copies: %q", found.Message)
 	}
 	if !strings.Contains(found.Message, "twice") || !strings.Contains(found.Message, "by hand") {
@@ -427,9 +474,9 @@ func TestAnalyzeDoublePresenceFollowsTheNameNotTheDir(t *testing.T) {
 	// ls dedupes on the frontmatter name; doctor flags the same way, so a
 	// renamed directory still counts as the same skill in both places.
 	p := fakeHome(t)
-	fakeRepo(t, p)
+	repo := fakeRepo(t, p)
 	storeSkill(t, p, "tdd")
-	dir := filepath.Join(p.RepoSkills(), "my-tdd")
+	dir := filepath.Join(repo, "skills", "my-tdd")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -447,7 +494,7 @@ func TestAnalyzeDoublePresenceFollowsTheNameNotTheDir(t *testing.T) {
 	}
 }
 
-func TestAnalyzeQuietWhenRepoSkillsAreUnique(t *testing.T) {
+func TestAnalyzeQuietWhenTrackedSkillsAreUnique(t *testing.T) {
 	// Distinct names on each side, no lockfile: no double presence, no
 	// stale lock — the normal adopted-customs home.
 	p := fakeHome(t)
@@ -467,9 +514,9 @@ func TestAnalyzeQuietWhenRepoSkillsAreUnique(t *testing.T) {
 func TestAnalyzeFlagsStaleLockEntryForAdoptedSkill(t *testing.T) {
 	// The skill was adopted out of the store, but its lockfile entry
 	// stayed: the skills CLI would keep trying to update a skill that now
-	// lives in the repo.
+	// lives in the tracked collection.
 	p := fakeHome(t)
-	fakeRepo(t, p)
+	repo := fakeRepo(t, p)
 	storeSkill(t, p, "tdd")
 	repoSkill(t, p, "git-helper")
 	writeLock(t, p, map[string]scan.Provenance{
@@ -487,8 +534,8 @@ func TestAnalyzeFlagsStaleLockEntryForAdoptedSkill(t *testing.T) {
 	if f.Kind != KindStaleLock || f.Skill != "git-helper" || f.Harness != "" {
 		t.Errorf("finding = %+v, want the stale lock for git-helper", f)
 	}
-	if !strings.Contains(f.Message, p.SkillLock()) || !strings.Contains(f.Message, filepath.Join(p.RepoSkills(), "git-helper")) {
-		t.Errorf("message must name the lockfile and the repo copy: %q", f.Message)
+	if !strings.Contains(f.Message, p.SkillLock()) || !strings.Contains(f.Message, filepath.Join(repo, "skills", "git-helper")) {
+		t.Errorf("message must name the lockfile and the tracked copy: %q", f.Message)
 	}
 	if !strings.Contains(f.Message, "skills CLI") || !strings.Contains(f.Message, "never writes the lockfile") {
 		t.Errorf("message must state the consequence and that fleet never edits the lockfile: %q", f.Message)
@@ -530,7 +577,7 @@ func TestAnalyzePropagatesLockfileErrors(t *testing.T) {
 
 func TestAnalyzeTouchesNothing(t *testing.T) {
 	p := fakeHome(t, "opencode", "claude", "bob")
-	fakeRepo(t, p)
+	repo := fakeRepo(t, p)
 	storeSkill(t, p, "tdd")
 	repoSkill(t, p, "git-helper")
 	writeLock(t, p, map[string]scan.Provenance{
@@ -543,7 +590,7 @@ func TestAnalyzeTouchesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := snapshot(t, p.Home)
-	for path, body := range snapshot(t, p.Repo) {
+	for path, body := range snapshot(t, repo) {
 		before["repo:"+path] = body
 	}
 	before["lock"] = readFileT(t, p.SkillLock())
@@ -553,7 +600,7 @@ func TestAnalyzeTouchesNothing(t *testing.T) {
 	}
 
 	after := snapshot(t, p.Home)
-	for path, body := range snapshot(t, p.Repo) {
+	for path, body := range snapshot(t, repo) {
 		after["repo:"+path] = body
 	}
 	after["lock"] = readFileT(t, p.SkillLock())
@@ -756,13 +803,13 @@ func TestAnalyzeSuppressesManagedFleetHomeLinks(t *testing.T) {
 	}
 }
 
-func TestAnalyzeSuppressesManagedRepoLinksStill(t *testing.T) {
+func TestAnalyzeSuppressesManagedExplicitLinks(t *testing.T) {
 	p := fakeHome(t, "claude", "codex", "cursor", "bob")
-	fakeRepo(t, p)
+	repo := fakeRepo(t, p)
 	storeSkill(t, p, "tdd")
 	repoSkill(t, p, "repo-helper")
 	for _, dir := range []string{p.ClaudeSkills(), p.CodexSkills(), p.CursorSkills(), p.BobSkills()} {
-		symlink(t, filepath.Join(p.RepoSkills(), "repo-helper"), filepath.Join(dir, "repo-helper"))
+		symlink(t, filepath.Join(repo, "skills", "repo-helper"), filepath.Join(dir, "repo-helper"))
 	}
 
 	rep, err := Analyze(p)
@@ -771,7 +818,182 @@ func TestAnalyzeSuppressesManagedRepoLinksStill(t *testing.T) {
 	}
 	for _, f := range rep.Findings {
 		if f.Skill == "repo-helper" {
-			t.Errorf("managed repo link should be suppressed, got %+v", f)
+			t.Errorf("managed explicit link should be suppressed, got %+v", f)
+		}
+	}
+}
+
+func TestAnalyzeFlagsCollisionAcrossTrackedSet(t *testing.T) {
+	// One name in every source: canonical, explicit, auto checkout, and
+	// fallback — a single double-presence finding naming every copy.
+	p := fakeHome(t)
+	t.Setenv("FLEET_REPO", "")
+	explicit := filepath.Join(t.TempDir(), "explicit")
+	writeFleetConfig(t, p, []string{explicit}, "")
+	storeSkill(t, p, "shared")
+	fleetSkill(t, p, "shared")
+	collectionSkill(t, filepath.Join(explicit, "skills"), "shared")
+	collectionSkill(t, checkoutCollection(p, "alpha"), "shared")
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	var found []Finding
+	for _, f := range rep.Findings {
+		if f.Kind == KindDoublePresence {
+			found = append(found, f)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("findings = %+v, want one double-presence finding for the four-way collision", rep.Findings)
+	}
+	f := found[0]
+	if f.Skill != "shared" || f.Harness != "" {
+		t.Errorf("finding = %+v, want the skill name and no harness scope", f)
+	}
+	for _, path := range []string{
+		filepath.Join(p.SkillsStore(), "shared"),
+		filepath.Join(p.FleetHomeSkills(), "shared"),
+		filepath.Join(explicit, "skills", "shared"),
+		filepath.Join(checkoutCollection(p, "alpha"), "shared"),
+	} {
+		if !strings.Contains(f.Message, path) {
+			t.Errorf("message must name every copy, missing %q in %q", path, f.Message)
+		}
+	}
+	if !strings.Contains(f.Message, "twice") || !strings.Contains(f.Message, "by hand") {
+		t.Errorf("message must state the consequence and the manual resolution: %q", f.Message)
+	}
+}
+
+func TestAnalyzeFlagsExplicitCheckoutCollision(t *testing.T) {
+	// A collision purely between tracked sources still counts: every
+	// cross-source name collision is drift.
+	p := fakeHome(t)
+	t.Setenv("FLEET_REPO", "")
+	explicit := filepath.Join(t.TempDir(), "explicit")
+	writeFleetConfig(t, p, []string{explicit}, "")
+	collectionSkill(t, filepath.Join(explicit, "skills"), "dup")
+	collectionSkill(t, checkoutCollection(p, "zeta"), "dup")
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	var found []Finding
+	for _, f := range rep.Findings {
+		if f.Kind == KindDoublePresence {
+			found = append(found, f)
+		}
+	}
+	if len(found) != 1 || found[0].Skill != "dup" {
+		t.Fatalf("findings = %+v, want one double-presence finding for dup", rep.Findings)
+	}
+}
+
+func TestAnalyzeWarnsOnUnscannedAdoptTarget(t *testing.T) {
+	p := fakeHome(t)
+	t.Setenv("FLEET_REPO", "")
+	target := filepath.Join(t.TempDir(), "elsewhere", "skills")
+	writeFleetConfig(t, p, nil, target)
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	var found *Finding
+	for i := range rep.Findings {
+		if rep.Findings[i].Kind == KindUnscannedAdoptTarget {
+			found = &rep.Findings[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("findings = %+v, want an unscanned-adopt-target warning", rep.Findings)
+	}
+	if !strings.Contains(found.Message, target) {
+		t.Errorf("message must name the adopt target: %q", found.Message)
+	}
+}
+
+func TestAnalyzeQuietWhenAdoptTargetIsScanned(t *testing.T) {
+	for _, target := range []string{"fallback", "tracked"} {
+		t.Run(target, func(t *testing.T) {
+			p := fakeHome(t)
+			t.Setenv("FLEET_REPO", "")
+			explicit := filepath.Join(t.TempDir(), "explicit")
+			var want string
+			if target == "fallback" {
+				want = p.FleetHomeSkills()
+			} else {
+				want = filepath.Join(explicit, "skills")
+			}
+			writeFleetConfig(t, p, []string{explicit}, want)
+
+			rep, err := Analyze(p)
+			if err != nil {
+				t.Fatalf("Analyze() error = %v", err)
+			}
+			for _, f := range rep.Findings {
+				if f.Kind == KindUnscannedAdoptTarget {
+					t.Errorf("scanned adopt target %q warned: %+v", want, f)
+				}
+			}
+		})
+	}
+}
+
+func TestAnalyzeWarnsOnNonGitExplicitEntries(t *testing.T) {
+	p := fakeHome(t)
+	t.Setenv("FLEET_REPO", "")
+	plain := filepath.Join(t.TempDir(), "plain")
+	if err := os.MkdirAll(plain, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFleetConfig(t, p, []string{plain, repo}, "")
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	var found []Finding
+	for _, f := range rep.Findings {
+		if f.Kind == KindNonGitRepo {
+			found = append(found, f)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("findings = %+v, want one non-git warning for the plain dir", rep.Findings)
+	}
+	if !strings.Contains(found[0].Message, plain) {
+		t.Errorf("message must name the non-git entry: %q", found[0].Message)
+	}
+}
+
+func TestAnalyzeSuppressesManagedTrackedLinks(t *testing.T) {
+	p := fakeHome(t, "claude", "codex")
+	t.Setenv("FLEET_REPO", "")
+	explicit := filepath.Join(t.TempDir(), "explicit")
+	writeFleetConfig(t, p, []string{explicit}, "")
+	collectionSkill(t, filepath.Join(explicit, "skills"), "tracked-helper")
+	collectionSkill(t, checkoutCollection(p, "alpha"), "checkout-helper")
+	storeSkill(t, p, "tdd")
+	for _, dir := range []string{p.ClaudeSkills(), p.CodexSkills()} {
+		symlink(t, filepath.Join(explicit, "skills", "tracked-helper"), filepath.Join(dir, "tracked-helper"))
+		symlink(t, filepath.Join(checkoutCollection(p, "alpha"), "checkout-helper"), filepath.Join(dir, "checkout-helper"))
+	}
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	for _, f := range rep.Findings {
+		if f.Skill == "tracked-helper" || f.Skill == "checkout-helper" {
+			t.Errorf("managed tracked link should be suppressed, got finding %+v", f)
 		}
 	}
 }

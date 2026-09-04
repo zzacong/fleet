@@ -485,3 +485,159 @@ func TestScanSkillDirStoreMissingStillClassifiesByShape(t *testing.T) {
 		t.Errorf("elsewhere class = %q, want broken", got["elsewhere"])
 	}
 }
+
+func TestRemoveCustomLinksRemovesOnlyManagedLinks(t *testing.T) {
+	p := linksHome(t)
+	collection := filepath.Join(p.Home, "repos", "custom", "skills")
+	foreignHome := filepath.Join(p.Home, "elsewhere", "skills")
+	storeSkill := filepath.Join(p.SkillsStore(), "tdd")
+	for _, dir := range []string{
+		filepath.Join(collection, "mine"),
+		filepath.Join(collection, "other"),
+		filepath.Join(foreignHome, "theirs"),
+		storeSkill,
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Every link-based harness dir gets the full spread: managed links to
+	// drop, plus entries fleet must never touch.
+	for _, dir := range linkDirs(p) {
+		symlink(t, filepath.Join(collection, "mine"), filepath.Join(dir, "mine"))
+		symlink(t, filepath.Join(collection, "other"), filepath.Join(dir, "other"))
+		symlink(t, filepath.Join(foreignHome, "theirs"), filepath.Join(dir, "theirs"))
+		symlink(t, storeSkill, filepath.Join(dir, "tdd"))
+		if err := os.MkdirAll(filepath.Join(dir, "real-dir"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "README"), []byte("hi"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		symlink(t, filepath.Join(p.Home, "nope", "missing"), filepath.Join(dir, "dangling"))
+	}
+	// A relative managed link and a dangling managed link (target already
+	// gone, written under the collection) must go too.
+	relTarget := "../../repos/custom/skills/mine"
+	symlink(t, relTarget, filepath.Join(p.CodexSkills(), "rel"))
+	if got := readLink(t, filepath.Join(p.CodexSkills(), "rel")); got != relTarget {
+		t.Fatalf("relative fixture miswired: %q", got)
+	}
+	symlink(t, filepath.Join(collection, "gone"), filepath.Join(p.CodexSkills(), "gone"))
+
+	removed, err := RemoveCustomLinks(p, collection)
+	if err != nil {
+		t.Fatalf("RemoveCustomLinks() error = %v", err)
+	}
+
+	// Per-harness report: codex loses mine/other/rel/gone, the rest lose
+	// mine/other.
+	byHarness := map[Harness][]string{}
+	for _, r := range removed {
+		byHarness[r.Harness] = append(byHarness[r.Harness], r.Name)
+	}
+	want := map[Harness][]string{
+		Codex:  {"gone", "mine", "other", "rel"},
+		Claude: {"mine", "other"},
+		Cursor: {"mine", "other"},
+		Bob:    {"mine", "other"},
+	}
+	if len(byHarness) != len(want) {
+		t.Fatalf("removed per harness = %v, want %v", byHarness, want)
+	}
+	for h, names := range want {
+		got := byHarness[h]
+		if len(got) != len(names) {
+			t.Errorf("%s removed = %v, want %v", h, got, names)
+			continue
+		}
+		seen := map[string]bool{}
+		for _, n := range got {
+			seen[n] = true
+		}
+		for _, n := range names {
+			if !seen[n] {
+				t.Errorf("%s removed = %v, want %v", h, got, names)
+				break
+			}
+		}
+	}
+
+	// Managed links are gone from disk; everything else survives with its
+	// target intact.
+	for harness, dir := range linkDirs(p) {
+		for _, name := range []string{"mine", "other"} {
+			if _, err := os.Lstat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+				t.Errorf("%s/%s still on disk", harness, name)
+			}
+		}
+		for name, target := range map[string]string{
+			"theirs":   filepath.Join(foreignHome, "theirs"),
+			"tdd":      storeSkill,
+			"dangling": filepath.Join(p.Home, "nope", "missing"),
+		} {
+			if got := readLink(t, filepath.Join(dir, name)); got != target {
+				t.Errorf("%s/%s target = %q, want %q — a link fleet doesn't own was touched", harness, name, got, target)
+			}
+		}
+		if info, err := os.Stat(filepath.Join(dir, "real-dir")); err != nil || !info.IsDir() {
+			t.Errorf("%s/real-dir was touched: %v", harness, err)
+		}
+		if body, err := os.ReadFile(filepath.Join(dir, "README")); err != nil || string(body) != "hi" {
+			t.Errorf("%s/README was touched: %q, %v", harness, body, err)
+		}
+	}
+	for _, name := range []string{"rel", "gone"} {
+		if _, err := os.Lstat(filepath.Join(p.CodexSkills(), name)); !os.IsNotExist(err) {
+			t.Errorf("codex/%s still on disk", name)
+		}
+	}
+
+	// The collection itself, the foreign home, and the store are untouched.
+	for _, dir := range []string{
+		filepath.Join(collection, "mine"),
+		filepath.Join(foreignHome, "theirs"),
+		storeSkill,
+	} {
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			t.Errorf("skill dir %s was touched: %v", dir, err)
+		}
+	}
+}
+
+func TestRemoveCustomLinksMissingDirsAreNoOps(t *testing.T) {
+	// No skills dirs at all: nothing to remove, no error.
+	p := linksHome(t)
+	removed, err := RemoveCustomLinks(p, filepath.Join(p.Home, "repos", "custom", "skills"))
+	if err != nil {
+		t.Fatalf("RemoveCustomLinks() error = %v", err)
+	}
+	if len(removed) != 0 {
+		t.Errorf("removed = %v, want none", removed)
+	}
+
+	// A harness that isn't installed is skipped, and the removal creates
+	// nothing for it: its skills dir must still be absent afterwards.
+	home := filepath.Join(t.TempDir(), "home")
+	q := paths.New(home)
+	if err := os.MkdirAll(q.CodexDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	collection := filepath.Join(home, "repos", "custom", "skills")
+	if err := os.MkdirAll(filepath.Join(collection, "mine"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	symlink(t, filepath.Join(collection, "mine"), filepath.Join(q.CodexSkills(), "mine"))
+
+	removed, err = RemoveCustomLinks(q, collection)
+	if err != nil {
+		t.Fatalf("RemoveCustomLinks() error = %v", err)
+	}
+	if len(removed) != 1 || removed[0].Harness != Codex || removed[0].Name != "mine" {
+		t.Errorf("removed = %+v, want only the codex link", removed)
+	}
+	if _, err := os.Lstat(q.ClaudeSkills()); !os.IsNotExist(err) {
+		t.Error("claude skills dir touched although claude is not installed")
+	}
+}

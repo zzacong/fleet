@@ -5,8 +5,7 @@
 // codex, claude code, Cursor, and Bob reach skills outside the canonical
 // store only through a symlink named after the skill in their own skills
 // dir, so each custom skill gets one link per harness — pointed at the
-// resolved custom home (the designated skills repo's skills/ when a repo
-// is set, otherwise ~/.config/fleet/skills). By construction these links
+// resolved custom home (a tracked collection or ~/.config/fleet/skills). By construction these links
 // never target the canonical store: a link into ~/.agents/skills would
 // make opencode and pi see the skill twice, and it would make the link
 // indistinguishable from the skills CLI's redundant per-agent links.
@@ -117,6 +116,86 @@ func (a *CursorAdapter) LinkSkill(name, target string) (LinkChange, error) {
 // skills (repo skills are outside what Bob scans natively).
 func (a *BobAdapter) LinkSkill(name, target string) (LinkChange, error) {
 	return manageLink(a.home.BobSkills(), name, target)
+}
+
+// UnlinkResult reports one managed link removed from a harness's skills
+// dir.
+type UnlinkResult struct {
+	Harness Harness
+	// Name is the removed link's file name (the skill name).
+	Name string
+	// Target is the link's written target.
+	Target string
+}
+
+// RemoveCustomLinks removes every symlink in each installed link-based
+// harness's skills dir (codex, claude, Cursor, Bob) that resolves under
+// collectionDir: the managed custom-skill links of a dropped collection.
+// Only symlinks are ever removed — real directories and files are the
+// user's and stay, as do foreign links, redundant canonical-store links,
+// claude's expected store links, and dangling or looping links that point
+// anywhere else. (A dangling link whose written target sits under the
+// collection is still the collection's, so it goes.) Missing skills dirs
+// and uninstalled harnesses are no-ops. Results arrive in harness order,
+// links sorted by name within each harness (os.ReadDir returns entries
+// sorted by filename, which is what the loop below iterates).
+func RemoveCustomLinks(p *paths.Paths, collectionDir string) ([]UnlinkResult, error) {
+	collection := filepath.Clean(collectionDir)
+	dirs := skillDirPaths(p)
+	var removed []UnlinkResult
+	for _, a := range All(p) {
+		if _, ok := a.(SkillLinker); !ok || !a.Installed() {
+			continue
+		}
+		dir := dirs[a.Harness()]
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), ".") {
+				// The harness's own reserved namespace: never a
+				// fleet-managed skill link.
+				continue
+			}
+			link := filepath.Join(dir, entry.Name())
+			info, err := os.Lstat(link)
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue // raced away: nothing to remove
+				}
+				return nil, err
+			}
+			if info.Mode()&os.ModeSymlink == 0 {
+				continue
+			}
+			final, err := resolveLink(link)
+			if err != nil {
+				continue // symlink loop: broken, left alone
+			}
+			if !pathInside(final, collection) {
+				continue
+			}
+			written, err := os.Readlink(link)
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return nil, err
+			}
+			if err := os.Remove(link); err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return nil, fmt.Errorf("remove %s link %q: %w", a.Harness(), entry.Name(), err)
+			}
+			removed = append(removed, UnlinkResult{Harness: a.Harness(), Name: entry.Name(), Target: written})
+		}
+	}
+	return removed, nil
 }
 
 // manageLink keeps dir/<name> a symlink to target: created when missing,

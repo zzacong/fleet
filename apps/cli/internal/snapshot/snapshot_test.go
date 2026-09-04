@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/zzacong/fleet/internal/config"
 	"github.com/zzacong/fleet/internal/outdated"
 	"github.com/zzacong/fleet/internal/paths"
 )
@@ -140,11 +141,13 @@ func TestSnapshotFleetHomeFrontmatterFallback(t *testing.T) {
 	}
 }
 
-func TestSnapshotSkillsRepoOnly(t *testing.T) {
+func TestSnapshotExplicitRepoOnly(t *testing.T) {
 	home := t.TempDir()
-	repo := t.TempDir()
-	p := paths.WithRepo(home, repo)
-	writeSkill(t, p.RepoSkills(), "repo-skill", "repo-skill", "repo description")
+	p := paths.New(home)
+	t.Setenv("FLEET_REPO", "")
+	explicit := t.TempDir()
+	writeExplicitRepos(t, p, explicit)
+	writeSkill(t, filepath.Join(explicit, "skills"), "repo-skill", "repo-skill", "repo description")
 	trees := &fakeTrees{}
 	report, _, err := Build(context.Background(), p, trees)
 	if err != nil {
@@ -177,12 +180,12 @@ func TestSnapshotMissingDirsNotError(t *testing.T) {
 	if len(report.Skills) != 0 {
 		t.Errorf("skills = %v, want empty", report.Skills)
 	}
-	// Also with repo set but repo skills dir missing
-	repo := t.TempDir()
-	p2 := paths.WithRepo(home, repo)
-	report, _, err = Build(context.Background(), p2, trees)
+	// Also with an explicit entry whose collection dir is missing
+	explicit := t.TempDir()
+	writeExplicitRepos(t, p, explicit)
+	report, _, err = Build(context.Background(), p, trees)
 	if err != nil {
-		t.Fatalf("Build with missing repo skills dir should not error: %v", err)
+		t.Fatalf("Build with missing explicit collection dir should not error: %v", err)
 	}
 	if len(report.Skills) != 0 {
 		t.Errorf("skills = %v, want empty", report.Skills)
@@ -220,12 +223,14 @@ func TestSnapshotTwoWayCanonicalFleetCollision(t *testing.T) {
 	}
 }
 
-func TestSnapshotTwoWayCanonicalRepoCollision(t *testing.T) {
+func TestSnapshotTwoWayCanonicalExplicitCollision(t *testing.T) {
 	home := t.TempDir()
-	repo := t.TempDir()
-	p := paths.WithRepo(home, repo)
+	p := paths.New(home)
+	t.Setenv("FLEET_REPO", "")
+	explicit := t.TempDir()
+	writeExplicitRepos(t, p, explicit)
 	writeSkill(t, p.SkillsStore(), "shared-dir", "shared", "canonical desc")
-	writeSkill(t, p.RepoSkills(), "shared-repo-dir", "shared", "repo desc")
+	writeSkill(t, filepath.Join(explicit, "skills"), "shared-repo-dir", "shared", "repo desc")
 	// Add a lock entry for canonical that would otherwise make it installed
 	lock := `{"version":3,"skills":{"shared-dir":{"source":"a/b","sourceType":"github","skillFolderHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","skillPath":"skills/shared/SKILL.md"}}}`
 	if err := os.MkdirAll(p.AgentsDir(), 0o755); err != nil {
@@ -260,12 +265,14 @@ func TestSnapshotTwoWayCanonicalRepoCollision(t *testing.T) {
 	}
 }
 
-func TestSnapshotTwoWayFleetRepoCollision(t *testing.T) {
+func TestSnapshotTwoWayFleetExplicitCollision(t *testing.T) {
 	home := t.TempDir()
-	repo := t.TempDir()
-	p := paths.WithRepo(home, repo)
+	p := paths.New(home)
+	t.Setenv("FLEET_REPO", "")
+	explicit := t.TempDir()
+	writeExplicitRepos(t, p, explicit)
 	writeSkill(t, p.FleetHomeSkills(), "shared-fleet-dir", "shared", "fleet desc")
-	writeSkill(t, p.RepoSkills(), "shared-repo-dir", "shared", "repo desc")
+	writeSkill(t, filepath.Join(explicit, "skills"), "shared-repo-dir", "shared", "repo desc")
 	trees := &fakeTrees{}
 	report, _, err := Build(context.Background(), p, trees)
 	if err != nil {
@@ -285,11 +292,13 @@ func TestSnapshotTwoWayFleetRepoCollision(t *testing.T) {
 
 func TestSnapshotThreeWayCollision(t *testing.T) {
 	home := t.TempDir()
-	repo := t.TempDir()
-	p := paths.WithRepo(home, repo)
+	p := paths.New(home)
+	t.Setenv("FLEET_REPO", "")
+	explicit := t.TempDir()
+	writeExplicitRepos(t, p, explicit)
 	writeSkill(t, p.SkillsStore(), "shared-canonical-dir", "shared", "canonical desc")
 	writeSkill(t, p.FleetHomeSkills(), "shared-fleet-dir", "shared", "fleet desc")
-	writeSkill(t, p.RepoSkills(), "shared-repo-dir", "shared", "repo desc")
+	writeSkill(t, filepath.Join(explicit, "skills"), "shared-repo-dir", "shared", "repo desc")
 	trees := &fakeTrees{}
 	report, _, err := Build(context.Background(), p, trees)
 	if err != nil {
@@ -340,8 +349,10 @@ func TestSnapshotWithoutRepoShowsCanonicalPlusFleet(t *testing.T) {
 
 func TestSnapshotInstalledVsCustomOutdated(t *testing.T) {
 	home := t.TempDir()
-	repo := t.TempDir()
-	p := paths.WithRepo(home, repo)
+	p := paths.New(home)
+	t.Setenv("FLEET_REPO", "")
+	explicit := t.TempDir()
+	writeExplicitRepos(t, p, explicit)
 	// installed skill in canonical with lock
 	writeSkill(t, p.SkillsStore(), "installed", "installed", "installed desc")
 	lock := `{"version":3,"skills":{"installed":{"source":"owner/repo","sourceType":"github","skillPath":"skills/installed/SKILL.md","skillFolderHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ref":""}} }`
@@ -353,8 +364,8 @@ func TestSnapshotInstalledVsCustomOutdated(t *testing.T) {
 	}
 	// custom in fleet
 	writeSkill(t, p.FleetHomeSkills(), "custom-fleet", "custom-fleet", "fleet custom")
-	// custom in repo
-	writeSkill(t, p.RepoSkills(), "custom-repo", "custom-repo", "repo custom")
+	// custom in the explicit tracked repo
+	writeSkill(t, filepath.Join(explicit, "skills"), "custom-repo", "custom-repo", "repo custom")
 	// non-github installed
 	writeSkill(t, p.SkillsStore(), "local-skill", "local-skill", "local")
 	lock2 := `{"version":3,"skills":{
@@ -453,10 +464,12 @@ func TestSnapshotSortingCustomFirst(t *testing.T) {
 
 func TestSnapshotJSONCustomAndNullOutdated(t *testing.T) {
 	home := t.TempDir()
-	repo := t.TempDir()
-	p := paths.WithRepo(home, repo)
+	p := paths.New(home)
+	t.Setenv("FLEET_REPO", "")
+	explicit := t.TempDir()
+	writeExplicitRepos(t, p, explicit)
 	writeSkill(t, p.FleetHomeSkills(), "fleet-custom", "fleet-custom", "fleet")
-	writeSkill(t, p.RepoSkills(), "repo-custom", "repo-custom", "repo")
+	writeSkill(t, filepath.Join(explicit, "skills"), "repo-custom", "repo-custom", "repo")
 	trees := &fakeTrees{}
 	report, _, err := Build(context.Background(), p, trees)
 	if err != nil {
@@ -487,5 +500,177 @@ func TestSnapshotJSONCustomAndNullOutdated(t *testing.T) {
 		if got := string(s["outdated"]); got != "null" {
 			t.Errorf("%s outdated = %s, want null", name, got)
 		}
+	}
+}
+
+// writeExplicitRepos records the explicit repo-root list in the fake home's
+// config file, in precedence order.
+func writeExplicitRepos(t *testing.T, p *paths.Paths, roots ...string) {
+	t.Helper()
+	t.Setenv("FLEET_REPO", "")
+	f, err := config.Load(p.FleetConfigFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.SetSkillsRepos(roots)
+	if err := config.Save(p.FleetConfigFile(), f); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// checkoutSkills returns the skills/ collection dir of one auto-tracked
+// fleet-home checkout slot.
+func checkoutSkills(p *paths.Paths, name string) string {
+	return filepath.Join(p.FleetReposDir(), name, "skills")
+}
+
+func TestSnapshotExplicitListOrderBeatsCheckout(t *testing.T) {
+	// The first explicit entry wins over a later explicit entry, the
+	// auto-tracked checkouts, the fallback, and the canonical store.
+	home := t.TempDir()
+	p := paths.New(home)
+	t.Setenv("FLEET_REPO", "")
+	explicitA := t.TempDir()
+	explicitB := t.TempDir()
+	writeExplicitRepos(t, p, explicitA, explicitB)
+	writeSkill(t, p.SkillsStore(), "canon-dir", "shared", "canonical desc")
+	writeSkill(t, p.FleetHomeSkills(), "fallback-dir", "shared", "fallback desc")
+	writeSkill(t, checkoutSkills(p, "alpha"), "checkout-dir", "shared", "checkout desc")
+	writeSkill(t, filepath.Join(explicitB, "skills"), "explicit-dir", "shared", "explicit-b desc")
+	writeSkill(t, filepath.Join(explicitA, "skills"), "repo-dir", "shared", "explicit-a desc")
+
+	trees := &fakeTrees{}
+	report, _, err := Build(context.Background(), p, trees)
+	if err != nil {
+		t.Fatalf("Build error: %v", err)
+	}
+	if len(report.Skills) != 1 {
+		t.Fatalf("collision should dedupe to 1, got %d: %+v", len(report.Skills), report.Skills)
+	}
+	row := report.Skills[0]
+	if row.Description != "explicit-a desc" {
+		t.Errorf("Description = %q, want explicit-a desc (first explicit entry wins)", row.Description)
+	}
+	if !row.Custom {
+		t.Errorf("explicit winner should be custom")
+	}
+	if row.Outdated != nil {
+		t.Errorf("explicit custom outdated should be nil")
+	}
+	if len(trees.calls) != 0 {
+		t.Errorf("custom collision should not hit API, calls = %v", trees.calls)
+	}
+}
+
+func TestSnapshotTrackedSetUnionListsEverySource(t *testing.T) {
+	home := t.TempDir()
+	p := paths.New(home)
+	t.Setenv("FLEET_REPO", "")
+	explicitA := t.TempDir()
+	explicitB := t.TempDir()
+	writeExplicitRepos(t, p, explicitA, explicitB)
+	writeSkill(t, p.SkillsStore(), "canon-only", "canon-only", "canonical")
+	writeSkill(t, p.FleetHomeSkills(), "fallback-only", "fallback-only", "fallback")
+	writeSkill(t, filepath.Join(explicitA, "skills"), "explicit-a-only", "explicit-a-only", "explicit a")
+	writeSkill(t, filepath.Join(explicitB, "skills"), "explicit-b-only", "explicit-b-only", "explicit b")
+	writeSkill(t, checkoutSkills(p, "zeta"), "checkout-only", "checkout-only", "checkout")
+
+	trees := &fakeTrees{}
+	report, _, err := Build(context.Background(), p, trees)
+	if err != nil {
+		t.Fatalf("Build error: %v", err)
+	}
+	if len(report.Skills) != 5 {
+		t.Fatalf("skills = %d, want one row per source: %+v", len(report.Skills), report.Skills)
+	}
+	for _, r := range report.Skills {
+		if !r.Custom {
+			t.Errorf("%s should be custom (no lockfile provenance for customs)", r.Name)
+		}
+		if r.Outdated != nil {
+			t.Errorf("%s outdated should be nil (unknown by definition)", r.Name)
+		}
+		if r.Source != "" {
+			t.Errorf("%s source = %q, want empty (customs carry no provenance)", r.Name, r.Source)
+		}
+	}
+	if len(trees.calls) != 0 {
+		t.Errorf("all-custom union should not hit API, calls = %v", trees.calls)
+	}
+}
+
+func TestSnapshotTrackedSetPrecedenceWinnerOnly(t *testing.T) {
+	home := t.TempDir()
+	p := paths.New(home)
+	t.Setenv("FLEET_REPO", "")
+	explicitA := t.TempDir()
+	explicitB := t.TempDir()
+	writeExplicitRepos(t, p, explicitA, explicitB)
+	expA := filepath.Join(explicitA, "skills")
+	expB := filepath.Join(explicitB, "skills")
+	alpha := checkoutSkills(p, "alpha")
+	zeta := checkoutSkills(p, "zeta")
+
+	// One name in every source: the first explicit entry wins.
+	writeSkill(t, p.SkillsStore(), "canon-all", "all-four", "canonical desc")
+	writeSkill(t, p.FleetHomeSkills(), "fallback-all", "all-four", "fallback desc")
+	writeSkill(t, alpha, "alpha-all", "all-four", "alpha desc")
+	writeSkill(t, zeta, "zeta-all", "all-four", "zeta desc")
+	writeSkill(t, expB, "expb-all", "all-four", "explicit-b desc")
+	writeSkill(t, expA, "expa-all", "all-four", "explicit-a desc")
+	// Explicit list order beats everything below it.
+	writeSkill(t, expB, "expb-order", "list-order", "explicit-b desc")
+	writeSkill(t, expA, "expa-order", "list-order", "explicit-a desc")
+	// Explicit beats checkouts, fallback, and canonical.
+	writeSkill(t, p.SkillsStore(), "canon-exp", "explicit-wins", "canonical desc")
+	writeSkill(t, p.FleetHomeSkills(), "fallback-exp", "explicit-wins", "fallback desc")
+	writeSkill(t, alpha, "alpha-exp", "explicit-wins", "alpha desc")
+	writeSkill(t, expB, "expb-exp", "explicit-wins", "explicit-b desc")
+	// Alphabetical checkout beats fallback and canonical.
+	writeSkill(t, p.SkillsStore(), "canon-co", "checkout-wins", "canonical desc")
+	writeSkill(t, p.FleetHomeSkills(), "fallback-co", "checkout-wins", "fallback desc")
+	writeSkill(t, zeta, "zeta-co", "checkout-wins", "zeta desc")
+	writeSkill(t, alpha, "alpha-co", "checkout-wins", "alpha desc")
+	// Fallback beats canonical.
+	writeSkill(t, p.SkillsStore(), "canon-fb", "fallback-wins", "canonical desc")
+	writeSkill(t, p.FleetHomeSkills(), "fallback-fb", "fallback-wins", "fallback desc")
+
+	trees := &fakeTrees{}
+	report, _, err := Build(context.Background(), p, trees)
+	if err != nil {
+		t.Fatalf("Build error: %v", err)
+	}
+	byDesc := map[string]string{}
+	counts := map[string]int{}
+	for _, r := range report.Skills {
+		counts[r.Name]++
+		byDesc[r.Name] = r.Description
+		if !r.Custom {
+			t.Errorf("%s should be custom", r.Name)
+		}
+		if r.Outdated != nil {
+			t.Errorf("%s outdated should be nil", r.Name)
+		}
+	}
+	want := map[string]string{
+		"all-four":      "explicit-a desc",
+		"list-order":    "explicit-a desc",
+		"explicit-wins": "explicit-b desc",
+		"checkout-wins": "alpha desc",
+		"fallback-wins": "fallback desc",
+	}
+	if len(report.Skills) != len(want) {
+		t.Fatalf("skills = %d, want winner-only rows %d: %+v", len(report.Skills), len(want), report.Skills)
+	}
+	for name, desc := range want {
+		if counts[name] != 1 {
+			t.Errorf("%s appears %d times, want winner-only", name, counts[name])
+		}
+		if byDesc[name] != desc {
+			t.Errorf("%s description = %q, want %q", name, byDesc[name], desc)
+		}
+	}
+	if len(trees.calls) != 0 {
+		t.Errorf("all-custom collisions should not hit API, calls = %v", trees.calls)
 	}
 }
