@@ -10,9 +10,9 @@ jobs:
     name: fmt · lint · test · build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
@@ -22,14 +22,12 @@ jobs:
           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.13.2
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      - uses: pnpm/action-setup@v6.1.0
+      - uses: pnpm/setup@v2
         with:
           version: 11
-
-      - uses: actions/setup-node@v7.0.0
-        with:
-          node-version: 24
-          cache: pnpm
+          runtime: node@24
+          cache: true
+          install: false
 
       - name: Install JS/TS tooling
         run: pnpm install --frozen-lockfile
