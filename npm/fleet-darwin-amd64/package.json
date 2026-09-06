@@ -1,0 +1,18 @@
+{
+  "name": "@zzacong/fleet-darwin-amd64",
+  "version": "0.0.0-dev",
+  "description": "Fleet prebuilt binary for macOS on Intel.",
+  "license": "MIT",
+  "files": [
+    "bin"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -15,6 +15,9 @@ dist/
 *.out
 /go.work.sum
 
+# npm platform binaries (built by npm/build.mjs, published in tarballs, never committed)
+npm/*/bin/
+
 # watcher artifacts (snapshots + deduped file contents)
 scripts/watcher/.state/
 

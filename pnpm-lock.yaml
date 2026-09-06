@@ -27,6 +27,29 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  npm/fleet:
+    optionalDependencies:
+      '@zzacong/fleet-darwin-amd64':
+        specifier: workspace:*
+        version: link:../fleet-darwin-amd64
+      '@zzacong/fleet-darwin-arm64':
+        specifier: workspace:*
+        version: link:../fleet-darwin-arm64
+      '@zzacong/fleet-linux-arm64':
+        specifier: workspace:*
+        version: link:../fleet-linux-arm64
+      '@zzacong/fleet-linux-x64':
+        specifier: workspace:*
+        version: link:../fleet-linux-x64
+
+  npm/fleet-darwin-amd64: {}
+
+  npm/fleet-darwin-arm64: {}
+
+  npm/fleet-linux-arm64: {}
+
+  npm/fleet-linux-x64: {}
+
   www:
     dependencies:
       '@astrojs/starlight':

@@ -1,0 +1,24 @@
+{
+  "name": "@zzacong/fleet",
+  "version": "0.0.0-dev",
+  "description": "Fleet: enable/disable agent skills per harness. Runs the prebuilt fleet binary for your OS/arch.",
+  "license": "MIT",
+  "bin": {
+    "fleet": "./launch.mjs"
+  },
+  "files": [
+    "launch.mjs"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "optionalDependencies": {
+    "@zzacong/fleet-darwin-amd64": "workspace:*",
+    "@zzacong/fleet-darwin-arm64": "workspace:*",
+    "@zzacong/fleet-linux-arm64": "workspace:*",
+    "@zzacong/fleet-linux-x64": "workspace:*"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
