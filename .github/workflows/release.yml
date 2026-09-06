@@ -49,6 +49,7 @@ jobs:
         with:
           version: 11
           runtime: node@24
+          cache: true
           install: false
 
       # OIDC provenance needs npm >= 11.5.1; the runner image may lag.
