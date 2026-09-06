@@ -19,7 +19,10 @@ export default defineConfig({
       sidebar: [
         {
           label: "Start Here",
-          items: [{ label: "Introduction", link: "/" }],
+          items: [
+            { label: "Introduction", link: "/" },
+            { label: "Installation", slug: "installation" },
+          ],
         },
         {
           label: "Reference",

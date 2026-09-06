@@ -2,13 +2,33 @@
 
 Fleet manages agent skills across AI coding agents — opencode, pi, codex, claude code, IBM Bob, and Cursor. Turn a skill off for one harness without uninstalling it: the [`skills` CLI](https://github.com/vercel-labs/skills) stays the install and update backend, and the canonical store (`~/.agents/skills`) is never moved or edited. Fleet keeps a state file as the source of truth and projects it into each harness's own config.
 
-## Install
+## Installation
+
+macOS or Linux, arm64 or x86_64. Every method installs the same single static
+binary with no runtime dependencies. Release builds report their version
+through `fleet --version`; `go install` builds report `dev`. Details and
+variants live on the [Installation](https://fleet.zzacong.com/installation/)
+docs page.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/zzacong/fleet/main/install.sh | sh   # script → ~/.fleet/bin
+```
+
+```sh
+npx -y @zzacong/fleet --version        # run once
+pnpm dlx @zzacong/fleet --version      # run once
+bunx @zzacong/fleet --version          # run once
+```
+
+```sh
+npm i -g @zzacong/fleet                # global install
+pnpm add -g @zzacong/fleet             # global install
+bun add -g @zzacong/fleet              # global install
+```
 
 ```sh
 go install github.com/zzacong/fleet/cmd/fleet@latest
 ```
-
-Fleet is a single static binary with no runtime dependencies. Release builds report their version through `fleet --version`; `go install` builds report `dev`.
 
 ## The three-command tour
 
