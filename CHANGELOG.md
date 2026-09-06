@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/zzacong/fleet/compare/v0.2.1...v0.2.2) (2026-09-06)
+
+
+### Bug Fixes
+
+* **release:** setup-node owns node+npm, pnpm runtime leaves npm 10 on PATH ([7c9a4b3](https://github.com/zzacong/fleet/commit/7c9a4b375210dec05b6ae90caa3eb179d56820cf))
+
 ## [0.2.1](https://github.com/zzacong/fleet/compare/v0.2.0...v0.2.1) (2026-09-06)
 
 
