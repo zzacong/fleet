@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/zzacong/fleet/compare/v0.2.0...v0.2.1) (2026-09-06)
+
+
+### Bug Fixes
+
+* **release:** use node@24 runtime so npm supports OIDC ([e94ac3f](https://github.com/zzacong/fleet/commit/e94ac3fe83d13cd71a9714dc3122560909fd2063))
+
 ## [0.2.0](https://github.com/zzacong/fleet/compare/v0.1.0...v0.2.0) (2026-09-06)
 
 
