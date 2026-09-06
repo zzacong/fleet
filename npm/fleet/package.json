@@ -3,11 +3,16 @@
   "version": "0.0.0-dev",
   "description": "Fleet: enable/disable agent skills per harness. Runs the prebuilt fleet binary for your OS/arch.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zzacong/fleet.git"
+  },
   "bin": {
     "fleet": "./launch.mjs"
   },
   "files": [
-    "launch.mjs"
+    "launch.mjs",
+    "README.md"
   ],
   "publishConfig": {
     "access": "public"

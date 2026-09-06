@@ -3,8 +3,13 @@
   "version": "0.0.0-dev",
   "description": "Fleet prebuilt binary for macOS on Intel.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zzacong/fleet.git"
+  },
   "files": [
-    "bin"
+    "bin",
+    "README.md"
   ],
   "os": [
     "darwin"
