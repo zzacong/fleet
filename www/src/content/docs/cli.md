@@ -453,25 +453,25 @@ Sync runs on every fleet command and after every wrapped `skills` call, and [`fl
 
 ## Error reference
 
-| Situation                                | Message                                                                                                              | Exit |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---- |
-| Unknown `--harness` value                | `unknown harness "emacs" (want one of: opencode, pi, codex, claude, cursor, bob)`                                    | 1    |
-| `--harness` names an uninstalled harness | `opencode is not installed on this machine`                                                                          | 1    |
-| `off` for a skill not in the store       | `skill "typo-skill" not found in ~/.agents/skills`                                                                   | 1    |
-| `adopt` for a missing skill              | `skill "git-helper" not found in ~/.agents/skills`                                                                   | 1    |
-| `adopt` double presence                  | `skill "x" exists in … — resolve by hand before adopting` (names every copy)                                         | 1    |
-| `adopt` ambiguous, no terminal           | `adopt: multiple destinations available — re-run with --into <skills-dir> or from a terminal:` + numbered candidates | 1    |
-| `pull` onto a different remote           | `<path> points at a different remote "…" (want "…"): use --force to pull anyway`                                     | 1    |
-| `pull` dirty tree                        | `<path> has uncommitted changes — resolve by hand (fleet never stashes):` + `git status` output                      | 1    |
-| `pull` diverged tree                     | `pull <path>: … (resolve by hand; fleet never merges or rebases)`                                                    | 1    |
-| `pull` with missing git                  | `git not found in PATH: install git to use skill pull`                                                               | 1    |
+| Situation                                | Message                                                                                                                    | Exit |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ---- |
+| Unknown `--harness` value                | `unknown harness "emacs" (want one of: opencode, pi, codex, claude, cursor, bob)`                                          | 1    |
+| `--harness` names an uninstalled harness | `opencode is not installed on this machine`                                                                                | 1    |
+| `off` for a skill not in the store       | `skill "typo-skill" not found in ~/.agents/skills`                                                                         | 1    |
+| `adopt` for a missing skill              | `skill "git-helper" not found in ~/.agents/skills`                                                                         | 1    |
+| `adopt` double presence                  | `skill "x" exists in … — resolve by hand before adopting` (names every copy)                                               | 1    |
+| `adopt` ambiguous, no terminal           | `adopt: multiple destinations available — re-run with --into <skills-dir> or from a terminal:` + numbered candidates       | 1    |
+| `pull` onto a different remote           | `<path> points at a different remote "…" (want "…"): use --force to pull anyway`                                           | 1    |
+| `pull` dirty tree                        | `<path> has uncommitted changes — resolve by hand (fleet never stashes):` + `git status` output                            | 1    |
+| `pull` diverged tree                     | `pull <path>: … (resolve by hand; fleet never merges or rebases)`                                                          | 1    |
+| `pull` with missing git                  | `git not found in PATH: install git to use skill pull`                                                                     | 1    |
 | `drop` unknown target                    | `unknown target "…": tracked repos:` + one `- <path>` line per repo (or `unknown target "…": no skills repos are tracked`) | 1    |
-| `drop` dirty tree                        | `<path> has uncommitted changes — resolve by hand (fleet never stashes):` + `git status` output (`--force` overrides) | 1    |
-| `drop` with missing git                  | `warning: git not found in PATH: skipped dirty check` on stderr, exit 0                                              | 0    |
-| `drop` adopt target inside               | `cannot drop "…" — adopt target "…" is inside it — re-point first with: fleet config set adopt-target <skills-dir>`  | 1    |
-| Unknown config key                       | `unknown config key "foo" (want adopt-target)`                                                                       | 1    |
-| Retired single-pointer key               | `unknown config key "skills-repo" (the single repo pointer is retired; …)`                                           | 1    |
-| `config set` with non-absolute path      | `path must be absolute: "relative/path"`                                                                             | 1    |
-| Wrapped `skills` failure                 | CLI's raw output, then `Error: skills update -g -y: …`                                                               | 1    |
+| `drop` dirty tree                        | `<path> has uncommitted changes — resolve by hand (fleet never stashes):` + `git status` output (`--force` overrides)      | 1    |
+| `drop` with missing git                  | `warning: git not found in PATH: skipped dirty check` on stderr, exit 0                                                    | 0    |
+| `drop` adopt target inside               | `cannot drop "…" — adopt target "…" is inside it — re-point first with: fleet config set adopt-target <skills-dir>`        | 1    |
+| Unknown config key                       | `unknown config key "foo" (want adopt-target)`                                                                             | 1    |
+| Retired single-pointer key               | `unknown config key "skills-repo" (the single repo pointer is retired; …)`                                                 | 1    |
+| `config set` with non-absolute path      | `path must be absolute: "relative/path"`                                                                                   | 1    |
+| Wrapped `skills` failure                 | CLI's raw output, then `Error: skills update -g -y: …`                                                                     | 1    |
 
 There is no "run inside the repo" requirement and no walk-up to `.git`: customs reach fleet through `skill pull` (clone into the tracked set) and leave it through the adopt destination (`--into` for one run, `adopt-target` for the default, prompt otherwise). When nothing is tracked, `adopt` lands in `~/.config/fleet/skills/` (created on demand) and `ls` shows canonical plus fleet-home customs alone.
