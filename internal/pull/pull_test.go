@@ -504,6 +504,7 @@ func (s *perRepoStub) Clone(url, path string) error {
 	}
 	return nil
 }
+
 func (s *perRepoStub) RemoteURL(path string) (string, error) {
 	return s.remote, nil
 }
@@ -511,6 +512,7 @@ func (s *perRepoStub) Status(path string) (string, error) { return "", nil }
 func (s *perRepoStub) PullFFOnly(path string) error {
 	return nil
 }
+
 func (s *perRepoStub) RevParse(path string) (string, error) {
 	if s.revN >= len(s.revs) {
 		return "same", nil
