@@ -7,7 +7,7 @@ project_name: fleet
 
 builds:
   - id: fleet
-    main: ./apps/cli/cmd/fleet
+    main: ./cmd/fleet
     binary: fleet
     env:
       - CGO_ENABLED=0

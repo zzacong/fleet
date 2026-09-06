@@ -109,7 +109,7 @@ go test ./internal/harness -run TestCodex -v # one slice
 make check         # fmt + test + lint + build — Go only
 ```
 
-CI runs `pnpm run check:ci` then `make build` and `pnpm --filter docs build`; format checks are `oxfmt --check` / `prettier --check` (no `git diff` guard). Run `pnpm run fmt` (JS/TS/MD/Astro) and `make fmt` (Go) before committing.
+CI runs `pnpm run check:ci` then `make build` and `pnpm --filter www build`; format checks are `oxfmt --check` / `prettier --check` (no `git diff` guard). Run `pnpm run fmt` (JS/TS/MD/Astro) and `make fmt` (Go) before committing.
 
 ## Manual sandbox runs with FLEET_HOME
 

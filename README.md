@@ -5,7 +5,7 @@ Fleet manages agent skills across AI coding agents — opencode, pi, codex, clau
 ## Install
 
 ```sh
-go install github.com/zzacong/fleet/apps/cli/cmd/fleet@latest
+go install github.com/zzacong/fleet/cmd/fleet@latest
 ```
 
 Fleet is a single static binary with no runtime dependencies. Release builds report their version through `fleet --version`; `go install` builds report `dev`.
@@ -20,7 +20,7 @@ fleet                   # the interactive skill × harness matrix
 
 Bare `fleet` opens the matrix: one screen, every skill against every installed harness, toggles staged and applied together, and `u` running a one-key update-all — the same wrapped `skills update` the `skill update` verb runs, with the matrix reloading when it lands. It needs a terminal — piped output falls back to the `fleet skill ls` listing.
 
-The remaining verbs round out the loop: `skill on` re-enables, `skill update` wraps `skills update` and keeps disabled skills disabled, `skill pull` clones and fast-forwards your customs repos, `skill adopt` migrates custom skills into a collection, `skill doctor` explains anything fleet would change, `skill sync` repairs drift on demand, and `harness ls` shows which of the six supported harnesses are installed and which have a per-skill off switch. Every verb is documented with examples in the [command reference](apps/docs/src/content/docs/cli.md).
+The remaining verbs round out the loop: `skill on` re-enables, `skill update` wraps `skills update` and keeps disabled skills disabled, `skill pull` clones and fast-forwards your customs repos, `skill adopt` migrates custom skills into a collection, `skill doctor` explains anything fleet would change, `skill sync` repairs drift on demand, and `harness ls` shows which of the six supported harnesses are installed and which have a per-skill off switch. Every verb is documented with examples in the [command reference](www/src/content/docs/cli.md).
 
 ## Customs repos: one-command setup
 
@@ -39,11 +39,11 @@ Two kinds of skill show up in `fleet skill ls`, and the split decides how each o
 - **Installed** skills came from a source repo through the `skills` CLI and have provenance (source, hash) in its lockfile. They live in the canonical store (`~/.agents/skills`), `ls` groups them by source repo, and the update badge compares the recorded hash against the repo's current tree. Install and update them with the `skills` CLI, never by hand.
 - **Custom** skills are your own: no lockfile entry. They live in the tracked set — versioned customs repos (the explicit out-of-band roots plus every `~/.config/fleet/repos/` checkout) and the unversioned fleet-home fallback `~/.config/fleet/skills/` — never through the canonical store, so a custom skill can't be shadowed by a store link. Harnesses discover them through their own config (opencode, pi) or a managed symlink (codex, claude code, Cursor, Bob). When a name exists in more than one source, `ls` shows it once with precedence explicit-list order, then fleet-home checkouts alphabetically, then the fallback, then the canonical store; `fleet skill doctor` reports every collision as double presence.
 
-`fleet skill adopt <name>` is the bridge: it moves a custom skill out of the canonical store into the adopt destination — `--into <skills-dir>` for one run, else the configured target (`fleet config set adopt-target ~/Developer/customs/skills`), else a numbered prompt over the tracked collections plus the always-offered fleet-home fallback — wires that home's path into every installed harness, and manages the symlinks. It also promotes a forked installed skill. Adoption is reversible by hand — see [undo and escape hatches](apps/docs/src/content/docs/undo.md).
+`fleet skill adopt <name>` is the bridge: it moves a custom skill out of the canonical store into the adopt destination — `--into <skills-dir>` for one run, else the configured target (`fleet config set adopt-target ~/Developer/customs/skills`), else a numbered prompt over the tracked collections plus the always-offered fleet-home fallback — wires that home's path into every installed harness, and manages the symlinks. It also promotes a forked installed skill. Adoption is reversible by hand — see [undo and escape hatches](www/src/content/docs/undo.md).
 
 ## What fleet changes on disk
 
-Exactly one thing per harness, in each harness's own config format: opencode gets a deny rule in `opencode.jsonc`, pi a force-exclude in `settings.json`, codex an `enabled = false` block in `config.toml`, claude code an `off` override in `settings.json`. Cursor and Bob read the canonical store natively and have no per-skill off switch; fleet says so instead of pretending. Custom skills add one wiring step: opencode and pi get the adopt destination's path as an extra discovery source in the same file and dialect they already use, and link-based harnesses get a managed symlink in their skills dir pointing at the adopted skill — always inside the destination `ls` scans, never the canonical store, so sync never removes those links. Skills' files are never moved, renamed, or edited aside from an `adopt` move or a `pull` clone/update — [per-harness reference](apps/docs/src/content/docs/harnesses.md) has the full list of touched files, written shapes, and untouched ground.
+Exactly one thing per harness, in each harness's own config format: opencode gets a deny rule in `opencode.jsonc`, pi a force-exclude in `settings.json`, codex an `enabled = false` block in `config.toml`, claude code an `off` override in `settings.json`. Cursor and Bob read the canonical store natively and have no per-skill off switch; fleet says so instead of pretending. Custom skills add one wiring step: opencode and pi get the adopt destination's path as an extra discovery source in the same file and dialect they already use, and link-based harnesses get a managed symlink in their skills dir pointing at the adopted skill — always inside the destination `ls` scans, never the canonical store, so sync never removes those links. Skills' files are never moved, renamed, or edited aside from an `adopt` move or a `pull` clone/update — [per-harness reference](www/src/content/docs/harnesses.md) has the full list of touched files, written shapes, and untouched ground.
 
 ## Shell completions
 
@@ -53,14 +53,14 @@ source <(fleet completion zsh)   # also: bash, fish, powershell
 
 ## Documentation
 
-| Document                                                         | Audience                                                    |
-| ---------------------------------------------------------------- | ----------------------------------------------------------- |
-| [Command reference](apps/docs/src/content/docs/cli.md)           | every verb, flag, and error, with examples                  |
-| [Per-harness reference](apps/docs/src/content/docs/harnesses.md) | files touched, written shapes, limitations                  |
-| [Undo and escape hatches](apps/docs/src/content/docs/undo.md)    | running `skills` by hand, resetting state, how sync decides |
-| [Architecture](docs/architecture.md)                             | state file → adapters → sync, adding a harness              |
-| [State file schema](apps/docs/src/content/docs/state-file.md)    | versioned, forward-compatible format                        |
-| [Testing guide](docs/testing.md)                                 | injected homes, fixture tests, `FLEET_HOME` sandboxes       |
+| Document                                                   | Audience                                                    |
+| ---------------------------------------------------------- | ----------------------------------------------------------- |
+| [Command reference](www/src/content/docs/cli.md)           | every verb, flag, and error, with examples                  |
+| [Per-harness reference](www/src/content/docs/harnesses.md) | files touched, written shapes, limitations                  |
+| [Undo and escape hatches](www/src/content/docs/undo.md)    | running `skills` by hand, resetting state, how sync decides |
+| [Architecture](docs/architecture.md)                       | state file → adapters → sync, adding a harness              |
+| [State file schema](www/src/content/docs/state-file.md)    | versioned, forward-compatible format                        |
+| [Testing guide](docs/testing.md)                           | injected homes, fixture tests, `FLEET_HOME` sandboxes       |
 
 ## Development
 

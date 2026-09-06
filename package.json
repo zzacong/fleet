@@ -7,9 +7,9 @@
     "typecheck": "pnpm -r typecheck && tsc -p scripts/watcher/tsconfig.json",
     "check": "oxfmt --check . && prettier --check \"**/*.astro\" && pnpm run lint && pnpm -r typecheck && make fmt-check && make lint && make test",
     "check:ci": "pnpm run lint && pnpm -r typecheck && make lint && make test",
-    "docs:dev": "pnpm --filter docs dev",
-    "docs:build": "pnpm --filter docs build",
-    "docs:preview": "pnpm --filter docs preview"
+    "www:dev": "pnpm --filter www dev",
+    "www:build": "pnpm --filter www build",
+    "www:preview": "pnpm --filter www preview"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

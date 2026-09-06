@@ -3,6 +3,12 @@
 Date: 2026-09-02
 Status: Accepted
 
+> **Superseded in part (2026-09-06):** the nested `apps/cli` + `go.work` layout
+> decided below is superseded by ADR 0003 (release strategy), implemented in
+> ticket 01. The Go module now lives at the repo root, `apps/docs` moved to
+> `www/`, `apps/desktop/` was deleted, and `apps/` is gone. This ADR remains
+> the record of the original monorepo decision.
+
 ## Context
 
 Fleet managed custom skills by tracking them in the fleet repo's `skills/` directory. `Paths.Repo` was `FLEET_REPO` env or `DiscoverRepo($PWD)` walk to `.git`, and `RepoSkills()` was `<repo>/skills`. The walk-up was surprising — running `fleet` in an unrelated checkout could pick up the wrong repo — and a distributed binary has no checkout at all, so `Repo == ""` and adopt/scan broke. `~/.config/fleet/skills` did not exist.

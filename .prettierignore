@@ -5,6 +5,6 @@ bin
 .scratch
 .scratch/**
 .worktrees
-apps/docs/dist
-apps/docs/.astro
+www/dist
+www/.astro
 pnpm-lock.yaml

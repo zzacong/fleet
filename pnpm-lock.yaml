@@ -27,7 +27,7 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
-  apps/docs:
+  www:
     dependencies:
       '@astrojs/starlight':
         specifier: ^0.42.0

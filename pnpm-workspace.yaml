@@ -1,5 +1,6 @@
 packages:
-  - "apps/*"
+  - "www"
+  - "npm/*"
 allowBuilds:
   esbuild: true
   sharp: true

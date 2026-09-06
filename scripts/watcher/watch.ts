@@ -33,15 +33,15 @@ import { fileURLToPath } from "node:url";
 const HOME = homedir();
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 // Fleet repo root is two levels above scripts/watcher/ (scripts/watcher -> repo
-// root). After the monorepo move Go code lives at apps/cli/internal/paths but
-// the watcher stays at scripts/watcher/watch.ts, so depth is unchanged — two
-// levels still resolves to the monorepo root's skills/ publishable collection.
+// root). Go code lives at the repo root (internal/paths) and the watcher stays
+// at scripts/watcher/watch.ts, so depth is unchanged — two levels still
+// resolves to the repo root's skills/ publishable collection.
 const REPO = path.resolve(SCRIPT_DIR, "..", "..");
 // State lives inside the repo (gitignored) so the watcher is self-contained.
 const STATE_DIR = path.join(SCRIPT_DIR, ".state");
 const CONTENT_DIR = path.join(STATE_DIR, "contents");
 
-// (label, absolute path) — paths derived from fleet's apps/cli/internal/paths/paths.go
+// (label, absolute path) — paths derived from fleet's internal/paths/paths.go
 const WATCH_TARGETS: Array<[string, string]> = [
   ["fleet-config", path.join(HOME, ".config/fleet")],
   ["agents-store", path.join(HOME, ".agents")],

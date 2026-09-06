@@ -27,12 +27,12 @@ State lives in `scripts/watcher/.state/` (gitignored at `.gitignore:17`):
 `snap-*.json` snapshots + `contents/<sha1>` deduped file contents for line
 diffs. Do not commit state.
 
-## Watch targets (14, from `apps/cli/internal/paths/paths.go`)
+## Watch targets (14, from `internal/paths/paths.go`)
 
 Targets mirror fleet's `Paths` — every location fleet derives from an injected
 home root plus the repo root. Only the config file + skills dir per harness are
 watched (full harness dirs are not). Harness targets remain derived from
-`apps/cli/internal/paths` after the monorepo move (Go code at `apps/cli`, watcher
+`internal/paths` (Go code at the repo root, watcher
 stays at `scripts/watcher/watch.ts`).
 
 | Label             | Path                                | Kind                                                                                                                                                   |
