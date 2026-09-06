@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/zzacong/fleet/compare/v0.1.0...v0.2.0) (2026-09-06)
+
+
+### Features
+
+* **npm:** delegate publishing to npm/publish.mjs ([1b74326](https://github.com/zzacong/fleet/commit/1b743267248626002e87b35eb18af95405e39bd4))
+
+
+### Bug Fixes
+
+* **npm:** launcher restores exec bit on platform binary ([f6be459](https://github.com/zzacong/fleet/commit/f6be459bce6d1df3a4f0992223506104a6f7da55))
+
 ## 0.1.0 (2026-09-06)
 
 
