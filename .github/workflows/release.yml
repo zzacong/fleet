@@ -47,19 +47,15 @@ jobs:
 
       - uses: pnpm/setup@v2
         with:
-          version: 11
-          runtime: node@24
+          runtime: node@22
           cache: true
-          install: false
+          require-lockfile: true
 
       # OIDC provenance needs npm >= 11.5.1; the runner image may lag.
       - name: Upgrade npm
         run: |
           npm install -g npm@11
           npm --version
-
-      - name: Install JS tooling
-        run: pnpm install --frozen-lockfile
 
       # Order matters: build first, then stamp the tag version into all five
       # package.json files (rewriting workspace:* to exact versions) right

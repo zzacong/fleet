@@ -24,13 +24,9 @@ jobs:
 
       - uses: pnpm/setup@v2
         with:
-          version: 11
-          runtime: node@24
+          runtime: node@22
           cache: true
-          install: false
-
-      - name: Install JS/TS tooling
-        run: pnpm install --frozen-lockfile
+          require-lockfile: true
 
       - name: lint · typecheck · test
         run: pnpm run check:ci
