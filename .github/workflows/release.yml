@@ -1,31 +1,85 @@
 name: Release
 
-# Disabled: not ready for automated releases yet.
-# To re-enable, restore: on: push: tags: ["v*"]
+# Runs on release-please tags only (one plain vX.Y.Z per ADR 0003).
+# Filename is final: npm trusted publishing pins user zzacong -> repo
+# fleet -> this workflow file, so never casually rename it.
 on:
-  workflow_dispatch:
+  push:
+    tags: ["v*.*.*"]
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   goreleaser:
-    if: false
+    name: GoReleaser (tarballs + checksums)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
 
       - name: Release
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7.2.3
         with:
           distribution: goreleaser
-          version: latest
+          version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  npm-publish:
+    name: npm (OIDC trusted publishing, no token)
+    runs-on: ubuntu-latest
+    needs: goreleaser
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: pnpm/action-setup@v6.1.0
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # OIDC provenance needs npm >= 11.5.1; the runner image may lag.
+      - name: Upgrade npm
+        run: |
+          npm install -g npm@11
+          npm --version
+
+      - name: Install JS tooling
+        run: pnpm install --frozen-lockfile
+
+      # Order matters: build first, then stamp the tag version into all five
+      # package.json files (rewriting workspace:* to exact versions) right
+      # before publish. Stamped versions are never committed back to git.
+      - name: Build platform binaries and stamp versions
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "fleet release: building and stamping $VERSION"
+          FLEET_VERSION="$VERSION" node npm/build.mjs
+          node npm/stamp.mjs "$VERSION"
+
+      # Platforms first, wrapper last: the wrapper's optionalDependencies
+      # resolve at install time, so every platform tarball must be live.
+      - name: Publish platform packages
+        run: |
+          for pkg in fleet-darwin-arm64 fleet-darwin-amd64 fleet-linux-arm64 fleet-linux-x64; do
+            npm publish "./npm/${pkg}" --provenance --access public
+          done
+
+      - name: Publish wrapper package
+        run: npm publish ./npm/fleet --provenance --access public

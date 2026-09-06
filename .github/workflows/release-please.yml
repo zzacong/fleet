@@ -1,0 +1,22 @@
+name: Release Please
+
+# Only version driver (ADR 0003): conventional commits on main open a
+# Release PR; merging it tags vX.Y.Z, which triggers release.yml.
+# PAT auth is load-bearing: tags created with GITHUB_TOKEN do not trigger
+# the tag workflow, so release-please must use RELEASE_PLEASE_TOKEN.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v5
+        with:
+          release-type: go
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
