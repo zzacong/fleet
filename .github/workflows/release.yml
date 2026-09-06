@@ -48,15 +48,19 @@ jobs:
       - uses: pnpm/setup@v2
         with:
           version: 11
-          runtime: node@22
+          # Node 24 bundles npm 11, which supports OIDC trusted publishing
+          # (>= 11.5.1). Node 22 bundles npm 10, and `npm install -g` does
+          # not replace the runtime-bundled npm on PATH — the old Upgrade
+          # npm step reported success while `npm --version` stayed 10.9.8.
+          runtime: node@24
           cache: true
           require-lockfile: true
 
-      # OIDC provenance needs npm >= 11.5.1; the runner image may lag.
-      - name: Upgrade npm
+      # Fail fast if the runtime ever ships an npm without OIDC support.
+      - name: Assert npm supports OIDC
         run: |
-          npm install -g npm@11
           npm --version
+          node -e "const [maj, min] = require('node:child_process').execSync('npm --version').toString().trim().split('.').map(Number); if (maj < 11 || (maj === 11 && min < 5)) { console.error('npm >= 11.5.1 required for OIDC trusted publishing'); process.exit(1) }"
 
       # Order matters: build first, then stamp the tag version into all five
       # package.json files (rewriting workspace:* to exact versions) right
