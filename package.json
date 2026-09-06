@@ -9,7 +9,8 @@
     "check:ci": "pnpm run lint && pnpm -r typecheck && make lint && make test",
     "www:dev": "pnpm --filter www dev",
     "www:build": "pnpm --filter www build",
-    "www:preview": "pnpm --filter www preview"
+    "www:preview": "pnpm --filter www preview",
+    "fleet:publish": "node npm/publish.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

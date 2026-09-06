@@ -68,13 +68,8 @@ jobs:
           FLEET_VERSION="$VERSION" node npm/build.mjs
           node npm/stamp.mjs "$VERSION"
 
-      # Platforms first, wrapper last: the wrapper's optionalDependencies
-      # resolve at install time, so every platform tarball must be live.
-      - name: Publish platform packages
-        run: |
-          for pkg in fleet-darwin-arm64 fleet-darwin-amd64 fleet-linux-arm64 fleet-linux-x64; do
-            npm publish "./npm/${pkg}" --provenance --access public
-          done
-
-      - name: Publish wrapper package
-        run: npm publish ./npm/fleet --provenance --access public
+      # Platforms first, wrapper last (ordering lives in npm/publish.mjs:
+      # the wrapper's optionalDependencies resolve at install time, so every
+      # platform tarball must be live first).
+      - name: Publish packages
+        run: node npm/publish.mjs
