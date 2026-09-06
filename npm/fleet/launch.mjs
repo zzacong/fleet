@@ -7,7 +7,7 @@
 // packages share one OIDC trusted-publishing setup (one npm scope, one repo,
 // one workflow); the on-disk dirs stay unscoped (`npm/fleet-<os>-<arch>`).
 import { spawnSync } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { chmodSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -51,6 +51,15 @@ function main() {
         `"${process.platform}/${process.arch}" is not installed; ` +
         "reinstall @zzacong/fleet without --no-optional",
     );
+    process.exit(1);
+  }
+  // The binary can land without its exec bit (the 0.1.0 tarballs were
+  // packed from a 0644 source) — restore owner exec before spawning.
+  // Idempotent, survives pnpm store hardlinks.
+  try {
+    chmodSync(binPath, 0o755);
+  } catch (error) {
+    console.error(`fleet: cannot chmod "${binPath}": ${error.message}`);
     process.exit(1);
   }
   const child = spawnSync(binPath, process.argv.slice(2), {
