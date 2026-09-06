@@ -371,7 +371,6 @@ func TestBarePullReportsFailedAndContinues(t *testing.T) {
 type bareFailStub struct {
 	statusN int
 	revN    int
-	revs    []string
 }
 
 func (s *bareFailStub) Clone(url, path string) error {
