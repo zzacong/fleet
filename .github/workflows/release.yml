@@ -48,13 +48,17 @@ jobs:
       - uses: pnpm/setup@v2
         with:
           version: 11
-          # Node 24 bundles npm 11, which supports OIDC trusted publishing
-          # (>= 11.5.1). Node 22 bundles npm 10, and `npm install -g` does
-          # not replace the runtime-bundled npm on PATH — the old Upgrade
-          # npm step reported success while `npm --version` stayed 10.9.8.
-          runtime: node@24
           cache: true
           require-lockfile: true
+
+      # setup-node owns node+npm on PATH (Node 24 bundles npm 11, which
+      # supports OIDC trusted publishing >= 11.5.1). pnpm's `runtime:`
+      # installs node into its own global dir but leaves the runner
+      # image's npm 10.9.8 first on PATH — and `npm install -g` does not
+      # replace it, so the upgrade step silently no-ops (0.2.0/0.2.1).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
 
       # Fail fast if the runtime ever ships an npm without OIDC support.
       - name: Assert npm supports OIDC
