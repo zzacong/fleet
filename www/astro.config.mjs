@@ -23,21 +23,21 @@ export default defineConfig({
       ],
       sidebar: [
         {
-          label: "Start Here",
+          label: "Start here",
           items: [{ label: "Installation", slug: "installation" }],
         },
         {
           label: "Reference",
           items: [
-            { label: "Command Reference", slug: "cli" },
-            { label: "Per-Harness Reference", slug: "harnesses" },
-            { label: "State File Schema", slug: "state-file" },
-            { label: "Undo & Escape Hatches", slug: "undo" },
+            { label: "Command reference", slug: "cli" },
+            { label: "Per-harness reference", slug: "harnesses" },
+            { label: "State file schema", slug: "state-file" },
+            { label: "Undo & escape hatches", slug: "undo" },
           ],
         },
         {
           label: "Skills",
-          items: [{ label: "Skills Catalog", slug: "skills" }],
+          items: [{ label: "Skills catalog", slug: "skills" }],
         },
       ],
       customCss: ["./src/styles/home.css"],
