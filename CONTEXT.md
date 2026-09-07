@@ -64,6 +64,10 @@ _Avoid_: local skill, repo skill
 The tri-state update marker per skill: outdated (the source repo's current tree hash differs from the lockfile's `skillFolderHash`), current, or unknown. Fleet checks GitHub directly — one call per source repo, cached under fleet's config dir — and reports unknown for customs (anything resolved through a custom home renders `—`, never checked by definition) and non-GitHub sources rather than guessing. The skills CLI is not involved (`check` there is an alias of `update`).
 _Avoid_: stale marker, version check
 
+**Fleet update notice**:
+The notice that the running binary is older than the latest GitHub Release. Manual re-install, never auto-upgrade; skipped for `dev` builds.
+_Avoid_: update, upgrade prompt, outdated badge
+
 **Enable / Disable**:
 A per-skill, per-harness state. Disabling writes that harness's own "off" setting (a config entry); the skill's files always stay in the canonical store.
 _Avoid_: uninstall, hide, mute

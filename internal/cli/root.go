@@ -27,6 +27,9 @@ func NewRoot(p *paths.Paths) *cobra.Command {
 		// handles those before dispatch.
 		SilenceUsage: true,
 		Version:      buildinfo.Version,
+		PersistentPostRun: func(cmd *cobra.Command, args []string) {
+			maybeNotifyFleetUpdate(cmd, p)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !stdoutIsTTY() {
 				return runListing(cmd, p, false, quiet)
