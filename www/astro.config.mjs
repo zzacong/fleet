@@ -41,12 +41,35 @@ export default defineConfig({
         },
       ],
       customCss: [],
-      // Downgraded from Starlight's summary_large_image default until the
-      // logo pass adds a real og:image.
       head: [
         {
           tag: "meta",
-          attrs: { name: "twitter:card", content: "summary" },
+          attrs: {
+            property: "og:image",
+            content: "https://fleet.zzacong.com/og-image.png",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: { property: "og:image:width", content: "1200" },
+        },
+        {
+          tag: "meta",
+          attrs: { property: "og:image:height", content: "630" },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            property: "og:image:alt",
+            content: "Fleet — manage agent skills across AI coding agents",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "twitter:image",
+            content: "https://fleet.zzacong.com/og-image.png",
+          },
         },
       ],
     }),
