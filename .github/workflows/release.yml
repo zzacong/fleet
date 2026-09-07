@@ -1,18 +1,32 @@
 name: Release
 
-# Runs on release-please tags only (one plain vX.Y.Z per ADR 0003).
+# Runs on release-please tags (one plain vX.Y.Z per ADR 0003), and as a
+# dry-run rehearsal via workflow_dispatch on any branch.
 # Filename is final: npm trusted publishing pins user zzacong -> repo
 # fleet -> this workflow file, so never casually rename it.
 #
 # Order is load-bearing: npm-publish runs FIRST so a failed publish leaves
-# no binaries attached to the GitHub release — and cleanup-on-failure then
-# deletes the release object and the tag entirely, so no orphans remain.
+# no binaries attached to the GitHub release — cleanup-on-failure then
+# deletes the release object and the tag, and the version re-cuts cleanly.
+# If only goreleaser fails, nothing is deleted (npm already owns the
+# version on the registry); rerun the workflow on the tag instead.
 # Recovery is: fix forward, push, release-please re-opens the same version
 # (publish.mjs skips name@version pairs already on the registry, so a
 # partially published version heals on re-cut).
 on:
   push:
     tags: ["v*.*.*"]
+  # Rehearsal: dispatch on any branch to run the real npm-publish job (same
+  # checkout, setup actions, PATH order) with --dry-run. Proves build + stamp
+  # + pack in the actual job environment — the thing the dry-run mirror on
+  # PRs cannot prove. The input only ever ADDS --dry-run; a real publish
+  # happens on tag pushes exclusively.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Rehearse (publish with --dry-run, no goreleaser)"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -39,9 +53,7 @@ jobs:
 
       # Fail fast if the runtime ever ships an npm without OIDC support.
       - name: Assert npm supports OIDC
-        run: |
-          npm --version
-          node -e "const [maj, min] = require('node:child_process').execSync('npm --version').toString().trim().split('.').map(Number); if (maj < 11 || (maj === 11 && min < 5)) { console.error('npm >= 11.5.1 required for OIDC trusted publishing'); process.exit(1) }"
+        run: node npm/assert-npm-oidc.mjs
 
       # Order matters: build first, then stamp the tag version into all five
       # package.json files (rewriting workspace:* to exact versions) right
@@ -49,6 +61,9 @@ jobs:
       - name: Build platform binaries and stamp versions
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          # Tag pushes carry vX.Y.Z; rehearsal dispatches carry a branch name,
+          # which stamp.mjs rejects — fall back to the never-published 0.0.0.
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || VERSION="0.0.0"
           echo "fleet release: building and stamping $VERSION"
           FLEET_VERSION="$VERSION" node npm/build.mjs
           node npm/stamp.mjs "$VERSION"
@@ -58,10 +73,13 @@ jobs:
       # platform tarball must be live first). Published with the npm CLI
       # (not pnpm publish) — it is the reference OIDC implementation.
       - name: Publish packages
-        run: node npm/publish.mjs
+        run: node npm/publish.mjs ${{ inputs.dry_run && '--dry-run' || '' }}
 
   goreleaser:
     needs: npm-publish
+    # Tag pushes only. A rehearsal dispatch stops after npm: goreleaser on a
+    # branch ref would create a real GitHub release for it.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -83,13 +101,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # No orphans: if anything above failed, delete the tag and the
-  # release-please release object. The version is then re-cut by merging
-  # the release PR release-please re-opens on the next push (or via
-  # workflow_dispatch on Release Please) — never hand-repaired.
+  # Unwind only on npm-publish failure: nothing was published, so deleting
+  # the tag and the release-please release object gives a clean re-cut
+  # (release-please re-opens the same version PR on the next push to main;
+  # publish.mjs skips name@version pairs already on the registry, so a
+  # partially published version heals on re-cut). Never hand-repaired.
+  #
+  # When only goreleaser failed, KEEP everything: the npm packages for that
+  # version are already on the registry and immutable, so deleting the tag
+  # would manufacture the exact npm-has-it/GitHub-doesn't orphan this job
+  # exists to prevent. Recovery is `gh run rerun` on the tag — npm publish
+  # skips, goreleaser retries.
   cleanup-on-failure:
     needs: [npm-publish, goreleaser]
-    if: failure()
+    if: ${{ always() && github.event_name == 'push' && needs.npm-publish.result == 'failure' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
