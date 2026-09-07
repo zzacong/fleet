@@ -11,6 +11,10 @@
 //                    CI always publishes with provenance)
 // Prerequisite: `node npm/stamp.mjs X.Y.Z` must have run first — this script
 // refuses when the five versions disagree or a `workspace:*` range remains.
+//
+// Idempotent: a name@version already on the registry is skipped, so a failed
+// run (or a partially published one) recovers with `gh run rerun` on the tag
+// instead of dying on "cannot publish over existing version".
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -55,13 +59,35 @@ if (serialized.includes("workspace:")) {
   process.exit(1);
 }
 
+function alreadyPublished(name, version) {
+  try {
+    const out = execFileSync("npm", ["view", `${name}@${version}`, "version"], {
+      cwd: REPO,
+      stdio: "pipe",
+      encoding: "utf8",
+    }).trim();
+    return out === version;
+  } catch {
+    return false;
+  }
+}
+
+let published = 0;
+let skipped = 0;
 for (const { dir, pkg } of manifests) {
+  const label = `${pkg.name}@${pkg.version}${dryRun ? " (dry run)" : ""}`;
+  if (alreadyPublished(pkg.name, pkg.version)) {
+    console.log(`fleet publish: ${label} already on registry, skipping`);
+    skipped += 1;
+    continue;
+  }
   const args = ["publish", join(REPO, "npm", dir), "--access", "public"];
   if (provenance) args.push("--provenance");
   if (dryRun) args.push("--dry-run");
-  console.log(
-    `fleet publish: ${pkg.name}@${pkg.version}${dryRun ? " (dry run)" : ""}`,
-  );
+  console.log(`fleet publish: ${label}`);
   execFileSync("npm", args, { cwd: REPO, stdio: "inherit" });
+  published += 1;
 }
-console.log(`fleet publish: 5 packages @ ${manifests[0].pkg.version}`);
+console.log(
+  `fleet publish: ${published} published, ${skipped} skipped @ ${manifests[0].pkg.version}`,
+);
