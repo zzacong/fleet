@@ -6,7 +6,11 @@
 // bootstrap delegate here so the ordering lives in one place.
 //
 // Usage: node npm/publish.mjs [--dry-run] [--no-provenance]
-//   --dry-run        pass through to `npm publish` (registry untouched)
+//   --dry-run        pass through to `npm publish`, plus an explicit
+//                    `--tag rehearsal`: npm >= 11 validates the implicit
+//                    "latest" dist-tag against the registry even in dry-run,
+//                    so the synthetic 0.0.0 would be rejected below any
+//                    published version
 //   --no-provenance  omit `--provenance` (local bootstrap has no OIDC token;
 //                    CI always publishes with provenance)
 // Prerequisite: `node npm/stamp.mjs X.Y.Z` must have run first — this script
@@ -83,7 +87,7 @@ for (const { dir, pkg } of manifests) {
   }
   const args = ["publish", join(REPO, "npm", dir), "--access", "public"];
   if (provenance) args.push("--provenance");
-  if (dryRun) args.push("--dry-run");
+  if (dryRun) args.push("--dry-run", "--tag", "rehearsal");
   console.log(`fleet publish: ${label}`);
   execFileSync("npm", args, { cwd: REPO, stdio: "inherit" });
   published += 1;
