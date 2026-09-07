@@ -5,10 +5,11 @@ name: Release
 # fleet -> this workflow file, so never casually rename it.
 #
 # Order is load-bearing: npm-publish runs FIRST so a failed publish leaves
-# no binaries attached to the GitHub release. release-please creates the tag
-# and the release object before this workflow runs, so they cannot be gated
-# behind publish success — recovery is `gh run rerun` on the tag once
-# publish.mjs skips versions already on the registry (idempotent retry).
+# no binaries attached to the GitHub release — and cleanup-on-failure then
+# deletes the release object and the tag entirely, so no orphans remain.
+# Recovery is: fix forward, push, release-please re-opens the same version
+# (publish.mjs skips name@version pairs already on the registry, so a
+# partially published version heals on re-cut).
 on:
   push:
     tags: ["v*.*.*"]
@@ -81,3 +82,21 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # No orphans: if anything above failed, delete the tag and the
+  # release-please release object. The version is then re-cut by merging
+  # the release PR release-please re-opens on the next push (or via
+  # workflow_dispatch on Release Please) — never hand-repaired.
+  cleanup-on-failure:
+    needs: [npm-publish, goreleaser]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete orphaned release and tag
+        run: |
+          gh release delete "$GITHUB_REF_NAME" --yes || true
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$GITHUB_REF_NAME" || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
