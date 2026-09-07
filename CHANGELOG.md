@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/zzacong/fleet/compare/v0.2.0...v0.2.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **state:** distinguish older from newer state file versions in error ([c59116a](https://github.com/zzacong/fleet/commit/c59116a045df5574121313a96deb3e9e3d56e28d))
+
 ## [0.2.0](https://github.com/zzacong/fleet/compare/v0.1.1...v0.2.0) (2026-09-07)
 
 
