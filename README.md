@@ -1,6 +1,6 @@
 # Fleet
 
-Fleet manages agent skills across AI coding agents — OpenCode, Pi, Codex, Claude Code, IBM Bob, and Cursor. Turn a skill off for one harness without uninstalling it: the [`skills` CLI](https://github.com/vercel-labs/skills) stays the install and update backend, and the canonical store (`~/.agents/skills`) is never moved or edited. Fleet keeps a state file as the source of truth and projects it into each harness's own config.
+Fleet manages agent skills across AI coding agents — OpenCode, Codex, Claude Code, and more. Turn a skill off for one harness without uninstalling it: the [`skills` CLI](https://github.com/vercel-labs/skills) stays the install and update backend, and the canonical store (`~/.agents/skills`) is never moved or edited. Fleet keeps a state file as the source of truth and projects it into each harness's own config.
 
 ![fleet demo: list skills, disable one for a harness, toggle in the matrix](www/public/demo.gif)
 
