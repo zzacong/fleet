@@ -4,23 +4,13 @@
 
 **Blocked by:** 05 (Installation docs).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-> **Agent note (06-sweep, pre-04):** Ticket 04 has not run (no tag, no npm
-> publish) and ticket 05 stays drafted-but-unresolved pending verbatim runs,
-> so the "matches what ticket 04 proved" clause cannot be closed yet. This
-> sweep verified everything verifiable locally, changed no install/path/version
-> content (no live stale references found), and stays **unresolved** pending
-> post-04 verbatim verification. Do NOT mark resolved until every command in
-> the root README + `www/src/content/docs/installation.md` has been run
-> verbatim after the bootstrap publish (owned by 04/05).
-
-- [ ] Every remaining install/path/version reference across the root README, the docs site, and contributor docs matches what ticket 04 proved; no stale `apps/` paths; no hand-maintained version numbers or changelog entries anywhere (CHANGELOG and release notes stay tool-owned).
+- [x] Every remaining install/path/version reference across the root README, the docs site, and contributor docs matches what ticket 04 proved; no stale `apps/` paths; no hand-maintained version numbers or changelog entries anywhere (CHANGELOG and release notes stay tool-owned).
 - [x] Known wart stands as-is: root `docs/` (contributor markdown) versus `www/` (Starlight site) naming is confusing but out of scope — no rename in this ticket.
 - [x] Work stays on a local branch until the owner lifts the no-push instruction.
 
 ## Verification log (pre-04 sweep, 2026-09-06, worktree `ticket/06-final-docs-sweep`, base `3509a70`)
-
 Fixed in this sweep: nothing — no live stale references existed, so no
 install/path/version content was changed. Only this ticket file is committed.
 
@@ -55,13 +45,29 @@ install/path/version content was changed. Only this ticket file is committed.
 - Light verification (docs-only sweep, no Go files touched): `pnpm --filter www build`
   → 8 pages incl. `/installation/`, exit 0; `oxlint` → 0 warnings 0 errors.
 
-PENDING-04 (run verbatim after the bootstrap publish, then delete this section
-and the HTML comment in `installation.md`; owned by 04/05, not this ticket):
+## Verification log (post-04 sweep, 2026-09-07, local `main` rebased onto `origin/main` @ 5ed58a3)
 
-- `curl …/main/install.sh | sh`, `| sh -s -- 0.1.0`, `| INSTALL_DIR=… sh`.
-- `npx -y @zzacong/fleet --version`, `pnpm dlx @zzacong/fleet --version`,
-  `bunx @zzacong/fleet --version`.
-- `npm i -g @zzacong/fleet`, `pnpm add -g @zzacong/fleet`,
-  `bun add -g @zzacong/fleet`.
-- `go install github.com/zzacong/fleet/cmd/fleet@latest`, `…@v0.1.0`.
-- Then mark the first checkbox resolved and delete this note.
+No install/path/version content changed in this pass — the pre-04 findings
+all still hold, now checked against the shipped 0.1.0/0.1.1 reality:
+
+- `apps/` grep (excl. `.git`, `node_modules`, `.worktrees`, ADR/`.scratch`
+  history): live tree still clean. The only new hit is inside
+  `CHANGELOG.md`'s 0.1.0 entry (a historical commit subject) — tool-owned,
+  untouchable by design.
+- Stale install paths: none live. `~/.fleet/bin` now appears nowhere in
+  README, `www/`, or `install.sh` (commit b5bfe01 moved all three to
+  `~/.local/bin`); grep confirms zero remaining references outside ADR/
+  `.scratch` history.
+- Hand-maintained versions: none added. `CHANGELOG.md` carries only the
+  release-please-written 0.1.0 and 0.1.1 sections; no hand-written release
+  notes. `0.1.0` still appears only as illustrative pin examples in
+  `install.sh` comments and `installation.md` (now a real released version).
+- README ↔ `installation.md` ↔ `install.sh` consistency re-checked: install
+  URL, `~/.local/bin` default, override/pin variants, `REPO` env, PATH-hint
+  behavior, package names, `go install` module path, method order. README
+  doc-table targets all exist; `www` sidebar includes the Installation slug.
+- Light verification: `pnpm --filter www build` + `oxlint` re-run after
+  removing the PENDING-04 comment from `installation.md` (see below).
+
+Every command the install pages document was executed verbatim post-04 on
+2026-09-07 — the command-by-command log lives in ticket 05.

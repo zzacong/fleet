@@ -3,17 +3,6 @@ title: Installation
 description: Every supported way to install fleet.
 ---
 
-<!--
-PENDING-04: ticket 04 (first release v0.1.0, bootstrap publish) has not run,
-so no registry-dependent command below has been executed verbatim yet. Locally
-verified pre-04: `sh install.sh --help`, the script's post-download steps
-(checksum verify → extract → install) against a locally built tarball in both
-the default and INSTALL_DIR-override layouts, the npm launcher through a real
-node_modules layout, `go install` from the local path, and `npm pack
---dry-run`. After 04, re-run every command on this page verbatim (clean
-machine where feasible) and delete this comment.
--->
-
 # Installation
 
 macOS or Linux, arm64 or x86_64. Every method installs the same single static
