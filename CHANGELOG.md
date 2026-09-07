@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.1](https://github.com/zzacong/fleet/compare/v0.1.0...v0.1.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **npm:** launcher restores exec bit on platform binary ([d2b0276](https://github.com/zzacong/fleet/commit/d2b0276f02c87a9c51e4d07a2dd792d7ed3eca51))
+* **release:** delete orphaned release and tag on publish failure ([2eb842c](https://github.com/zzacong/fleet/commit/2eb842cc526ae7382d636449f4132dea1aaf2ec0))
+* **release:** pnpm/setup owns node+npm, publish before goreleaser ([806e016](https://github.com/zzacong/fleet/commit/806e016bdfeb87ef09e4af345ea95e48eb7449f9))
+* **release:** setup-node owns node+npm in publish job ([4b696dd](https://github.com/zzacong/fleet/commit/4b696ddc53af8e7cbc2426717afa1936d9954608))
+* **release:** skip published versions, warn on devEngines mismatch ([2b7c7c5](https://github.com/zzacong/fleet/commit/2b7c7c52f55a2edcea8e72ae4db9be9866749e2c))
+
 ## 0.1.0 (2026-09-06)
 
 
