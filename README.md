@@ -2,6 +2,14 @@
 
 Fleet manages agent skills across AI coding agents — opencode, pi, codex, claude code, IBM Bob, and Cursor. Turn a skill off for one harness without uninstalling it: the [`skills` CLI](https://github.com/vercel-labs/skills) stays the install and update backend, and the canonical store (`~/.agents/skills`) is never moved or edited. Fleet keeps a state file as the source of truth and projects it into each harness's own config.
 
+![fleet demo: list skills, disable one for a harness, toggle in the matrix](www/public/demo.gif)
+
+| `fleet skill ls` + `off`                         | Interactive matrix (`fleet`)                             |
+| ------------------------------------------------ | -------------------------------------------------------- |
+| ![fleet skill ls output](www/public/demo-ls.png) | ![fleet skill × harness matrix](www/public/demo-tui.png) |
+
+Regenerate with `pnpm --filter www demo:render` (`www/scripts/demo/render.mjs` renders the SVG terminal windows; content mirrors the `fleet skill ls` shape in `www/src/content/docs/cli.md` and the matrix glyphs in `internal/tui/view.go`).
+
 ## Installation
 
 macOS or Linux, arm64 or x86_64. Three ways to install the same single static

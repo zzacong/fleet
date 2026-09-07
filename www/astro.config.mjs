@@ -40,7 +40,7 @@ export default defineConfig({
           items: [{ label: "Skills Catalog", slug: "skills" }],
         },
       ],
-      customCss: [],
+      customCss: ["./src/styles/home.css"],
       head: [
         {
           tag: "meta",

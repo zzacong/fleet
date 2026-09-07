@@ -1,0 +1,8 @@
+/* Homepage: keep the splash hero compact so the title, tagline, actions,
+   and demo GIF all land in the first viewport. Unlayered rules win over
+   Starlight's `@layer starlight.core` hero styles. */
+@media (min-width: 50rem) {
+  .hero {
+    padding-block: clamp(1rem, calc(1rem + 3vmin), 2.5rem);
+  }
+}
