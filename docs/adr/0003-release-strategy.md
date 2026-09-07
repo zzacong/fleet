@@ -22,7 +22,7 @@ Two structural facts forced the shape. First, `apps/cli/go.mod` declares `module
 ## Consequences
 
 - The only stored CI secret is `RELEASE_PLEASE_TOKEN` (PAT: tags created with `GITHUB_TOKEN` do not trigger the tag workflow). A future cross-repo brew tap will need a second PAT.
-- Conventional commits are load-bearing (release-please infers semver from them); a mistyped `feat(skills):`/`feat(www):` costs at most a cheap empty-bump release, not breakage. No commit lint until a repeat offense.
+- Conventional commits are load-bearing (release-please infers semver from them); `pr-title.yml` lints PR titles (conventional format, and `feat`/`fix` never on `www`/`skills` scopes) because squash merges take the PR title as the commit message. A mistyped `feat(skills):`/`feat(www):` costs at most a cheap empty-bump release, not breakage.
 - Vocabulary (ADR-local, deliberately not in `CONTEXT.md`, which is product language): canonical term **Release PR** ("Version PR" noted as alias); canonical term **install door** for the npx / go-install / script / tarball surfaces.
 - `release-please.yml` (push to `main`) and `release.yml` (on `v*.*.*`, GoReleaser + OIDC npm jobs) replace the scaffolded workflows entirely.
 
