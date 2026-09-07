@@ -12,13 +12,16 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/zzacong/fleet/internal/buildinfo"
 	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/selfupdate"
 	"github.com/zzacong/fleet/internal/snapshot"
 	fleetsync "github.com/zzacong/fleet/internal/sync"
 	"github.com/zzacong/fleet/internal/toggle"
@@ -179,7 +182,36 @@ func prepare(p *paths.Paths, quiet bool) (model, error) {
 	if s := syncNotice(reports); s != "" {
 		m.notice = notice{text: s, kind: noticeInfo}
 	}
+	// The fleet update notice as a footer line: same Releases check the
+	// CLI verbs run (24h cache, silent on failure), appended to any sync
+	// line so launch still speaks with one voice.
+	if line := fleetUpdateLine(p); line != "" {
+		if m.notice.text != "" {
+			m.notice.text += " · " + line
+		} else {
+			m.notice = notice{text: line, kind: noticeInfo}
+		}
+	}
 	return m, nil
+}
+
+// newReleaseClient is the Releases seam for the TUI footer: tests stub it
+// so launch never touches the network (docs/testing.md: the network is a
+// seam, not a dependency).
+var newReleaseClient = selfupdate.NewHTTPReleaseClient
+
+// fleetUpdateLine returns the one-line TUI update notice, or "" when the
+// binary is current, a dev build, or the check fails. Best-effort with a
+// short timeout: launch must not hang on the network (the 24h cache makes
+// the common case instant).
+func fleetUpdateLine(p *paths.Paths) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	latest, ok := selfupdate.Check(ctx, p.FleetVersionCheckFile(), buildinfo.Version, newReleaseClient(""))
+	if !ok {
+		return ""
+	}
+	return selfupdate.FooterLine(buildinfo.Version, latest)
 }
 
 // syncNotice compresses sync's reports into one launch line.

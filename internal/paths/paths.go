@@ -170,6 +170,11 @@ func (p *Paths) FleetConfigFile() string    { return join(p, ".config", "fleet",
 func (p *Paths) FleetTreeCacheFile() string { return join(p, ".config", "fleet", "tree-cache.json") }
 func (p *Paths) FleetHomeSkills() string    { return join(p, ".config", "fleet", "skills") }
 
+// FleetVersionCheckFile is the fleet update notice's 24h Releases cache.
+func (p *Paths) FleetVersionCheckFile() string {
+	return join(p, ".config", "fleet", "version-check.json")
+}
+
 // FleetReposDir is the fleet-home checkout parent: every immediate child
 // directory is an auto-tracked customs checkout slot (presence on disk,
 // never a config write). Clones landing inside the fleet home stay
