@@ -1,0 +1,56 @@
+name: Release readiness
+
+# What this proves on a PR: npm/*.mjs (build, stamp, publish plumbing) work
+# on a clean checkout, and the toolchain still ships an npm capable of OIDC
+# (runner-image drift trips the assert).
+#
+# What it does NOT prove: the OIDC exchange, provenance generation, the
+# npmjs.com trusted-publishing config, or GoReleaser — none of those run
+# outside a tagged release. To rehearse the actual publish job in its actual
+# environment, dispatch release.yml (dry_run defaults to true).
+#
+# Paths gate: skip docs-only PRs, but include CHANGELOG.md — the only file a
+# release-please Release PR touches — so a broken publish setup still blocks
+# the release-PR merge.
+on:
+  pull_request:
+    paths:
+      - "npm/**"
+      - "go.mod"
+      - "go.sum"
+      - "cmd/**"
+      - "internal/**"
+      - "Makefile"
+      - "CHANGELOG.md"
+      - ".github/workflows/**"
+
+jobs:
+  release-readiness:
+    name: npm publish dry run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # setup-node owns node+npm, exactly as in release.yml's npm-publish
+      # job. pnpm/setup was tried there and its bundled npm never reached
+      # PATH, leaving image npm 10.x — which cannot do OIDC. Do not add it.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Assert npm supports OIDC
+        run: node npm/assert-npm-oidc.mjs
+
+      # Synthetic version, never published (--dry-run): exercises build +
+      # stamp + pack + publish plumbing only. --no-provenance: this check
+      # performs no OIDC exchange; the Release workflow publishes with
+      # provenance.
+      - name: Build, stamp, and dry-run publish
+        run: |
+          FLEET_VERSION=0.0.0 node npm/build.mjs
+          node npm/stamp.mjs 0.0.0
+          node npm/publish.mjs --dry-run --no-provenance
