@@ -11,7 +11,7 @@ variants live on the [Installation](https://fleet.zzacong.com/installation/)
 docs page.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/zzacong/fleet/main/install.sh | sh   # script → ~/.fleet/bin
+curl -fsSL https://raw.githubusercontent.com/zzacong/fleet/main/install.sh | sh   # script → ~/.local/bin
 ```
 
 ```sh

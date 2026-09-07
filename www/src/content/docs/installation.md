@@ -22,7 +22,7 @@ through `fleet --version`; `go install` builds report `dev`.
 
 ## Install script
 
-Latest release into `~/.fleet/bin`:
+Latest release into `~/.local/bin`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/zzacong/fleet/main/install.sh | sh
@@ -37,13 +37,13 @@ curl -fsSL https://raw.githubusercontent.com/zzacong/fleet/main/install.sh | sh 
 Install somewhere else:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/zzacong/fleet/main/install.sh | INSTALL_DIR=~/.local/bin sh
+curl -fsSL https://raw.githubusercontent.com/zzacong/fleet/main/install.sh | INSTALL_DIR=/usr/local/bin sh
 ```
 
 The script detects OS and architecture, downloads the matching
 `fleet_<os>_<arch>.tar.gz` tarball from GitHub Releases, verifies its SHA-256
 against the release `checksums.txt`, and copies the binary to `INSTALL_DIR`
-(default `~/.fleet/bin`). It never edits shell rc files — if the install dir
+(default `~/.local/bin`). It never edits shell rc files — if the install dir
 is not on `PATH` it prints an `export PATH=...` hint instead. Full interface:
 `sh install.sh [VERSION]` (default `latest`), with `VERSION`, `INSTALL_DIR`,
 and `REPO` overridable in the environment.

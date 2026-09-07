@@ -6,13 +6,13 @@
 #   VERSION=0.1.0 INSTALL_DIR=/usr/local/bin sh install.sh
 #
 # VERSION defaults to "latest" (leading "v" optional: 0.1.0 == v0.1.0).
-# INSTALL_DIR defaults to ~/.fleet/bin. This script never edits shell rc
+# INSTALL_DIR defaults to ~/.local/bin. This script never edits shell rc
 # files; if the install dir is not on PATH it prints an export hint instead.
 set -eu
 
 REPO="${REPO:-zzacong/fleet}"
 VERSION="${VERSION:-${1:-latest}}"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/.fleet/bin}"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 fail() {
   echo "fleet install: $1" >&2
@@ -22,7 +22,7 @@ fail() {
 case "$VERSION" in
   -h | --help | help)
     echo "usage: sh install.sh [VERSION]  (default: latest)"
-    echo "env: VERSION, INSTALL_DIR (default ~/.fleet/bin), REPO"
+    echo "env: VERSION, INSTALL_DIR (default ~/.local/bin), REPO"
     exit 0
     ;;
 esac
