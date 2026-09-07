@@ -5,7 +5,7 @@ description: Every verb, flag, and error with examples.
 
 # Command reference
 
-Fleet has one binary and one command family. Bare `fleet` opens the interactive matrix; everything scripted lives under `fleet skill`. Sync runs inside every command, and `fleet skill sync` is that machinery as an explicit verb (see [Sync](#sync)).
+Fleet has one binary and one command family. Bare `fleet` opens the interactive matrix; everything scripted lives under `fleet skill`. Sync runs inside every command except the two read-only ones (`fleet skill doctor` and `fleet harness ls`), and `fleet skill sync` is that machinery as an explicit verb (see [Sync](#sync)).
 
 Examples were run against a sandbox home (`FLEET_HOME=$(mktemp -d)`) with two skills: `tdd`, installed from a source repo, and `git-helper`, a custom skill. Paths are shortened to `~` for readability.
 
@@ -337,7 +337,7 @@ The wrapped call is fully explicit and non-interactive: stdin is piped closed, s
 ## fleet config
 
 ```sh
-fleet config get <key> [--json]
+fleet config get <key>
 fleet config set <key> <value>
 fleet config unset <key>
 fleet config list [--json]

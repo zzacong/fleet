@@ -5,7 +5,7 @@ description: Files touched, written shapes, limitations.
 
 # Per-harness reference
 
-Fleet targets six harnesses. Each section states exactly which files fleet touches, what it writes, what it never touches, and where the harness's own limits show up. Vocabulary follows [CONTEXT.md](../CONTEXT.md): the canonical store is `~/.agents/skills`, customs live in tracked collections (explicit repos plus auto-tracked `~/.config/fleet/repos/` checkouts) and the fleet-home fallback `~/.config/fleet/skills`, the state file is fleet's source of truth, and sync projects that state into each harness's config.
+Fleet targets six harnesses. Each section states exactly which files fleet touches, what it writes, what it never touches, and where the harness's own limits show up. Vocabulary follows [CONTEXT.md](https://github.com/zzacong/fleet/blob/main/CONTEXT.md): the canonical store is `~/.agents/skills`, customs live in tracked collections (explicit repos plus auto-tracked `~/.config/fleet/repos/` checkouts) and the fleet-home fallback `~/.config/fleet/skills`, the state file is fleet's source of truth, and sync projects that state into each harness's config.
 
 ## Overview
 

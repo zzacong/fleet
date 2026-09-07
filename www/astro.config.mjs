@@ -19,10 +19,7 @@ export default defineConfig({
       sidebar: [
         {
           label: "Start Here",
-          items: [
-            { label: "Introduction", link: "/" },
-            { label: "Installation", slug: "installation" },
-          ],
+          items: [{ label: "Installation", slug: "installation" }],
         },
         {
           label: "Reference",
@@ -39,6 +36,14 @@ export default defineConfig({
         },
       ],
       customCss: [],
+      // Downgraded from Starlight's summary_large_image default until the
+      // logo pass adds a real og:image.
+      head: [
+        {
+          tag: "meta",
+          attrs: { name: "twitter:card", content: "summary" },
+        },
+      ],
     }),
   ],
 });

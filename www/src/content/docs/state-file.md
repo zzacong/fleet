@@ -50,7 +50,7 @@ The schema is built so newer or foreign writers lose nothing:
 
 - **Unknown fields are preserved verbatim** on every round-trip: unknown top-level fields, unknown fields inside a skill entry, and harness values fleet doesn't recognize. They are rendered after fleet's own fields, in sorted order.
 - **Enabling never destroys what it doesn't understand.** Removing a disable deletes only the exact `"off"` value it wrote; a future value (say, an object with scheduling metadata) stays. A skill entry with unknown fields survives even when its `harnesses` map empties.
-- **Version is a hard stop, not a guess.** A file with a version newer than fleet's is an error (`~/.config/fleet/state.json: state file version 2 is newer than fleet's (want 1)`), as is a file with no version at all. Fleet never silently reinterprets content it doesn't recognize; upgrade the binary instead.
+- **Version is a hard stop, not a guess.** A file with a version other than fleet's is an error (`~/.config/fleet/state.json: state file version 2 is newer than fleet's (want 1)`), as is a file with no version at all. Fleet never silently reinterprets content it doesn't recognize; upgrade the binary instead.
 - **A missing file is an empty state**, not an error. Every fleet command works on a fresh machine.
 
 ## Write behavior

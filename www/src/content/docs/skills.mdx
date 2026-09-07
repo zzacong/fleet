@@ -15,4 +15,4 @@ The `skills/` directory at the repo root is the versioned collection — what [s
 - Fleet discovers customs from the tracked set — every tracked repo's `skills/` collection subdir (explicit repos in list order, then auto-tracked `~/.config/fleet/repos/` checkouts alphabetically) — plus the unversioned fleet-home fallback `~/.config/fleet/skills`, plus the canonical store `~/.agents/skills`. Precedence is explicit-list order, then fleet-home checkouts alphabetically, then the fallback, then the canonical store.
 - `fleet skill ls` shows the union (one row per name, winner shown; every collision is doctor drift); `fleet skill pull <git-url>` clones a customs repo into the tracked set; `fleet skill adopt <name>` moves a skill from the canonical store into the adopt destination (`--into`, else the configured adopt target, else a prompt).
 
-This page reads `skills/*/SKILL.md` frontmatter at build time (via `SkillsCatalog.astro` using `fs` and `import.meta.glob` equivalent) and lists the collection.
+This page reads `skills/*/SKILL.md` frontmatter at build time and lists the collection.
