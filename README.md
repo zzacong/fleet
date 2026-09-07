@@ -4,26 +4,19 @@ Fleet manages agent skills across AI coding agents — opencode, pi, codex, clau
 
 ## Installation
 
-macOS or Linux, arm64 or x86_64. Every method installs the same single static
-binary with no runtime dependencies. Release builds report their version
-through `fleet --version`; `go install` builds report `dev`. Details and
-variants live on the [Installation](https://fleet.zzacong.com/installation/)
-docs page.
+macOS or Linux, arm64 or x86_64. Three ways to install the same single static
+binary with no runtime dependencies: a shell script, npm, or Go. Release
+builds report their version through `fleet --version`; `go install` builds
+report `dev`. Every variant is on the
+[Installation](https://fleet.zzacong.com/installation/) docs page.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/zzacong/fleet/main/install.sh | sh   # script → ~/.local/bin
 ```
 
 ```sh
-npx -y @zzacong/fleet --version        # run once
-pnpm dlx @zzacong/fleet --version      # run once
-bunx @zzacong/fleet --version          # run once
-```
-
-```sh
-npm i -g @zzacong/fleet                # global install
-pnpm add -g @zzacong/fleet             # global install
-bun add -g @zzacong/fleet              # global install
+npx -y @zzacong/fleet --version   # npm: try it without installing (pnpm dlx, bunx too)
+npm i -g @zzacong/fleet           # …or install globally (pnpm add -g, bun add -g)
 ```
 
 ```sh

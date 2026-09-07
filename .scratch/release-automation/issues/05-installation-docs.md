@@ -88,3 +88,8 @@ was verified against the local script bytes (identical to post-push `main`)
 and the piped mechanics against the live URL; once b5bfe01 is pushed the
 documented command behaves exactly as written. All other commands are
 unaffected.
+
+**Addendum (2026-09-07, post-resolution):** restructured both pages per
+owner feedback — three install routes (Script / npm / Go), with the
+run-without-installing commands and the global installs as subsections of
+the npm route. Same commands, no re-verification needed; site rebuilt.

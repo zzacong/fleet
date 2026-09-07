@@ -5,13 +5,14 @@ description: Every supported way to install fleet.
 
 # Installation
 
-macOS or Linux, arm64 or x86_64. Every method installs the same single static
-binary with no runtime dependencies. Release builds report their version
-through `fleet --version`; `go install` builds report `dev`.
+macOS or Linux, arm64 or x86_64. Three ways to install the same single static
+binary with no runtime dependencies: a shell script, npm, or Go. Release
+builds report their version through `fleet --version`; `go install` builds
+report `dev`.
 
-## Install script
+## Script
 
-Latest release into `~/.local/bin`:
+No toolchain required. Latest release into `~/.local/bin`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/zzacong/fleet/main/install.sh | sh
@@ -37,7 +38,12 @@ is not on `PATH` it prints an `export PATH=...` hint instead. Full interface:
 `sh install.sh [VERSION]` (default `latest`), with `VERSION`, `INSTALL_DIR`,
 and `REPO` overridable in the environment.
 
-## Run once
+## npm
+
+Works with npm, pnpm, and bun. The `@zzacong/fleet` package wraps the
+prebuilt binary for your OS and architecture.
+
+### Try it without installing
 
 ```sh
 npx -y @zzacong/fleet --version
@@ -45,11 +51,10 @@ pnpm dlx @zzacong/fleet --version
 bunx @zzacong/fleet --version
 ```
 
-These fetch the `@zzacong/fleet` wrapper, which runs the prebuilt binary for
-your OS and architecture. Anything after the package name passes through, so
+Anything after the package name passes through, so
 `npx -y @zzacong/fleet skill ls` works the same as the installed binary.
 
-## Global install
+### Install globally
 
 ```sh
 npm i -g @zzacong/fleet
@@ -61,7 +66,10 @@ This puts `fleet` on your `PATH`. The wrapper depends on four optional
 platform packages and your manager installs only the one matching your
 machine — reinstall without `--no-optional` if the binary ever goes missing.
 
-## Go install
+## Go
+
+Needs a Go toolchain, and the resulting binary reports `dev` from
+`fleet --version` instead of the release version.
 
 ```sh
 go install github.com/zzacong/fleet/cmd/fleet@latest
@@ -72,9 +80,6 @@ Pin a version:
 ```sh
 go install github.com/zzacong/fleet/cmd/fleet@v0.1.0
 ```
-
-Needs a Go toolchain, and the resulting binary reports `dev` from
-`fleet --version` instead of the release version.
 
 ## Verify
 
