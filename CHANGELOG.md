@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/zzacong/fleet/compare/v0.1.1...v0.2.0) (2026-09-07)
+
+
+### Features
+
+* **install:** default INSTALL_DIR to ~/.local/bin ([b5bfe01](https://github.com/zzacong/fleet/commit/b5bfe0101dc6241a73d6325e6633040ed1e2bd06))
+
 ## [0.1.1](https://github.com/zzacong/fleet/compare/v0.1.0...v0.1.1) (2026-09-07)
 
 
