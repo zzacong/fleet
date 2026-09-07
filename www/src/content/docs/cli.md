@@ -57,7 +57,7 @@ tdd         on        on  on     -       on      on   ↑       example/tdd  Tes
 - The enablement columns sit right after the name — they are the table's point. The description goes last, truncated to whatever room the terminal has left, so no column ever wraps mid-word; piped output keeps the plain 60-column cap.
 - `SOURCE` is `custom` (the skill lives in a tracked collection or the fleet-home fallback, or has no lockfile entry) or the source repo the lockfile records.
 - `UPDATE` is the outdated badge: `↑` update available, `✓` current, `?` unknown, `—` never checked (custom skills). Non-GitHub sources and failed checks are `?` — fleet checks GitHub directly, one API call per source repo, cached for an hour under the fleet config dir, and reports unknown rather than guessing.
-- A harness column shows `on`, `off`, or `-`. `-` means the harness cannot discover the skill at all; for claude code that is the normal state until a link exists (see [claude code](harnesses.md#claude-code)).
+- A harness column shows `on`, `off`, or `-`. `-` means the harness cannot discover the skill at all; for Claude Code that is the normal state until a link exists (see [Claude Code](harnesses.md#claude-code)).
 - Color on a terminal only: `on` green, `off` dim, `↑` yellow, `✓` green, custom cyan. Piped output is plain.
 - On a terminal a one-line summary prints above the table (`fleet · 2 skills · 1 installed · 1 custom · …`). Piped output skips it, and `--quiet` skips it everywhere.
 
@@ -181,7 +181,7 @@ adopt: bob: linked "git-helper" → ~/.config/fleet/repos/my-customs/skills/git-
 
 - `--into` takes a collection dir (not a repo root): it is created on demand, wins with no prompt, and is never saved. A choice picked from the prompt offers a yes/no follow-up (default No) to save it as the adopt target, so persisting is deliberate. Without a terminal, an ambiguous adopt fails listing the numbered candidates and the `--into` hint instead of blocking on stdin — automation never hangs.
 - The prompt always includes the fleet-home fallback alongside the tracked collections, so even a single tracked repo is an explicit choice against the default. The configured target may point somewhere unscanned — adopt still proceeds, and doctor surfaces an `unscanned adopt target` warning so the footgun is visible.
-- opencode and pi get the destination's path in their own config (in the dialect the file already speaks). codex, claude code, Cursor, and Bob get a symlink named after the skill, pointing at the destination. Managed links never point into the canonical store, so opencode and pi never see an adopted skill twice.
+- OpenCode and Pi get the destination's path in their own config (in the dialect the file already speaks). Codex, Claude Code, Cursor, and Bob get a symlink named after the skill, pointing at the destination. Managed links never point into the canonical store, so OpenCode and Pi never see an adopted skill twice.
 - Adoption records nothing in the state file: custom is defined by living in a tracked collection or the fallback. Disables recorded before adoption keep applying, because config rules target the skill's name wherever it lives.
 - A name already present in the destination or in any other scanned source is a double-presence error — resolve by hand before adopting.
 - Adopting an already-adopted skill moves nothing but re-ensures the wiring and links, so a partially failed run heals on the next `adopt`. The outcome line reads `adopt: "git-helper" is already adopted` followed by `  → ~/.config/fleet/repos/my-customs/skills/git-helper`.
@@ -229,7 +229,7 @@ drop: codex: unlinked "my-notes" → ~/.config/fleet/repos/my-customs/skills/my-
 - An adopt target pointing inside the dropped repo always fails with a re-point hint (`fleet config set adopt-target <skills-dir>`) — no auto-clear, even with `--force`.
 - An unknown target fails listing the tracked repos, so a typo never drops the wrong home. A repo tracked only via the `FLEET_REPO` env override fails with an unset hint instead — there is no config entry to remove and no checkout fleet may delete.
 - Dropping an explicit repo whose directory was already hand-deleted still succeeds: the entry is unlisted and there is nothing on disk left to check.
-- After the drop the collection dir (`<repo>/skills`) is unwired from the config-path harnesses (opencode, pi) and its managed links are unlinked (codex, claude code, Cursor, Bob — only symlinks resolving under the dropped collection), then sync runs. After any sync report, the headline (`drop: removed "<path>"`) prints, then one line per unwired harness and per unlinked managed link; on a terminal the `drop:` prefix is dim, the verb green, harness names cyan.
+- After the drop the collection dir (`<repo>/skills`) is unwired from the config-path harnesses (OpenCode, Pi) and its managed links are unlinked (Codex, Claude Code, Cursor, Bob — only symlinks resolving under the dropped collection), then sync runs. After any sync report, the headline (`drop: removed "<path>"`) prints, then one line per unwired harness and per unlinked managed link; on a terminal the `drop:` prefix is dim, the verb green, harness names cyan.
 
 ## fleet skill doctor
 
@@ -244,7 +244,7 @@ The read-only report of what's wrong. It inspects every installed harness, the c
 - **unknown entries** — anything else in a skills dir (excluding managed custom-skill links into a tracked collection or the fallback); reported, never touched
 - **manual edits fleet can't manage** — pattern or blanket rules that disable a skill
 - **state drift** — state and config disagreeing in ways sync will resolve
-- **double presence** — a skill name that exists in more than one scanned source (canonical store, explicit repos, fleet-home checkouts, fallback), so opencode and pi would see it twice and one copy's rules may shadow the other; remove one of the copies by hand
+- **double presence** — a skill name that exists in more than one scanned source (canonical store, explicit repos, fleet-home checkouts, fallback), so OpenCode and Pi would see it twice and one copy's rules may shadow the other; remove one of the copies by hand
 - **unscanned adopt target** — the configured adopt target points outside the scanned homes, so adopted skills would not appear in `ls`; point it at a tracked collection or the fallback
 - **non-git explicit repos** — an explicit list entry with no `.git`, so bare pull skips it; clone the repo there or remove the path from the list by hand
 - **stale lockfile entries** — the skills CLI's lockfile still carries the install entry of a skill that was adopted into a custom home, so the skills CLI keeps trying to update a skill that moved; remove the entry by hand — fleet reads the lockfile and never writes it

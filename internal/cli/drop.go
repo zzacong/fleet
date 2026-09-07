@@ -28,7 +28,7 @@ func newSkillDropCmd(p *paths.Paths) *cobra.Command {
 		Long: "Remove a versioned customs home from the tracked set with `fleet skill drop <path-or-name>`, resolved against the tracked repos.\n\n" +
 			"The single arg is a repo-root path or a fleet-home slot name (no bare/prompt mode: this verb deletes). An explicit repo outside fleet home is removed from the tracked list with the disk untouched; a fleet-home checkout is deleted from disk.\n\n" +
 			"A dirty working tree fails surfacing `git status --porcelain` output — fleet never stashes — unless --force is given. A missing git binary skips the dirty check with a warning instead. An adopt target pointing inside the dropped repo always fails with a re-point hint, even with --force.\n\n" +
-			"After the drop the collection (<repo>/skills) is unwired from the config-path harnesses (opencode, pi) and its managed links unlinked (codex, claude code, Cursor, Bob), then sync runs.",
+			"After the drop the collection (<repo>/skills) is unwired from the config-path harnesses (OpenCode, Pi) and its managed links unlinked (Codex, Claude Code, Cursor, Bob), then sync runs.",
 		Example: "  fleet skill drop my-customs\n" +
 			"  fleet skill drop ~/Developer/team-customs\n" +
 			"  fleet skill drop my-customs --force",

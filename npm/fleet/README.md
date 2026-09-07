@@ -1,6 +1,6 @@
 # @zzacong/fleet
 
-Fleet manages agent skills across AI coding agents — opencode, pi, codex, claude code, IBM Bob, and Cursor. Turn a skill off for one harness without uninstalling it. This package runs the prebuilt `fleet` binary for your OS and arch (no build step, no Go toolchain).
+Fleet manages agent skills across AI coding agents — OpenCode, Pi, Codex, Claude Code, IBM Bob, and Cursor. Turn a skill off for one harness without uninstalling it. This package runs the prebuilt `fleet` binary for your OS and arch (no build step, no Go toolchain).
 
 ## Quick start
 

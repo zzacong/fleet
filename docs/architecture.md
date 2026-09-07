@@ -60,13 +60,13 @@ type Adapter interface {
 
 - `on` — the harness discovers the skill and nothing disables it
 - `off` — the harness discovers it but its config disables it
-- `absent` — the harness cannot discover it at all (claude code without a link)
+- `absent` — the harness cannot discover it at all (Claude Code without a link)
 
-It also reports `Linked` (names with a link in the harness's skills dir), `Disables` (every skill the config disables through an exact-name entry fleet could own, including names not in the store — doctor compares this against the state file), and, for opencode, the detected `Dialect` and configured `SkillSources`. A missing config file means everything `on` (or `absent` for claude), not an error.
+It also reports `Linked` (names with a link in the harness's skills dir), `Disables` (every skill the config disables through an exact-name entry fleet could own, including names not in the store — doctor compares this against the state file), and, for OpenCode, the detected `Dialect` and configured `SkillSources`. A missing config file means everything `on` (or `absent` for Claude Code), not an error.
 
 **Write side.** `Project` is a read-modify-write that takes desired `SkillWrite{Name, State}` values and returns what changed (`Changed`: state flips, `From` → `To`) and what it deliberately left alone (`Flags`). The preservation rules:
 
-- Only fleet's own exact-shape entries are ever removed or flipped. Patterns, blanket rules, glob exclusions, codex blocks with extra keys: flagged, never touched.
+- Only fleet's own exact-shape entries are ever removed or flipped. Patterns, blanket rules, glob exclusions, Codex blocks with extra keys: flagged, never touched.
 - Comments, unknown keys, key order, and formatting survive every write. The file is written only when content actually changed.
 - `Project` may only be called when `CanProject()` is true; Cursor and Bob return an error from it by construction.
 - Skill names are validated up front (empty names are a programming error, rejected loudly).
@@ -75,14 +75,14 @@ It also reports `Linked` (names with a link in the harness's skills dir), `Disab
 
 | Format      | Harnesses       | How preservation works                                                                                                                                                                                                                           |
 | ----------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| JSONC       | opencode        | `internal/jsonc` parses to a tree that keeps comments, key order, and raw literals; writes are tree edits (`Set`/`Append`/`Delete`); render is byte-compared with the source first.                                                              |
-| Strict JSON | pi, claude code | Parsed strictly first (comments are an error, matching the harness), then edited through the same tree editor; the writer never emits comments.                                                                                                  |
-| TOML        | codex           | No comment-preserving TOML encoder exists, so fleet edits at the line level: blocks it recognizes (header plus simple `name`/`path`/`enabled` lines, comments and blanks) are flipped or removed; every other line passes through byte for byte. |
+| JSONC       | OpenCode        | `internal/jsonc` parses to a tree that keeps comments, key order, and raw literals; writes are tree edits (`Set`/`Append`/`Delete`); render is byte-compared with the source first.                                                              |
+| Strict JSON | Pi, Claude Code | Parsed strictly first (comments are an error, matching the harness), then edited through the same tree editor; the writer never emits comments.                                                                                                  |
+| TOML        | Codex           | No comment-preserving TOML encoder exists, so fleet edits at the line level: blocks it recognizes (header plus simple `name`/`path`/`enabled` lines, comments and blanks) are flipped or removed; every other line passes through byte for byte. |
 
 Two optional interfaces extend the seam for custom skills, both targeting the adopt destination (the collection dir the skill is moving into):
 
-- `SkillLinker.LinkSkill(name, target)` — keep `<harness skills dir>/<name>` a symlink to the adopt destination: created when missing, repointed when it targets something else, never touching a real directory or file. Implemented by codex, claude code, Cursor, and Bob.
-- `SourceWiring.WireSkillSource(dir)` — add a directory as an extra skill-discovery source in the config shape the file already speaks. Implemented by opencode and pi.
+- `SkillLinker.LinkSkill(name, target)` — keep `<harness skills dir>/<name>` a symlink to the adopt destination: created when missing, repointed when it targets something else, never touching a real directory or file. Implemented by Codex, Claude Code, Cursor, and Bob.
+- `SourceWiring.WireSkillSource(dir)` — add a directory as an extra skill-discovery source in the config shape the file already speaks. Implemented by OpenCode and Pi.
 
 ## The write sequence for toggles
 
@@ -95,7 +95,7 @@ Two optional interfaces extend the seam for custom skills, both targeting the ad
 
 ## Sync
 
-`sync.Run` reads the state file fresh, then: remove redundant links (symlinks provably resolving into the canonical store in harnesses that scan it natively — never claude code, never non-symlinks, never links into any tracked collection or the fallback), then project one off-entry per recorded disable into each installed writable harness. Unrecognized entries are flagged, not touched. The state file is never edited. Every command runs this ambiently, and `fleet skill sync` exposes the same run as an explicit verb. The full decision list lives in [undo and escape hatches](undo.md#how-sync-decides-what-to-touch).
+`sync.Run` reads the state file fresh, then: remove redundant links (symlinks provably resolving into the canonical store in harnesses that scan it natively — never Claude Code, never non-symlinks, never links into any tracked collection or the fallback), then project one off-entry per recorded disable into each installed writable harness. Unrecognized entries are flagged, not touched. The state file is never edited. Every command runs this ambiently, and `fleet skill sync` exposes the same run as an explicit verb. The full decision list lives in [undo and escape hatches](undo.md#how-sync-decides-what-to-touch).
 
 ## Doctor
 

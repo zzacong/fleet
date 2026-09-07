@@ -5,7 +5,7 @@ Fleet manages agent skills across AI coding agents (harnesses): enable or disabl
 ## Language
 
 **Harness**:
-An AI coding agent that discovers and loads skills. Fleet targets: opencode, pi, codex, claude code, IBM Bob, Cursor. A harness is detected by its config directory on this machine; the UI only shows harnesses that are installed.
+An AI coding agent that discovers and loads skills. Fleet targets: OpenCode, Pi, Codex, Claude Code, IBM Bob, Cursor. A harness is detected by its config directory on this machine; the UI only shows harnesses that are installed.
 _Avoid_: agent, client, platform
 
 **Skill**:
@@ -13,7 +13,7 @@ A directory with a `SKILL.md` file describing an agent capability. The unit that
 _Avoid_: plugin, extension
 
 **Canonical store**:
-`~/.agents/skills` — where the `skills` CLI installs and updates skills. codex, opencode, pi and Bob scan it directly. Fleet never moves or renames anything in it.
+`~/.agents/skills` — where the `skills` CLI installs and updates skills. Codex, OpenCode, Pi and Bob scan it directly. Fleet never moves or renames anything in it.
 _Avoid_: skills dir, install dir
 
 **Installed skill**:

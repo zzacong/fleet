@@ -63,9 +63,9 @@ The same applies to hand-edits generally: doctor surfaces them, sync never silen
 Sync's rules, in the order it applies them:
 
 1. **Load the state file fresh**, so commands that just wrote it sync their own change.
-2. **Remove redundant links.** In each installed harness's skills dir, a symlink counts as redundant only when it provably resolves into the canonical store _and_ that harness scans the store natively (opencode, pi, codex, Cursor, Bob — never claude code, whose store links are its only discovery path). Everything else in those dirs survives: real directories and files, links into any tracked collection or the fleet-home fallback (including your own and fleet's managed adopt/pull links), links pointing anywhere else, and broken links, which doctor reports instead. Sync never removes tracked-collection or fallback links.
-3. **Project the disables.** For each installed harness with a write side (opencode, pi, codex, claude code), write that harness's own off-entry for every disable the state records. Nothing else. An absent entry means on; sync never writes "on" markers, because "on" is what every harness does by default.
-4. **Flag what it doesn't recognize.** Pattern and blanket rules, glob exclusions, codex blocks with extra keys — anything that affects enablement but isn't fleet's exact shape is printed as a flag and left untouched. Sync reports; you decide.
+2. **Remove redundant links.** In each installed harness's skills dir, a symlink counts as redundant only when it provably resolves into the canonical store _and_ that harness scans the store natively (OpenCode, Pi, Codex, Cursor, Bob — never Claude Code, whose store links are its only discovery path). Everything else in those dirs survives: real directories and files, links into any tracked collection or the fleet-home fallback (including your own and fleet's managed adopt/pull links), links pointing anywhere else, and broken links, which doctor reports instead. Sync never removes tracked-collection or fallback links.
+3. **Project the disables.** For each installed harness with a write side (OpenCode, Pi, Codex, Claude Code), write that harness's own off-entry for every disable the state records. Nothing else. An absent entry means on; sync never writes "on" markers, because "on" is what every harness does by default.
+4. **Flag what it doesn't recognize.** Pattern and blanket rules, glob exclusions, Codex blocks with extra keys — anything that affects enablement but isn't fleet's exact shape is printed as a flag and left untouched. Sync reports; you decide.
 5. **Never edit the state file.** Sync is one-directional on purpose: state is the source of truth, configs are outputs. (`~/.config/fleet/config.json` is the separate machine-local customs file — `fleet config` and `fleet skill pull` manage it, sync never touches it.)
 
 `fleet skill doctor` runs the same inspection read-only, so you can see all of it before any of it happens.
@@ -87,11 +87,11 @@ Adoption moves a skill directory into the adopt destination (a tracked collectio
    mv ~/.config/fleet/repos/my-customs/skills/my-skill ~/.agents/skills/my-skill
    mv ~/.config/fleet/skills/my-skill ~/.agents/skills/my-skill  # when the fallback was the destination
    ```
-2. Remove the wiring and links if you want them gone: the destination's path entry in opencode's and pi's configs, and the per-harness symlinks named after the skill in `~/.codex/skills`, `~/.claude/skills`, `~/.cursor/skills`, `~/.bob/skills`.
+2. Remove the wiring and links if you want them gone: the destination's path entry in OpenCode's and Pi's configs, and the per-harness symlinks named after the skill in `~/.codex/skills`, `~/.claude/skills`, `~/.cursor/skills`, `~/.bob/skills`.
 
 Doctor reports any leftovers as unknown entries and never deletes them. It also flags the two things an adoption leaves behind that nothing else reports:
 
 - The skills CLI lockfile still carries the skill's install entry while the skill lives in a custom home, so the CLI keeps trying to update a skill that moved. Remove the entry from `~/.agents/.skill-lock.json` by hand; fleet reads the lockfile and never writes it.
-- If the store copy comes back while a custom-home copy remains — a half-finished move in either direction — or a name exists in two scanned sources, opencode and pi would see the skill twice. Doctor flags the double presence; remove one of the copies by hand.
+- If the store copy comes back while a custom-home copy remains — a half-finished move in either direction — or a name exists in two scanned sources, OpenCode and Pi would see the skill twice. Doctor flags the double presence; remove one of the copies by hand.
 
 Once the skill is back in the store, the skills CLI and fleet treat it like any other installed (or custom, if it has no lock entry) skill.
