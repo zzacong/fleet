@@ -4,6 +4,7 @@
   "proseWrap": "preserve",
   "sortImports": true,
   "ignorePatterns": [
+    "CHANGELOG.md",
     ".scratch/**",
     ".astro/**",
     "dist/**",
