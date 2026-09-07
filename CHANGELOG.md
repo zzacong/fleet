@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/zzacong/fleet/compare/v0.2.1...v0.3.0) (2026-09-07)
+
+
+### Features
+
+* **update:** detect newer fleet binary and print update notice ([#9](https://github.com/zzacong/fleet/issues/9)) ([0aaa420](https://github.com/zzacong/fleet/commit/0aaa4207bee7de63ab6d2b3d37522517550a9aab))
+
 ## [0.2.1](https://github.com/zzacong/fleet/compare/v0.2.0...v0.2.1) (2026-09-07)
 
 
