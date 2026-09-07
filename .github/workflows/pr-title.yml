@@ -1,0 +1,46 @@
+name: PR title
+
+# Squash merges take the PR title as the commit message on main, and
+# release-please infers semver from that message (ADR 0003). A plain-English
+# title silently skips the release; a mistyped feat(www)/feat(skills) ships an
+# empty version bump. This check fails the PR early instead.
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # deps is load-bearing for release-please (ADR 0003); the rest is
+          # the action's default set.
+          types: |
+            feat
+            fix
+            docs
+            chore
+            ci
+            refactor
+            style
+            test
+            perf
+            build
+            revert
+            deps
+          requireScope: false
+
+      - name: Forbid feat/fix on www/skills scopes
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if printf '%s' "$TITLE" | grep -Eq '^(feat|fix)\([^)]*\b(www|skills)\b[^)]*\)!?:'; then
+            echo "::error title=$TITLE::www/ and skills/ changes must use docs(www): or docs(skills):, never feat or fix (AGENTS.md). A wrong type ships an empty version bump."
+            exit 1
+          fi
