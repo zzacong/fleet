@@ -65,7 +65,11 @@ func Load(path string) (*File, error) {
 		return nil, fmt.Errorf("%s: \"version\" must be a number: %w", path, err)
 	}
 	if version != Version {
-		return nil, fmt.Errorf("%s: state file version %d is newer than fleet's (want %d)", path, version, Version)
+		rel := "newer"
+		if version < Version {
+			rel = "older"
+		}
+		return nil, fmt.Errorf("%s: state file version %d is %s than fleet's (want %d)", path, version, rel, Version)
 	}
 	f.version = version
 
