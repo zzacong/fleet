@@ -26,18 +26,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Single owner of node+npm on PATH. runtime: node@24 bundles npm 11
-      # (OIDC trusted publishing needs >= 11.5.1); pnpm/setup pins PATH via
-      # PNPM_CONFIG_GLOBAL_SHIMS so this npm wins. Do NOT add
-      # actions/setup-node here — two owners fight and the runner image's
-      # npm 10 stays first on PATH (the v0.2.0/v0.2.1 failures).
-      # pnpm version comes from devEngines.packageManager in package.json.
-      # install: false — nothing in this job uses node_modules (build.mjs
-      # shells to go; stamp/publish are node stdlib + the npm CLI).
-      - uses: pnpm/setup@v2
+      # actions/setup-node is the sole owner of node+npm in this job.
+      # pnpm/setup was tried: it downloads the node runtime but does not
+      # put its bundled npm on PATH (v0.1.1 run: node 24.20.0 installed,
+      # `npm` still the runner image's 10.9.8), and npm 10 cannot do OIDC.
+      # Node 24 bundles npm 11. Do NOT add pnpm/setup here — two owners
+      # fight and the image npm wins. Nothing in this job uses node_modules.
+      - uses: actions/setup-node@v7
         with:
-          runtime: node@24
-          install: false
+          node-version: 24
 
       # Fail fast if the runtime ever ships an npm without OIDC support.
       - name: Assert npm supports OIDC
