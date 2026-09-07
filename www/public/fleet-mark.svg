@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Fleet mark">
+  <title>Fleet</title>
+  <!-- Convoy V: three hulls in formation, orange wake dot -->
+  <g fill="currentColor" stroke-linejoin="round">
+    <path d="M32 6 L42 24 L36 24 L32 17 L28 24 L22 24 Z"/>
+    <path d="M16 34 L26 52 L20 52 L16 45 L12 52 L6 52 Z"/>
+    <path d="M48 34 L58 52 L52 52 L48 45 L44 52 L38 52 Z"/>
+  </g>
+  <circle cx="32" cy="52" r="3.5" fill="#FF4D00"/>
+</svg>
