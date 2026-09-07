@@ -3,6 +3,12 @@ name: Release
 # Runs on release-please tags only (one plain vX.Y.Z per ADR 0003).
 # Filename is final: npm trusted publishing pins user zzacong -> repo
 # fleet -> this workflow file, so never casually rename it.
+#
+# Order is load-bearing: npm-publish runs FIRST so a failed publish leaves
+# no binaries attached to the GitHub release. release-please creates the tag
+# and the release object before this workflow runs, so they cannot be gated
+# behind publish success — recovery is `gh run rerun` on the tag once
+# publish.mjs skips versions already on the registry (idempotent retry).
 on:
   push:
     tags: ["v*.*.*"]
@@ -12,7 +18,52 @@ permissions:
   id-token: write
 
 jobs:
+  npm-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      # Single owner of node+npm on PATH. runtime: node@24 bundles npm 11
+      # (OIDC trusted publishing needs >= 11.5.1); pnpm/setup pins PATH via
+      # PNPM_CONFIG_GLOBAL_SHIMS so this npm wins. Do NOT add
+      # actions/setup-node here — two owners fight and the runner image's
+      # npm 10 stays first on PATH (the v0.2.0/v0.2.1 failures).
+      # pnpm version comes from devEngines.packageManager in package.json.
+      # install: false — nothing in this job uses node_modules (build.mjs
+      # shells to go; stamp/publish are node stdlib + the npm CLI).
+      - uses: pnpm/setup@v2
+        with:
+          runtime: node@24
+          install: false
+
+      # Fail fast if the runtime ever ships an npm without OIDC support.
+      - name: Assert npm supports OIDC
+        run: |
+          npm --version
+          node -e "const [maj, min] = require('node:child_process').execSync('npm --version').toString().trim().split('.').map(Number); if (maj < 11 || (maj === 11 && min < 5)) { console.error('npm >= 11.5.1 required for OIDC trusted publishing'); process.exit(1) }"
+
+      # Order matters: build first, then stamp the tag version into all five
+      # package.json files (rewriting workspace:* to exact versions) right
+      # before publish. Stamped versions are never committed back to git.
+      - name: Build platform binaries and stamp versions
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "fleet release: building and stamping $VERSION"
+          FLEET_VERSION="$VERSION" node npm/build.mjs
+          node npm/stamp.mjs "$VERSION"
+
+      # Platforms first, wrapper last (ordering lives in npm/publish.mjs:
+      # the wrapper's optionalDependencies resolve at install time, so every
+      # platform tarball must be live first). Published with the npm CLI
+      # (not pnpm publish) — it is the reference OIDC implementation.
+      - name: Publish packages
+        run: node npm/publish.mjs
+
   goreleaser:
+    needs: npm-publish
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -33,41 +84,3 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  npm-publish:
-    runs-on: ubuntu-latest
-    needs: goreleaser
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: pnpm/setup@v2
-        with:
-          version: 11
-          runtime: node@22
-          cache: true
-          require-lockfile: true
-
-      # OIDC provenance needs npm >= 11.5.1; the runner image may lag.
-      - name: Upgrade npm
-        run: |
-          npm install -g npm@11
-          npm --version
-
-      # Order matters: build first, then stamp the tag version into all five
-      # package.json files (rewriting workspace:* to exact versions) right
-      # before publish. Stamped versions are never committed back to git.
-      - name: Build platform binaries and stamp versions
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "fleet release: building and stamping $VERSION"
-          FLEET_VERSION="$VERSION" node npm/build.mjs
-          node npm/stamp.mjs "$VERSION"
-
-      # Platforms first, wrapper last (ordering lives in npm/publish.mjs:
-      # the wrapper's optionalDependencies resolve at install time, so every
-      # platform tarball must be live first).
-      - name: Publish packages
-        run: node npm/publish.mjs
