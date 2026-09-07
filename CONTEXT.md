@@ -91,3 +91,7 @@ _Avoid_: uninstall, unpull
 **Redundant link**:
 A per-agent directory symlink to a skill already reachable through the canonical store (e.g. `~/.config/opencode/skills/<name>`). Sync removes these.
 _Avoid_: ghost link
+
+**Docs site**:
+The static Starlight site built from `www/` (output `www/dist/`), deployed on Vercel.
+_Avoid_: www, website, docs
