@@ -136,3 +136,16 @@ FLEET_HOME=$sandbox ./bin/fleet skill adopt my-skill --into /tmp/fake-customs/sk
 ```
 
 One trap: **`FLEET_HOME` sandboxes fleet, not the `skills` CLI.** `fleet skill update` shells out to the real `skills update -g -y`, which ignores `FLEET_HOME` and operates on your actual home. When testing `update` in a sandbox, put a stub `skills` executable earlier on `PATH` first.
+
+## Testing the fleet update notice
+
+Unstamped builds report `dev` from `fleet --version`, and `dev` never checks — stamp a version and seed the 24h cache so no network is involved:
+
+```sh
+go build -trimpath -ldflags "-X github.com/zzacong/fleet/internal/buildinfo.Version=0.1.0" -o /tmp/fleet-test ./cmd/fleet
+sandbox=$(mktemp -d)
+export FLEET_HOME=$sandbox/home && mkdir -p $FLEET_HOME/.config/fleet
+python3 -c "import json,datetime; json.dump({'version':1,'latest':'v0.2.0','checkedAt':datetime.datetime.now(datetime.timezone.utc).isoformat()}, open('$FLEET_HOME/.config/fleet/version-check.json','w'))"
+```
+
+Then: bare `FLEET_HOME=$FLEET_HOME /tmp/fleet-test skill ls` from a terminal shows the yellow box on stderr; piped (`| cat`, `> file`) or `--json` stays silent with clean stdout; `script -q /dev/null /tmp/fleet-test skill ls` forces a pseudo-terminal to see the box from a terminal-less context.
