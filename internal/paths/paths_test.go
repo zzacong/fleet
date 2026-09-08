@@ -135,13 +135,8 @@ func TestFromEnvIgnoresUnknownFileKeys(t *testing.T) {
 	if p.Home != home {
 		t.Errorf("Home = %q, want %q", p.Home, home)
 	}
-	tracked, err := p.TrackedRepos()
-	if err != nil {
-		t.Fatalf("TrackedRepos() error = %v", err)
-	}
-	if len(tracked) != 0 {
-		t.Errorf("TrackedRepos() = %q, want empty (old file key behaves as unset)", tracked)
-	}
+	// Tracked-set resolution over this config (unknown keys behave as
+	// unset) is covered at the trackedset seam.
 }
 
 func TestFromEnvDoesNotPickUpUnrelatedGitCheckout(t *testing.T) {
@@ -166,38 +161,6 @@ func TestFromEnvDoesNotPickUpUnrelatedGitCheckout(t *testing.T) {
 	}
 	if p.Home != home {
 		t.Errorf("Home = %q, want %q (an unrelated checkout must not leak in)", p.Home, home)
-	}
-}
-
-func TestTrackedReposResolvesRelativeEnvToAbsolute(t *testing.T) {
-	home := t.TempDir()
-	p := New(home)
-	repoDir := filepath.Join(t.TempDir(), "myrepo")
-	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// Create a temp wd and use a relative path to repoDir
-	wd := t.TempDir()
-	t.Chdir(wd)
-	rel, err := filepath.Rel(wd, repoDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if filepath.IsAbs(rel) {
-		t.Fatalf("expected relative path, got %q", rel)
-	}
-	t.Setenv("FLEET_REPO", rel)
-
-	got, err := p.TrackedRepos()
-	if err != nil {
-		t.Fatalf("TrackedRepos() error = %v", err)
-	}
-	absWant, _ := filepath.Abs(rel)
-	if len(got) != 1 || got[0] != absWant {
-		t.Errorf("TrackedRepos() = %q, want absolute [%q]", got, absWant)
-	}
-	if !filepath.IsAbs(got[0]) {
-		t.Errorf("TrackedRepos()[0] %q is not absolute", got[0])
 	}
 }
 
@@ -258,88 +221,5 @@ func TestFleetConfigFileAndFleetHomeSkillsAreFleetHomeAware(t *testing.T) {
 	}
 	if p2.FleetHomeSkills() != filepath.Join(sandbox, ".config", "fleet", "skills") {
 		t.Errorf("FleetHomeSkills() = %q, want derived from FLEET_HOME", p2.FleetHomeSkills())
-	}
-}
-
-func writeTrackedConfig(t *testing.T, p *Paths, body string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(p.FleetConfigFile()), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(p.FleetConfigFile(), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestTrackedReposEmptyWhenNothingSet(t *testing.T) {
-	p := New(t.TempDir())
-	t.Setenv("FLEET_REPO", "")
-	got, err := p.TrackedRepos()
-	if err != nil {
-		t.Fatalf("TrackedRepos() error = %v", err)
-	}
-	if len(got) != 0 {
-		t.Errorf("TrackedRepos() = %q, want empty", got)
-	}
-}
-
-func TestTrackedReposKeepsExplicitOrderThenScansFleetHomeAlphabetically(t *testing.T) {
-	home := t.TempDir()
-	p := New(home)
-	t.Setenv("FLEET_REPO", "")
-	outsideB := filepath.Join(t.TempDir(), "explicit-b")
-	outsideA := filepath.Join(t.TempDir(), "explicit-a")
-	writeTrackedConfig(t, p, `{"skillsRepos": ["`+outsideB+`", "`+outsideA+`"]}`)
-	for _, name := range []string{"zeta", "alpha", "mid"} {
-		if err := os.MkdirAll(filepath.Join(p.FleetReposDir(), name), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// A stray file in the checkout parent is not a slot.
-	if err := os.WriteFile(filepath.Join(p.FleetReposDir(), "notes.txt"), []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got, err := p.TrackedRepos()
-	if err != nil {
-		t.Fatalf("TrackedRepos() error = %v", err)
-	}
-	want := []string{
-		outsideB, outsideA,
-		filepath.Join(p.FleetReposDir(), "alpha"),
-		filepath.Join(p.FleetReposDir(), "mid"),
-		filepath.Join(p.FleetReposDir(), "zeta"),
-	}
-	if len(got) != len(want) {
-		t.Fatalf("TrackedRepos() = %q, want %q", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("TrackedRepos() = %q, want %q", got, want)
-		}
-	}
-}
-
-func TestTrackedReposPrependsEnvAndDedupes(t *testing.T) {
-	home := t.TempDir()
-	p := New(home)
-	envRepo := filepath.Join(t.TempDir(), "env-repo")
-	explicit := filepath.Join(t.TempDir(), "explicit")
-	writeTrackedConfig(t, p, `{"skillsRepos": ["`+envRepo+`", "`+explicit+`"]}`)
-	if err := os.MkdirAll(filepath.Join(p.FleetReposDir(), "auto"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("FLEET_REPO", envRepo)
-	got, err := p.TrackedRepos()
-	if err != nil {
-		t.Fatalf("TrackedRepos() error = %v", err)
-	}
-	want := []string{envRepo, explicit, filepath.Join(p.FleetReposDir(), "auto")}
-	if len(got) != len(want) {
-		t.Fatalf("TrackedRepos() = %q, want %q", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("TrackedRepos() = %q, want %q", got, want)
-		}
 	}
 }

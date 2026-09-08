@@ -13,10 +13,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zzacong/fleet/internal/config"
 	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/scan"
+	"github.com/zzacong/fleet/internal/trackedset"
 )
 
 // DeriveDirName derives a checkout directory name from a git URL: the
@@ -182,31 +182,6 @@ func gitErr(err error) error {
 	return err
 }
 
-// EnsureTracked applies the config-write rule: clones landing inside fleet
-// home write no config (auto-tracked by convention); clones outside append
-// their repo root to the explicit list (no duplicates, appending preserves
-// existing order). It reports whether the file was written.
-func EnsureTracked(p *paths.Paths, repoRoot string) (bool, error) {
-	clean := filepath.Clean(repoRoot)
-	if p.InsideFleetHome(clean) {
-		return false, nil
-	}
-	f, err := config.Load(p.FleetConfigFile())
-	if err != nil {
-		return false, err
-	}
-	for _, existing := range f.SkillsRepos() {
-		if filepath.Clean(existing) == clean {
-			return false, nil
-		}
-	}
-	f.SetSkillsRepos(append(f.SkillsRepos(), clean))
-	if err := config.Save(p.FleetConfigFile(), f); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
 // EnsureCollection ensures the collection subdir (<repo>/skills) exists,
 // creating it on demand for the empty-private-repo first run. It reports
 // whether the directory was created so the caller can warn.
@@ -301,7 +276,7 @@ func CloneNew(p *paths.Paths, runner Runner, url, dest string) (*Result, error) 
 		}
 		return nil, fmt.Errorf("clone %s into %s: %w", url, clean, err)
 	}
-	if _, err := EnsureTracked(p, clean); err != nil {
+	if _, err := trackedset.Remember(p, clean); err != nil {
 		return nil, err
 	}
 	collection, created, err := EnsureCollection(clean)
@@ -392,12 +367,12 @@ func PullOne(p *paths.Paths, runner Runner, url, dest string, force bool) (*Resu
 }
 
 // PullAll fast-forwards every tracked repo (explicit list order, then
-// fleet-home slots alphabetically, env prepended — via TrackedRepos).
+// fleet-home slots alphabetically, env prepended — via the tracked set).
 // Non-git entries become Skipped results with a warning; other per-repo
 // failures become Failed results and the run continues. Only a missing git
 // binary or a tracked-set load failure aborts the whole run.
 func PullAll(p *paths.Paths, runner Runner) ([]Result, error) {
-	repos, err := p.TrackedRepos()
+	repos, err := trackedset.List(p)
 	if err != nil {
 		return nil, err
 	}

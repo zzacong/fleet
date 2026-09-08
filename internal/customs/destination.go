@@ -17,6 +17,7 @@ import (
 	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/scan"
+	"github.com/zzacong/fleet/internal/trackedset"
 )
 
 // AdoptCandidates returns the ordered adopt destination candidates
@@ -25,7 +26,7 @@ import (
 // present, so zero tracked collections yields exactly one candidate and no
 // prompt is needed. Entries are deduped by cleaned path.
 func AdoptCandidates(p *paths.Paths) ([]string, error) {
-	repos, err := p.TrackedRepos()
+	collections, err := trackedset.CollectionDirs(p)
 	if err != nil {
 		return nil, err
 	}
@@ -39,18 +40,11 @@ func AdoptCandidates(p *paths.Paths) ([]string, error) {
 		seen[clean] = true
 		out = append(out, clean)
 	}
-	for _, repo := range repos {
-		add(filepath.Join(repo, "skills"))
+	for _, collection := range collections {
+		add(collection)
 	}
 	add(p.FleetHomeSkills())
 	return out, nil
-}
-
-// customHomes returns every custom-skills home to scan for double presence:
-// every tracked collection plus the always-offered fleet-home fallback, in
-// AdoptCandidates order.
-func customHomes(p *paths.Paths) ([]string, error) {
-	return AdoptCandidates(p)
 }
 
 // AdoptTo migrates one skill into the explicit target collection dir,
@@ -60,7 +54,7 @@ func customHomes(p *paths.Paths) ([]string, error) {
 // one source is a double-presence error to resolve by hand. An unscanned
 // target still proceeds (doctor warns elsewhere). No config file is written.
 func AdoptTo(p *paths.Paths, name, target string) (*Report, error) {
-	homes, err := customHomes(p)
+	homes, err := AdoptCandidates(p)
 	if err != nil {
 		return nil, err
 	}

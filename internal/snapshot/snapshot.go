@@ -17,6 +17,7 @@ import (
 	"github.com/zzacong/fleet/internal/outdated"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/scan"
+	"github.com/zzacong/fleet/internal/trackedset"
 )
 
 // SkillRow is one skill as a snapshot reports it: identity, origin,
@@ -55,7 +56,7 @@ func DefaultTreeClient(p *paths.Paths) outdated.TreeClient {
 
 // Build scans the canonical store, every tracked custom home (the explicit
 // repo list in order, then the auto-tracked fleet-home checkouts
-// alphabetically, via Paths.TrackedRepos), and the unversioned fleet-home
+// alphabetically, via the tracked set), and the unversioned fleet-home
 // fallback, then every installed harness's own config, and classifies each
 // installed skill's update state. Check failures come back as warnings, not
 // errors. Display precedence is explicit-list order, then fleet-home
@@ -72,10 +73,10 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 	if err != nil {
 		return nil, nil, fmt.Errorf("scan fleet home: %w", err)
 	}
-	// Tracked repos, highest precedence first (env, explicit list order,
-	// fleet-home checkouts alphabetical). Each root contributes its
-	// collection subdir when present; a missing collection is empty.
-	tracked, err := p.TrackedRepos()
+	// Tracked collections in precedence order (explicit list order, then
+	// fleet-home checkouts alphabetically, env prepended) via the tracked
+	// set; a missing collection is empty.
+	collections, err := trackedset.CollectionDirs(p)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve tracked repos: %w", err)
 	}
@@ -83,17 +84,10 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 		skills []scan.Skill
 	}
 	var trackedScans []repoScan
-	seenCollections := map[string]bool{}
-	for _, root := range tracked {
-		collection := filepath.Join(root, "skills")
-		clean := filepath.Clean(collection)
-		if seenCollections[clean] {
-			continue
-		}
-		seenCollections[clean] = true
+	for _, collection := range collections {
 		ss, err := scan.ScanStore(collection)
 		if err != nil {
-			return nil, nil, fmt.Errorf("scan tracked repo %s: %w", root, err)
+			return nil, nil, fmt.Errorf("scan tracked repo %s: %w", filepath.Dir(collection), err)
 		}
 		trackedScans = append(trackedScans, repoScan{skills: ss})
 	}

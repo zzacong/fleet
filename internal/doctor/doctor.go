@@ -19,6 +19,7 @@ import (
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/scan"
 	"github.com/zzacong/fleet/internal/state"
+	"github.com/zzacong/fleet/internal/trackedset"
 )
 
 // Kind classifies one finding.
@@ -199,10 +200,8 @@ func linkFinding(e harness.Entry) (Finding, bool) {
 // best-effort filter.
 func scanCustomIndex(p *paths.Paths) ([]string, map[string]string, map[string]bool) {
 	dirs := []string{p.FleetHomeSkills()}
-	if tracked, err := p.TrackedRepos(); err == nil {
-		for _, root := range tracked {
-			dirs = append(dirs, filepath.Join(root, "skills"))
-		}
+	if collections, err := trackedset.CollectionDirs(p); err == nil {
+		dirs = append(dirs, collections...)
 	}
 	seen := map[string]bool{}
 	byDir := map[string]string{}
@@ -455,7 +454,11 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 		filepath.Clean(p.SkillsStore()):     true,
 		filepath.Clean(p.FleetHomeSkills()): true,
 	}
-	tracked, err := p.TrackedRepos()
+	tracked, err := trackedset.List(p)
+	if err != nil {
+		return nil, fmt.Errorf("resolve tracked repos: %w", err)
+	}
+	collections, err := trackedset.CollectionDirs(p)
 	if err != nil {
 		return nil, fmt.Errorf("resolve tracked repos: %w", err)
 	}
@@ -467,8 +470,8 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 		}
 		envRoot = filepath.Clean(envRoot)
 	}
-	for _, root := range tracked {
-		collection := filepath.Join(root, "skills")
+	for i, root := range tracked {
+		collection := collections[i]
 		if reserved[filepath.Clean(collection)] {
 			continue
 		}

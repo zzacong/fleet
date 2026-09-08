@@ -16,6 +16,7 @@ import (
 	"github.com/zzacong/fleet/internal/config"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/pull"
+	"github.com/zzacong/fleet/internal/trackedset"
 )
 
 // Result describes a completed drop for the CLI layer: Repo is the cleaned
@@ -30,53 +31,6 @@ type Result struct {
 	Warning    string
 }
 
-// Resolve maps a `<path-or-name>` argument onto the tracked set: either an
-// exact repo-root path match or a fleet-home slot name. Relative paths are
-// absolutized against the working directory before matching. An unknown
-// target errors listing the tracked repos.
-func Resolve(p *paths.Paths, arg string) (string, error) {
-	repos, err := p.TrackedRepos()
-	if err != nil {
-		return "", err
-	}
-	clean := filepath.Clean(arg)
-	for _, r := range repos {
-		if r == clean {
-			return r, nil
-		}
-	}
-	if !filepath.IsAbs(clean) {
-		if abs, absErr := filepath.Abs(clean); absErr == nil {
-			for _, r := range repos {
-				if r == abs {
-					return r, nil
-				}
-			}
-		}
-		if slot := filepath.Join(p.FleetReposDir(), clean); slot != clean {
-			for _, r := range repos {
-				if r == slot {
-					return r, nil
-				}
-			}
-		}
-	}
-	return "", unknownTargetError(arg, repos)
-}
-
-func unknownTargetError(arg string, repos []string) error {
-	if len(repos) == 0 {
-		return fmt.Errorf("unknown target %q: no skills repos are tracked", arg)
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "unknown target %q: tracked repos:", arg)
-	for _, r := range repos {
-		b.WriteString("\n- ")
-		b.WriteString(r)
-	}
-	return errors.New(b.String())
-}
-
 // Drop resolves arg against the tracked set and drops it: explicit repos
 // are removed from the `skillsRepos` config list (order of the rest
 // preserved, disk untouched); fleet-home checkouts are deleted from disk.
@@ -86,7 +40,7 @@ func unknownTargetError(arg string, repos []string) error {
 // even when forced. It uses pull's Runner seam for the dirty check, so
 // pull.Exec works as the production runner.
 func Drop(p *paths.Paths, runner pull.Runner, arg string, force bool) (*Result, error) {
-	repo, err := Resolve(p, arg)
+	repo, err := trackedset.Resolve(p, arg)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +78,7 @@ func Drop(p *paths.Paths, runner pull.Runner, arg string, force bool) (*Result, 
 		}
 	}
 
-	if err := unlist(p, f, repo); err != nil {
+	if _, err := trackedset.Forget(p, repo); err != nil {
 		return nil, err
 	}
 	if fleetHome {
@@ -158,24 +112,4 @@ func trackedPersistently(p *paths.Paths, f *config.File, repo string) bool {
 		}
 	}
 	return false
-}
-
-// unlist removes repo from the explicit `skillsRepos` list, preserving the
-// order of the rest. It saves only when the entry was present, so dropping
-// a convention-tracked checkout never creates or rewrites the config file.
-func unlist(p *paths.Paths, f *config.File, repo string) error {
-	kept := make([]string, 0, len(f.SkillsRepos()))
-	removed := false
-	for _, existing := range f.SkillsRepos() {
-		if filepath.Clean(existing) == repo {
-			removed = true
-			continue
-		}
-		kept = append(kept, existing)
-	}
-	if !removed {
-		return nil
-	}
-	f.SetSkillsRepos(kept)
-	return config.Save(p.FleetConfigFile(), f)
 }

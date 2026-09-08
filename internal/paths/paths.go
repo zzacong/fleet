@@ -7,10 +7,7 @@ package paths
 import (
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
-
-	"github.com/zzacong/fleet/internal/config"
 )
 
 // Paths holds the home root every fleet path derives from.
@@ -38,65 +35,6 @@ func FromEnv() (*Paths, error) {
 		return nil, err
 	}
 	return New(home), nil
-}
-
-// TrackedRepos resolves the ordered tracked set of versioned custom-skill
-// homes (repo roots): the FLEET_REPO env override when set (prepended,
-// highest precedence; kept working in code only, never presented in help or
-// user docs), then the config's explicit non-fleet-home list in order, then
-// every fleet-home checkout slot present on disk (immediate child
-// directories of FleetReposDir, alphabetical by directory name). The retired
-// single-pointer file key is never read: old-key-only configs resolve as if
-// unset. Entries are deduped by cleaned path with the first occurrence
-// winning. A missing checkout parent means no auto-tracked slots, not an
-// error. The unversioned fleet-home fallback (FleetHomeSkills) is not part
-// of the set; display and adopt layers add it where they need it.
-func (p *Paths) TrackedRepos() ([]string, error) {
-	var out []string
-	seen := map[string]bool{}
-	add := func(path string) {
-		if path == "" {
-			return
-		}
-		clean := filepath.Clean(path)
-		if seen[clean] {
-			return
-		}
-		seen[clean] = true
-		out = append(out, clean)
-	}
-	if env := os.Getenv("FLEET_REPO"); env != "" {
-		abs, err := filepath.Abs(env)
-		if err != nil {
-			return nil, err
-		}
-		add(abs)
-	}
-	f, err := config.Load(p.FleetConfigFile())
-	if err != nil {
-		return nil, err
-	}
-	for _, repo := range f.SkillsRepos() {
-		add(repo)
-	}
-	entries, err := os.ReadDir(p.FleetReposDir())
-	if err != nil {
-		if os.IsNotExist(err) {
-			return out, nil
-		}
-		return nil, err
-	}
-	var names []string
-	for _, e := range entries {
-		if e.IsDir() {
-			names = append(names, e.Name())
-		}
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		add(filepath.Join(p.FleetReposDir(), name))
-	}
-	return out, nil
 }
 
 // DiscoverRepo walks up from startDir to the filesystem root and returns
