@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/zzacong/fleet/internal/customs"
 	"github.com/zzacong/fleet/internal/drop"
 	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/paths"
@@ -49,14 +50,11 @@ func newSkillDropCmd(p *paths.Paths) *cobra.Command {
 			if res.Warning != "" {
 				fmt.Fprintf(errOut, "warning: %s\n", res.Warning) //nolint:errcheck
 			}
-			unwired, err := harness.UnwireSkillSource(p, res.Collection)
+			wd, err := customs.Withdraw(p, res.Collection)
 			if err != nil {
 				return err
 			}
-			unlinked, err := harness.RemoveCustomLinks(p, res.Collection)
-			if err != nil {
-				return err
-			}
+			unwired, unlinked := wd.Unwired, wd.Unlinked
 			if err := runSyncTo(out, p); err != nil {
 				return err
 			}

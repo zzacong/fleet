@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/skillindex"
 )
@@ -95,14 +94,10 @@ func adoptInto(p *paths.Paths, idx *skillindex.Index, name, target string) (*Rep
 		}
 	}
 
-	wired, err := harness.WireSkillSource(p, wireTarget)
+	vis, err := MakeVisible(p, wireTarget)
 	if err != nil {
 		return nil, err
 	}
-	linked, err := harness.LinkCustomSkill(p, rep.Skill, rep.To)
-	if err != nil {
-		return nil, err
-	}
-	rep.Wired, rep.Linked = wired, linked
+	rep.Wired, rep.Linked = vis.Wired, vis.Linked
 	return rep, nil
 }

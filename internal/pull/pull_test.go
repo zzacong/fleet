@@ -362,7 +362,7 @@ func contains(b []byte, s string) bool { return containsStr(string(b), s) }
 
 func containsStr(hay, needle string) bool { return strings.Contains(hay, needle) }
 
-func TestWireHomeLinksCollectionSkills(t *testing.T) {
+func TestUpdateExistingMakesCollectionVisible(t *testing.T) {
 	p := pullTestHome(t)
 	repo := filepath.Join(p.FleetReposDir(), "team")
 	collection := filepath.Join(repo, "skills", "my-notes")

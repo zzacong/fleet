@@ -13,9 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zzacong/fleet/internal/harness"
+	"github.com/zzacong/fleet/internal/customs"
 	"github.com/zzacong/fleet/internal/paths"
-	"github.com/zzacong/fleet/internal/scan"
 	"github.com/zzacong/fleet/internal/trackedset"
 )
 
@@ -237,25 +236,6 @@ func IsGitRepo(path string) bool {
 	return err == nil
 }
 
-// WireHome wires the collection dir into the config-path harnesses and
-// links every skill it holds for the link-based harnesses, so pulled
-// customs are discoverable immediately. It mirrors adopt's tail.
-func WireHome(p *paths.Paths, collectionDir string) error {
-	if _, err := harness.WireSkillSource(p, collectionDir); err != nil {
-		return err
-	}
-	skills, err := scan.ScanStore(collectionDir)
-	if err != nil {
-		return err
-	}
-	for _, s := range skills {
-		if _, err := harness.LinkCustomSkill(p, s.Dir, filepath.Join(collectionDir, s.Dir)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // CloneNew fresh-clones url into dest (which must not exist), registers
 // outside-home checkouts, ensures the collection, and wires the home. It
 // returns a Cloned result; CollectionCreated warns on the empty-repo
@@ -283,7 +263,7 @@ func CloneNew(p *paths.Paths, runner Runner, url, dest string) (*Result, error) 
 	if err != nil {
 		return nil, err
 	}
-	if err := WireHome(p, collection); err != nil {
+	if _, err := customs.MakeVisible(p, collection); err != nil {
 		return nil, err
 	}
 	return &Result{Repo: clean, Outcome: OutcomeCloned, CollectionCreated: created}, nil
@@ -343,7 +323,7 @@ func UpdateExisting(p *paths.Paths, runner Runner, url, repoPath string, force b
 	if err != nil {
 		return nil, err
 	}
-	if err := WireHome(p, collection); err != nil {
+	if _, err := customs.MakeVisible(p, collection); err != nil {
 		return nil, err
 	}
 	return &Result{Repo: clean, Outcome: outcome, CollectionCreated: created}, nil
