@@ -14,7 +14,6 @@ package customs
 
 import (
 	"github.com/zzacong/fleet/internal/harness"
-	"github.com/zzacong/fleet/internal/scan"
 )
 
 // Report is what one adopt run did. Empty slices mean nothing to do.
@@ -33,19 +32,4 @@ type Report struct {
 	Wired []harness.WireResult
 	// Linked lists the managed links created or repointed this run.
 	Linked []harness.LinkResult
-}
-
-// findSkill matches by directory name first, then by frontmatter name.
-func findSkill(skills []scan.Skill, name string) *scan.Skill {
-	for i := range skills {
-		if skills[i].Dir == name {
-			return &skills[i]
-		}
-	}
-	for i := range skills {
-		if skills[i].Name == name {
-			return &skills[i]
-		}
-	}
-	return nil
 }

@@ -70,55 +70,6 @@ func TestSameRemoteIgnoresTrailingSlashAndDotGit(t *testing.T) {
 	}
 }
 
-func TestEnsureTrackedInsideFleetHomeWritesNoConfig(t *testing.T) {
-	home := t.TempDir()
-	p := newTestPaths(home)
-	inside := filepath.Join(p.FleetReposDir(), "customs")
-	if err := os.MkdirAll(inside, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	wrote, err := EnsureTracked(p, inside)
-	if err != nil {
-		t.Fatalf("EnsureTracked() error = %v", err)
-	}
-	if wrote {
-		t.Error("EnsureTracked inside fleet home should not write")
-	}
-	if _, err := os.Stat(p.FleetConfigFile()); !os.IsNotExist(err) {
-		t.Errorf("config file should not exist, stat err = %v", err)
-	}
-}
-
-func TestEnsureTrackedOutsideAppendsOnceWithoutReordering(t *testing.T) {
-	home := t.TempDir()
-	p := newTestPaths(home)
-	outsideA := filepath.Join(t.TempDir(), "a")
-	outsideB := filepath.Join(t.TempDir(), "b")
-	for _, dir := range []string{outsideA, outsideB} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := EnsureTracked(p, outsideA); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := EnsureTracked(p, outsideB); err != nil {
-		t.Fatal(err)
-	}
-	// Re-ensuring an existing entry never reorders.
-	if _, err := EnsureTracked(p, outsideA); err != nil {
-		t.Fatal(err)
-	}
-	f, err := config.Load(p.FleetConfigFile())
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := f.SkillsRepos()
-	if len(got) != 2 || got[0] != outsideA || got[1] != outsideB {
-		t.Errorf("SkillsRepos() = %q, want [%q %q] in order", got, outsideA, outsideB)
-	}
-}
-
 func TestEnsureCollectionCreatesWithFlag(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(root, 0o755); err != nil {
@@ -411,7 +362,7 @@ func contains(b []byte, s string) bool { return containsStr(string(b), s) }
 
 func containsStr(hay, needle string) bool { return strings.Contains(hay, needle) }
 
-func TestWireHomeLinksCollectionSkills(t *testing.T) {
+func TestUpdateExistingMakesCollectionVisible(t *testing.T) {
 	p := pullTestHome(t)
 	repo := filepath.Join(p.FleetReposDir(), "team")
 	collection := filepath.Join(repo, "skills", "my-notes")

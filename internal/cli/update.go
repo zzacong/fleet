@@ -11,17 +11,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/zzacong/fleet/internal/customs"
 	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/scan"
+	"github.com/zzacong/fleet/internal/skillindex"
 	"github.com/zzacong/fleet/internal/skillscli"
 	"github.com/zzacong/fleet/internal/state"
 )
@@ -93,30 +91,22 @@ func validateUpdateTarget(p *paths.Paths, name string, storeSkills []scan.Skill)
 }
 
 func isCustomSkill(p *paths.Paths, name string) (bool, error) {
-	// Every custom home: each tracked collection plus the fleet-home
-	// fallback, in adopt-candidate order.
-	homes, err := customs.AdoptCandidates(p)
+	// Every custom home through the skill index: each tracked
+	// collection plus the fleet-home fallback, in precedence order.
+	idx, errs, err := skillindex.Load(p)
 	if err != nil {
 		return false, err
 	}
-	for _, home := range homes {
-		// Direct check for <home>/<name>/SKILL.md — the common case
-		// where Dir == Name.
-		if _, err := os.Stat(filepath.Join(home, name, "SKILL.md")); err == nil {
+	for _, home := range idx.CustomHomes() {
+		if serr, ok := errs[home]; ok {
+			return false, serr
+		}
+	}
+	// The canonical store is not a custom home: a store-only hit means
+	// installed, not custom.
+	for _, h := range idx.Lookup(name) {
+		if h.Home != idx.Store() {
 			return true, nil
-		} else if !os.IsNotExist(err) {
-			return false, err
-		}
-		// Frontmatter name may differ from directory name; scan the home
-		// and match by Skill.Name.
-		skills, err := scan.ScanStore(home)
-		if err != nil {
-			return false, err
-		}
-		for _, s := range skills {
-			if s.Name == name {
-				return true, nil
-			}
 		}
 	}
 	return false, nil

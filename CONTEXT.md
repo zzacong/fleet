@@ -40,9 +40,9 @@ _Avoid_: fleet repo, customs repo
 The `skills/` directory at the root of a customs repo (`<repo>/skills/`). Each immediate child with a `SKILL.md` is a custom skill. Every tracked repo contributes its collection subdir when present; in the monorepo that is this checkout, `skills/` at its root is the publishable collection skills.sh points at.
 _Avoid_: repo skills, custom skills dir
 
-**Skills repo (retired term)**:
-The old model: exactly one versioned home via the single `skillsRepo` pointer (`FLEET_REPO` env > config file, no walk-up). Superseded by the tracked set; the file key still loads as a preserved unknown but is never interpreted, never validated, and never migrated in code. Do not use in new docs or help text.
-_Avoid_: fleet repo, designated repo, customs repo
+**Skill index**:
+The precedence-ordered union of every skill source: the canonical store, every tracked collection in tracked-set order, then the fleet-home fallback. Keyed by skill directory (the identity the lockfile, links, and moves act on), with lookup by frontmatter name for harness-facing matching. Snapshot, doctor, and adopt all read through it instead of scanning homes themselves.
+_Avoid_: skill list, source union
 
 **Fleet home**:
 `~/.config/fleet/` — fleet's own config dir. Holds `state.json` (enablement), `config.json` (machine-local: the explicit repo list plus the adopt target), `skills/` (unversioned custom-skill fallback), and `repos/` (auto-tracked customs checkouts). `FLEET_HOME` overrides the home root.

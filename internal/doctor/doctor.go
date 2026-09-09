@@ -18,7 +18,9 @@ import (
 	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/scan"
+	"github.com/zzacong/fleet/internal/skillindex"
 	"github.com/zzacong/fleet/internal/state"
+	"github.com/zzacong/fleet/internal/trackedset"
 )
 
 // Kind classifies one finding.
@@ -122,7 +124,7 @@ func Analyze(p *paths.Paths) (Report, error) {
 	// Custom skills are recognized across every custom home (fallback and
 	// tracked repos) so managed links into any of them are filtered from
 	// unknown entries.
-	customHomes, customByDir, customByName := scanCustomIndex(p)
+	customHomes, customByDir, customByName := customLinkIndex(p)
 	for _, d := range harness.SkillDirs(p) {
 		entries, err := harness.ScanSkillDir(d, p.SkillsStore())
 		if err != nil {
@@ -192,35 +194,33 @@ func linkFinding(e harness.Entry) (Finding, bool) {
 	return f, true
 }
 
-// scanCustomIndex scans every custom home — the fleet-home fallback and
-// each tracked repo's collection — and returns the union for managed-link
-// filtering: the home dirs, skills keyed by directory, and frontmatter
-// names. Stores that fail to scan are skipped, mirroring the old
-// best-effort filter.
-func scanCustomIndex(p *paths.Paths) ([]string, map[string]string, map[string]bool) {
-	dirs := []string{p.FleetHomeSkills()}
-	if tracked, err := p.TrackedRepos(); err == nil {
-		for _, root := range tracked {
-			dirs = append(dirs, filepath.Join(root, "skills"))
-		}
-	}
-	seen := map[string]bool{}
+// customLinkIndex maps every custom home — the fleet-home fallback and
+// each tracked repo's collection — for managed-link filtering: the home
+// dirs, skills keyed by directory, and frontmatter names. Unreadable
+// homes and sets only narrow the filter, mirroring the old best-effort
+// scan.
+func customLinkIndex(p *paths.Paths) ([]string, map[string]string, map[string]bool) {
 	byDir := map[string]string{}
 	byName := map[string]bool{}
-	var homes []string
-	for _, dir := range dirs {
-		clean := filepath.Clean(dir)
-		if seen[clean] {
-			continue
+	idx, _, err := skillindex.Load(p)
+	if err != nil {
+		// Tracked set unreadable: the fallback alone, scanned
+		// best-effort.
+		home := filepath.Clean(p.FleetHomeSkills())
+		if skills, serr := scan.ScanStore(home); serr == nil {
+			for _, s := range skills {
+				byDir[s.Dir] = s.Name
+				byName[s.Name] = true
+			}
 		}
-		seen[clean] = true
-		homes = append(homes, dir)
-		skills, err := scan.ScanStore(dir)
-		if err != nil {
-			continue
-		}
-		for _, s := range skills {
-			byDir[s.Dir] = s.Name
+		return []string{home}, byDir, byName
+	}
+	homes := idx.CustomHomes()
+	for _, home := range homes {
+		for _, s := range idx.Skills(home) {
+			if _, ok := byDir[s.Dir]; !ok {
+				byDir[s.Dir] = s.Name
+			}
 			byName[s.Name] = true
 		}
 	}
@@ -437,12 +437,17 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 		skills    []scan.Skill
 	}
 	var sources []source
+	// Every home scanned once through the skill index; the tracked-set
+	// calls below stay for source keys and message labels only.
+	idx, errs, err := skillindex.Load(p)
+	if err != nil {
+		return nil, fmt.Errorf("resolve tracked repos: %w", err)
+	}
 	addSource := func(key, label, dir string) error {
-		ss, err := scan.ScanStore(dir)
-		if err != nil {
-			return fmt.Errorf("scan %s: %w", label, err)
+		if serr, ok := errs[filepath.Clean(dir)]; ok {
+			return fmt.Errorf("scan %s: %w", label, serr)
 		}
-		sources = append(sources, source{key: key, label: label, skillsDir: dir, skills: ss})
+		sources = append(sources, source{key: key, label: label, skillsDir: dir, skills: idx.Skills(dir)})
 		return nil
 	}
 	if err := addSource("canonical", "the canonical store", p.SkillsStore()); err != nil {
@@ -455,7 +460,11 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 		filepath.Clean(p.SkillsStore()):     true,
 		filepath.Clean(p.FleetHomeSkills()): true,
 	}
-	tracked, err := p.TrackedRepos()
+	tracked, err := trackedset.List(p)
+	if err != nil {
+		return nil, fmt.Errorf("resolve tracked repos: %w", err)
+	}
+	collections, err := trackedset.CollectionDirs(p)
 	if err != nil {
 		return nil, fmt.Errorf("resolve tracked repos: %w", err)
 	}
@@ -467,8 +476,8 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 		}
 		envRoot = filepath.Clean(envRoot)
 	}
-	for _, root := range tracked {
-		collection := filepath.Join(root, "skills")
+	for i, root := range tracked {
+		collection := collections[i]
 		if reserved[filepath.Clean(collection)] {
 			continue
 		}

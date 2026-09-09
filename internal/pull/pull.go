@@ -13,10 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zzacong/fleet/internal/config"
-	"github.com/zzacong/fleet/internal/harness"
+	"github.com/zzacong/fleet/internal/customs"
 	"github.com/zzacong/fleet/internal/paths"
-	"github.com/zzacong/fleet/internal/scan"
+	"github.com/zzacong/fleet/internal/trackedset"
 )
 
 // DeriveDirName derives a checkout directory name from a git URL: the
@@ -182,31 +181,6 @@ func gitErr(err error) error {
 	return err
 }
 
-// EnsureTracked applies the config-write rule: clones landing inside fleet
-// home write no config (auto-tracked by convention); clones outside append
-// their repo root to the explicit list (no duplicates, appending preserves
-// existing order). It reports whether the file was written.
-func EnsureTracked(p *paths.Paths, repoRoot string) (bool, error) {
-	clean := filepath.Clean(repoRoot)
-	if p.InsideFleetHome(clean) {
-		return false, nil
-	}
-	f, err := config.Load(p.FleetConfigFile())
-	if err != nil {
-		return false, err
-	}
-	for _, existing := range f.SkillsRepos() {
-		if filepath.Clean(existing) == clean {
-			return false, nil
-		}
-	}
-	f.SetSkillsRepos(append(f.SkillsRepos(), clean))
-	if err := config.Save(p.FleetConfigFile(), f); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
 // EnsureCollection ensures the collection subdir (<repo>/skills) exists,
 // creating it on demand for the empty-private-repo first run. It reports
 // whether the directory was created so the caller can warn.
@@ -262,25 +236,6 @@ func IsGitRepo(path string) bool {
 	return err == nil
 }
 
-// WireHome wires the collection dir into the config-path harnesses and
-// links every skill it holds for the link-based harnesses, so pulled
-// customs are discoverable immediately. It mirrors adopt's tail.
-func WireHome(p *paths.Paths, collectionDir string) error {
-	if _, err := harness.WireSkillSource(p, collectionDir); err != nil {
-		return err
-	}
-	skills, err := scan.ScanStore(collectionDir)
-	if err != nil {
-		return err
-	}
-	for _, s := range skills {
-		if _, err := harness.LinkCustomSkill(p, s.Dir, filepath.Join(collectionDir, s.Dir)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // CloneNew fresh-clones url into dest (which must not exist), registers
 // outside-home checkouts, ensures the collection, and wires the home. It
 // returns a Cloned result; CollectionCreated warns on the empty-repo
@@ -301,14 +256,14 @@ func CloneNew(p *paths.Paths, runner Runner, url, dest string) (*Result, error) 
 		}
 		return nil, fmt.Errorf("clone %s into %s: %w", url, clean, err)
 	}
-	if _, err := EnsureTracked(p, clean); err != nil {
+	if _, err := trackedset.Remember(p, clean); err != nil {
 		return nil, err
 	}
 	collection, created, err := EnsureCollection(clean)
 	if err != nil {
 		return nil, err
 	}
-	if err := WireHome(p, collection); err != nil {
+	if _, err := customs.MakeVisible(p, collection); err != nil {
 		return nil, err
 	}
 	return &Result{Repo: clean, Outcome: OutcomeCloned, CollectionCreated: created}, nil
@@ -368,7 +323,7 @@ func UpdateExisting(p *paths.Paths, runner Runner, url, repoPath string, force b
 	if err != nil {
 		return nil, err
 	}
-	if err := WireHome(p, collection); err != nil {
+	if _, err := customs.MakeVisible(p, collection); err != nil {
 		return nil, err
 	}
 	return &Result{Repo: clean, Outcome: outcome, CollectionCreated: created}, nil
@@ -392,12 +347,12 @@ func PullOne(p *paths.Paths, runner Runner, url, dest string, force bool) (*Resu
 }
 
 // PullAll fast-forwards every tracked repo (explicit list order, then
-// fleet-home slots alphabetically, env prepended — via TrackedRepos).
+// fleet-home slots alphabetically, env prepended — via the tracked set).
 // Non-git entries become Skipped results with a warning; other per-repo
 // failures become Failed results and the run continues. Only a missing git
 // binary or a tracked-set load failure aborts the whole run.
 func PullAll(p *paths.Paths, runner Runner) ([]Result, error) {
-	repos, err := p.TrackedRepos()
+	repos, err := trackedset.List(p)
 	if err != nil {
 		return nil, err
 	}

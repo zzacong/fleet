@@ -10,6 +10,7 @@ import (
 	"github.com/zzacong/fleet/internal/config"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/pull"
+	"github.com/zzacong/fleet/internal/trackedset"
 )
 
 // stubRunner is the injected git seam for drop tests: it answers `git
@@ -58,67 +59,11 @@ func trackExplicit(t *testing.T, p *paths.Paths, repos ...string) {
 
 func trackedOrFail(t *testing.T, p *paths.Paths) []string {
 	t.Helper()
-	repos, err := p.TrackedRepos()
+	repos, err := trackedset.List(p)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return repos
-}
-
-func TestResolveExactPath(t *testing.T) {
-	p := dropTestPaths(t)
-	outside := filepath.Join(t.TempDir(), "customs")
-	if err := os.MkdirAll(outside, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	trackExplicit(t, p, outside)
-
-	got, err := Resolve(p, outside)
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if got != filepath.Clean(outside) {
-		t.Errorf("Resolve() = %q, want %q", got, outside)
-	}
-}
-
-func TestResolveSlotName(t *testing.T) {
-	p := dropTestPaths(t)
-	slot := filepath.Join(p.FleetReposDir(), "team-customs")
-	if err := os.MkdirAll(slot, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := Resolve(p, "team-customs")
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if got != filepath.Clean(slot) {
-		t.Errorf("Resolve() = %q, want %q", got, slot)
-	}
-}
-
-func TestResolveUnknownListsTracked(t *testing.T) {
-	p := dropTestPaths(t)
-	outside := filepath.Join(t.TempDir(), "customs")
-	if err := os.MkdirAll(outside, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	trackExplicit(t, p, outside)
-	slot := filepath.Join(p.FleetReposDir(), "team")
-	if err := os.MkdirAll(slot, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := Resolve(p, filepath.Join(t.TempDir(), "nope"))
-	if err == nil {
-		t.Fatal("Resolve(unknown) should fail")
-	}
-	for _, want := range []string{filepath.Clean(outside), filepath.Clean(slot)} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error should list tracked repo %q, got: %v", want, err)
-		}
-	}
 }
 
 func TestDropExplicitUnlistsPreservingOrderDiskUntouched(t *testing.T) {
@@ -357,25 +302,6 @@ func TestDropStatusErrorFails(t *testing.T) {
 	}
 	if _, err := os.Stat(slot); err != nil {
 		t.Errorf("failed drop deleted the checkout: %v", err)
-	}
-}
-
-func TestResolveRelativePath(t *testing.T) {
-	p := dropTestPaths(t)
-	parent := t.TempDir()
-	outside := filepath.Join(parent, "customs")
-	if err := os.MkdirAll(outside, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	trackExplicit(t, p, outside)
-	t.Chdir(parent)
-
-	got, err := Resolve(p, "customs")
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if got != filepath.Clean(outside) {
-		t.Errorf("Resolve() = %q, want %q", got, outside)
 	}
 }
 

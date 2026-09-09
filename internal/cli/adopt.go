@@ -22,6 +22,7 @@ import (
 	"github.com/zzacong/fleet/internal/customs"
 	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/skillindex"
 	fleetsync "github.com/zzacong/fleet/internal/sync"
 )
 
@@ -127,7 +128,7 @@ func resolveAdoptTarget(cmd *cobra.Command, p *paths.Paths, into string) (string
 	if f.AdoptTarget() != "" {
 		return f.AdoptTarget(), nil
 	}
-	candidates, err := customs.AdoptCandidates(p)
+	candidates, err := skillindex.CustomHomes(p)
 	if err != nil {
 		return "", err
 	}
