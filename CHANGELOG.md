@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/zzacong/fleet/compare/v0.3.0...v0.3.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* **customs:** link every collection skill when making customs visible ([#14](https://github.com/zzacong/fleet/issues/14)) ([d0ead7b](https://github.com/zzacong/fleet/commit/d0ead7ba40ec157b6a26b8d0b9b0e83afb41e5ed))
+
 ## [0.3.0](https://github.com/zzacong/fleet/compare/v0.2.1...v0.3.0) (2026-09-07)
 
 
