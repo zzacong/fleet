@@ -19,5 +19,5 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@v5
         with:
-          release-type: go
+          config-file: release-please-config.json
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
