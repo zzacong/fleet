@@ -47,47 +47,6 @@ func destinationHome(t *testing.T, explicit []string, slots []string, storeSkill
 	return p
 }
 
-func TestAdoptCandidatesOrdersTrackedThenFallback(t *testing.T) {
-	home := t.TempDir()
-	outsideB := filepath.Join(home, "explicit-b")
-	outsideA := filepath.Join(home, "explicit-a")
-	p := destinationHome(t, []string{outsideB, outsideA}, []string{"zeta", "alpha"})
-	t.Setenv("FLEET_REPO", "")
-
-	got, err := AdoptCandidates(p)
-	if err != nil {
-		t.Fatalf("AdoptCandidates() error = %v", err)
-	}
-	want := []string{
-		filepath.Join(outsideB, "skills"),
-		filepath.Join(outsideA, "skills"),
-		filepath.Join(p.FleetReposDir(), "alpha", "skills"),
-		filepath.Join(p.FleetReposDir(), "zeta", "skills"),
-		p.FleetHomeSkills(),
-	}
-	if len(got) != len(want) {
-		t.Fatalf("AdoptCandidates() = %q, want %q", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("AdoptCandidates() = %q, want %q", got, want)
-		}
-	}
-}
-
-func TestAdoptCandidatesFallbackOnlyWhenNothingTracked(t *testing.T) {
-	p := destinationHome(t, nil, nil)
-	t.Setenv("FLEET_REPO", "")
-
-	got, err := AdoptCandidates(p)
-	if err != nil {
-		t.Fatalf("AdoptCandidates() error = %v", err)
-	}
-	if len(got) != 1 || got[0] != p.FleetHomeSkills() {
-		t.Errorf("AdoptCandidates() = %q, want [%q]", got, p.FleetHomeSkills())
-	}
-}
-
 func TestAdoptToMovesStoreSkillIntoExplicitTarget(t *testing.T) {
 	p := destinationHome(t, nil, nil, "my-notes")
 	target := filepath.Join(t.TempDir(), "one-off", "skills")

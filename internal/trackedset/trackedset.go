@@ -10,8 +10,8 @@
 // they need it.
 //
 // This is the only writer of the explicit list (Remember/Forget) and the
-// only reader of the ordering (List/CollectionDirs/Resolve). Snapshot,
-// doctor, adopt, pull, and drop call in instead of re-deriving it.
+// only reader of the ordering (List/CollectionDirs/Resolve). The skill
+// index, pull, and drop call in instead of re-deriving it.
 package trackedset
 
 import (

@@ -17,7 +17,7 @@ import (
 	"github.com/zzacong/fleet/internal/outdated"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/scan"
-	"github.com/zzacong/fleet/internal/trackedset"
+	"github.com/zzacong/fleet/internal/skillindex"
 )
 
 // SkillRow is one skill as a snapshot reports it: identity, origin,
@@ -65,49 +65,40 @@ func DefaultTreeClient(p *paths.Paths) outdated.TreeClient {
 // the highest-precedence source. The other copy is not shown — its existence
 // is doctor drift.
 func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Report, []string, error) {
-	storeSkills, err := scan.ScanStore(p.SkillsStore())
-	if err != nil {
-		return nil, nil, fmt.Errorf("scan canonical store: %w", err)
-	}
-	fleetSkills, err := scan.ScanStore(p.FleetHomeSkills())
-	if err != nil {
-		return nil, nil, fmt.Errorf("scan fleet home: %w", err)
-	}
-	// Tracked collections in precedence order (explicit list order, then
-	// fleet-home checkouts alphabetically, env prepended) via the tracked
-	// set; a missing collection is empty.
-	collections, err := trackedset.CollectionDirs(p)
+	// Every skill source scanned once through the skill index (the
+	// canonical store, every tracked collection in precedence order,
+	// then the fleet-home fallback). Per-home scan failures fail the
+	// build, as before.
+	idx, errs, err := skillindex.Load(p)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve tracked repos: %w", err)
 	}
-	type repoScan struct {
-		skills []scan.Skill
+	if serr, ok := errs[idx.Store()]; ok {
+		return nil, nil, fmt.Errorf("scan canonical store: %w", serr)
 	}
-	var trackedScans []repoScan
-	for _, collection := range collections {
-		ss, err := scan.ScanStore(collection)
-		if err != nil {
-			return nil, nil, fmt.Errorf("scan tracked repo %s: %w", filepath.Dir(collection), err)
+	if serr, ok := errs[idx.Fallback()]; ok {
+		return nil, nil, fmt.Errorf("scan fleet home: %w", serr)
+	}
+	for _, home := range idx.CustomHomes() {
+		if home == idx.Fallback() {
+			continue
 		}
-		trackedScans = append(trackedScans, repoScan{skills: ss})
+		if serr, ok := errs[home]; ok {
+			return nil, nil, fmt.Errorf("scan tracked repo %s: %w", filepath.Dir(home), serr)
+		}
 	}
 	// Union with precedence tracked order > fleet-home > canonical: apply
 	// lowest first so the highest-precedence source wins.
-	skillsByName := make(map[string]scan.Skill, len(storeSkills)+len(fleetSkills))
+	skillsByName := make(map[string]scan.Skill)
 	customHomeNames := map[string]bool{}
-	for _, s := range storeSkills {
-		if _, ok := skillsByName[s.Name]; !ok {
+	homes := idx.Homes()
+	for i := len(homes) - 1; i >= 0; i-- {
+		home := homes[i]
+		for _, s := range idx.Skills(home) {
 			skillsByName[s.Name] = s
-		}
-	}
-	for _, s := range fleetSkills {
-		skillsByName[s.Name] = s
-		customHomeNames[s.Name] = true
-	}
-	for i := len(trackedScans) - 1; i >= 0; i-- {
-		for _, s := range trackedScans[i].skills {
-			skillsByName[s.Name] = s
-			customHomeNames[s.Name] = true
+			if home != idx.Store() {
+				customHomeNames[s.Name] = true
+			}
 		}
 	}
 	skills := make([]scan.Skill, 0, len(skillsByName))
