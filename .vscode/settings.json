@@ -12,5 +12,8 @@
   },
   "[go]": {
     "editor.defaultFormatter": "golang.go"
+  },
+  "[skill]": {
+    "editor.formatOnSave": false
   }
 }
