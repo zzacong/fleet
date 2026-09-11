@@ -5,10 +5,20 @@ description: Every supported way to install fleet.
 
 # Installation
 
-macOS or Linux, arm64 or x86_64. Three ways to install the same single static
-binary with no runtime dependencies: a shell script, npm, or Go. Release
-builds report their version through `fleet --version`; `go install` builds
-report `dev`.
+Three ways to install the same single static binary with no runtime
+dependencies: a shell script, npm, or Go. Release builds report their version
+through `fleet --version`; `go install` builds report `dev`.
+
+## Supported OS
+
+| OS      | Supported |
+| ------- | --------- |
+| macOS   | ✅        |
+| Linux   | ✅        |
+| Windows | ❌        |
+
+Every install method below targets macOS and Linux, and the release artifacts
+cover arm64 and x86_64 builds for both.
 
 ## Script
 

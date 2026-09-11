@@ -44,9 +44,26 @@ Fleet keeps a single state file as the source of truth and projects it into each
 
 ## Supported harnesses
 
-Fleet supports six harnesses: OpenCode, Pi, Codex, Claude Code, Cursor, and
-Bob. See the [per-harness reference](/harnesses/) for files touched, written
+| Harness     | Per-skill off switch |
+| ----------- | -------------------- |
+| OpenCode    | ✅                   |
+| Pi          | ✅                   |
+| Codex       | ✅                   |
+| Claude Code | ✅                   |
+| Cursor      | ❌                   |
+| IBM Bob     | ❌                   |
+
+Cursor and Bob read the canonical store natively and have no per-skill off
+switch. See the [per-harness reference](/harnesses/) for files touched, written
 shapes, and limitations.
+
+## Supported OS
+
+| OS      | Supported |
+| ------- | --------- |
+| macOS   | ✅        |
+| Linux   | ✅        |
+| Windows | ❌        |
 
 ## Documentation
 

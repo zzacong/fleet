@@ -10,13 +10,38 @@ Fleet manages agent skills across AI coding agents — OpenCode, Codex, Claude C
 
 Regenerate with `pnpm --filter www demo:render` (`www/scripts/demo/render.mjs` renders the SVG terminal windows; content mirrors the `fleet skill ls` shape in `www/src/content/docs/cli.md` and the matrix glyphs in `internal/tui/view.go`).
 
+## Supported OS
+
+| OS      | Supported |
+| ------- | --------- |
+| macOS   | ✅        |
+| Linux   | ✅        |
+| Windows | ❌        |
+
+Fleet ships arm64 and x86_64 builds for macOS and Linux.
+
+## Supported harnesses
+
+| Harness     | Per-skill off switch |
+| ----------- | -------------------- |
+| OpenCode    | ✅                   |
+| Pi          | ✅                   |
+| Codex       | ✅                   |
+| Claude Code | ✅                   |
+| Cursor      | ❌                   |
+| IBM Bob     | ❌                   |
+
+Cursor and Bob read the canonical store natively and have no per-skill off
+switch; fleet says so instead of pretending. See the [per-harness
+reference](www/src/content/docs/harnesses.md) for detection paths, written
+shapes, and limitations.
+
 ## Installation
 
-macOS or Linux, arm64 or x86_64. Three ways to install the same single static
-binary with no runtime dependencies: a shell script, npm, or Go. Release
-builds report their version through `fleet --version`; `go install` builds
-report `dev`. Every variant is on the
-[Installation](https://fleet.zzacong.com/installation/) docs page.
+Three ways to install the same single static binary with no runtime
+dependencies: a shell script, npm, or Go. Release builds report their version
+through `fleet --version`; `go install` builds report `dev`. Every variant is
+on the [Installation](https://fleet.zzacong.com/installation/) docs page.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/zzacong/fleet/main/install.sh | sh   # script → ~/.local/bin
