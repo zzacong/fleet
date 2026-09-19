@@ -149,4 +149,4 @@ The skills CLI's own store links in `~/.claude/skills` are load-bearing (they ar
 - `off` — the harness discovers the skill but its config disables it
 - `absent` — the harness cannot discover the skill at all (Claude Code with no link; Cursor and Bob for a custom skill whose managed link was removed); the table shows `-`
 
-Cursor and Bob never report `off`: a stored skill is visible natively and always `on`, and hiding a custom removes its only link, so it reads `absent`.
+Cursor and Bob never report `off`: a stored skill is visible natively and always `on`, and hiding a custom removes its only link, so it reads `absent`. That absence is only correct when the state records the disable — `fleet skill doctor` reports it as drift when a custom is enabled (or disabled) in the state but its managed link disagrees, and the next sync resolves it.

@@ -243,7 +243,7 @@ The read-only report of what's wrong. It inspects every installed harness, the c
 - **broken symlinks** — targets missing or looping; `fleet skill doctor -i` offers to remove them
 - **unknown entries** — anything else in a skills dir (excluding managed custom-skill links into a tracked collection or the fallback); reported, never touched
 - **manual edits fleet can't manage** — pattern or blanket rules that disable a skill
-- **state drift** — state and config disagreeing in ways sync will resolve
+- **state drift** — the state disagreeing with a harness in a way sync will resolve: a config disable the state doesn't record (or vice versa), or, for a custom skill on Cursor/Bob, a missing managed link while the state leaves it enabled (sync links it), or a link that outlived the disable (sync removes it)
 - **double presence** — a skill name that exists in more than one scanned source (canonical store, explicit repos, fleet-home checkouts, fallback), so OpenCode and Pi would see it twice and one copy's rules may shadow the other; remove one of the copies by hand
 - **unscanned adopt target** — the configured adopt target points outside the scanned homes, so adopted skills would not appear in `ls`; point it at a tracked collection or the fallback
 - **non-git explicit repos** — an explicit list entry with no `.git`, so bare pull skips it; clone the repo there or remove the path from the list by hand
@@ -261,6 +261,8 @@ $ fleet skill doctor
   pi       git-helper    config off · state on
   pi       pdf-tools     config on · state off
   k keep my change · r restore — run `fleet skill doctor -i` to pick per skill
+⚠ state drift (1)
+  bob  "create-plan" is enabled in fleet's state, but bob cannot discover it (no link in ~/.bob/skills) — sync links it on the next command
 
 1 redundant link, 2 manual edits to resolve, run `fleet skill doctor -i` to resolve
 ```
