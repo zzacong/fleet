@@ -674,3 +674,108 @@ func TestSnapshotTrackedSetPrecedenceWinnerOnly(t *testing.T) {
 		t.Errorf("all-custom collisions should not hit API, calls = %v", trees.calls)
 	}
 }
+
+func TestSnapshotStoreDuplicateNameKeepsFirstDirectory(t *testing.T) {
+	// Two store directories declaring the same frontmatter name: the first
+	// in directory order wins, so its lockfile provenance is what the row
+	// reports. The second must not shadow it into looking custom.
+	p := paths.New(filepath.Join(t.TempDir(), "home"))
+	writeSkill(t, p.SkillsStore(), "adir", "dup", "from-a")
+	writeSkill(t, p.SkillsStore(), "zdir", "dup", "from-z")
+	if err := os.MkdirAll(p.AgentsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lock := `{"version":3,"skills":{"adir":{"source":"owner/repo","sourceType":"github","skillPath":"skills/adir/SKILL.md","skillFolderHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}}`
+	if err := os.WriteFile(p.SkillLock(), []byte(lock), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, _, err := Build(context.Background(), p, &fakeTrees{})
+	if err != nil {
+		t.Fatalf("Build error: %v", err)
+	}
+	if len(report.Skills) != 1 {
+		t.Fatalf("same-name store dirs should dedupe to 1, got %d: %+v", len(report.Skills), report.Skills)
+	}
+	row := report.Skills[0]
+	if row.Description != "from-a" {
+		t.Errorf("Description = %q, want from-a (first directory wins)", row.Description)
+	}
+	if row.Custom {
+		t.Error("row should stay installed: the first directory carries the lock entry")
+	}
+	if row.Source != "owner/repo" {
+		t.Errorf("Source = %q, want owner/repo", row.Source)
+	}
+}
+
+func TestSnapshotCustomLinkToggleState(t *testing.T) {
+	// Bob and Cursor reach a custom skill only through its managed link,
+	// so for customs the link's presence is the state; a stored skill is
+	// visible natively either way.
+	home := t.TempDir()
+	p := paths.New(home)
+	t.Setenv("FLEET_REPO", "")
+	for _, dir := range []string{p.BobDir(), p.CursorDir()} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeSkill(t, p.SkillsStore(), "tdd", "tdd", "stored")
+	explicit := t.TempDir()
+	writeExplicitRepos(t, p, explicit)
+	writeSkill(t, filepath.Join(explicit, "skills"), "my-notes", "my-notes", "custom")
+	target := filepath.Join(explicit, "skills", "my-notes")
+
+	state := func(t *testing.T) map[string]string {
+		t.Helper()
+		report, _, err := Build(context.Background(), p, &fakeTrees{})
+		if err != nil {
+			t.Fatalf("Build error: %v", err)
+		}
+		for _, row := range report.Skills {
+			if row.Name == "my-notes" {
+				return row.States
+			}
+		}
+		t.Fatal("my-notes row missing")
+		return nil
+	}
+
+	// Linked: both see it.
+	for _, dir := range []string{p.BobSkills(), p.CursorSkills()} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, filepath.Join(dir, "my-notes")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := state(t); got["bob"] != "on" || got["cursor"] != "on" {
+		t.Errorf("linked custom states = %v, want bob/cursor on", got)
+	}
+
+	// Link removed (the disable lever): both are absent, not on.
+	for _, dir := range []string{p.BobSkills(), p.CursorSkills()} {
+		if err := os.Remove(filepath.Join(dir, "my-notes")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := state(t); got["bob"] != "absent" || got["cursor"] != "absent" {
+		t.Errorf("unlinked custom states = %v, want bob/cursor absent", got)
+	}
+
+	// The stored skill is untouched by link presence: always on.
+	report, _, err := Build(context.Background(), p, &fakeTrees{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range report.Skills {
+		if row.Name != "tdd" {
+			continue
+		}
+		if row.States["bob"] != "on" || row.States["cursor"] != "on" {
+			t.Errorf("stored skill states = %v, want bob/cursor on", row.States)
+		}
+	}
+}

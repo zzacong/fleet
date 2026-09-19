@@ -423,6 +423,80 @@ func TestAnalyzeClaudeDisableWithoutLinkIsAFinding(t *testing.T) {
 	}
 }
 
+func TestAnalyzeEnabledCustomWithoutLinkIsDrift(t *testing.T) {
+	// State leaves the custom enabled (no off entry), so Bob should reach
+	// it through its managed link. Without one he cannot: report, don't
+	// prompt — sync links it on the next command.
+	p := fakeHome(t, "bob")
+	storeSkill(t, p, "tdd")
+	fakeRepo(t, p)
+	repoSkill(t, p, "my-notes")
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if got := kinds(rep); !reflect.DeepEqual(got, []Kind{KindDrift}) {
+		t.Fatalf("findings = %+v, want one drift finding", rep.Findings)
+	}
+	f := rep.Findings[0]
+	if f.Harness != "bob" || f.Skill != "my-notes" {
+		t.Errorf("finding = %+v, want bob/my-notes", f)
+	}
+	if !strings.Contains(f.Message, "enabled in fleet's state") || !strings.Contains(f.Message, "cannot discover it") {
+		t.Errorf("message must state the mismatch: %q", f.Message)
+	}
+}
+
+func TestAnalyzeQuietWhenCustomLinkMatchesState(t *testing.T) {
+	p := fakeHome(t, "bob")
+	storeSkill(t, p, "tdd")
+	repo := fakeRepo(t, p)
+	repoSkill(t, p, "my-notes")
+	symlink(t, filepath.Join(repo, "skills", "my-notes"), filepath.Join(p.BobSkills(), "my-notes"))
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if len(rep.Findings) != 0 || len(rep.Conflicts) != 0 {
+		t.Errorf("report = %+v, want empty when the link matches the enabled state", rep)
+	}
+}
+
+func TestAnalyzeDisabledCustomWithLinkIsDrift(t *testing.T) {
+	// The flip side: state hides the custom from Bob, but the managed link
+	// is still there, so Bob can still discover it. Sync removes the link.
+	p := fakeHome(t, "bob")
+	storeSkill(t, p, "tdd")
+	repo := fakeRepo(t, p)
+	repoSkill(t, p, "my-notes")
+	symlink(t, filepath.Join(repo, "skills", "my-notes"), filepath.Join(p.BobSkills(), "my-notes"))
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.SetDisabled("my-notes", "bob")
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if got := kinds(rep); !reflect.DeepEqual(got, []Kind{KindDrift}) {
+		t.Fatalf("findings = %+v, want one drift finding", rep.Findings)
+	}
+	f := rep.Findings[0]
+	if f.Harness != "bob" || f.Skill != "my-notes" || f.Path == "" {
+		t.Errorf("finding = %+v, want bob/my-notes with the link path", f)
+	}
+	if !strings.Contains(f.Message, "disabled in fleet's state") || !strings.Contains(f.Message, "still has a link") {
+		t.Errorf("message must state the mismatch: %q", f.Message)
+	}
+}
+
 func TestAnalyzeUnreadableConfigIsAFinding(t *testing.T) {
 	p := fakeHome(t, "opencode")
 	storeSkill(t, p, "tdd")

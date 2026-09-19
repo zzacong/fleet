@@ -163,3 +163,15 @@ func (x *Index) Lookup(name string) []Hit {
 	}
 	return out
 }
+
+// IsCustom reports whether any custom home holds a skill with the given
+// name (by directory or frontmatter name). The canonical store is not a
+// custom home: a store-only hit is installed, not custom.
+func (x *Index) IsCustom(name string) bool {
+	for _, h := range x.Lookup(name) {
+		if h.Home != x.store {
+			return true
+		}
+	}
+	return false
+}

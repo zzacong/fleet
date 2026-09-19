@@ -286,6 +286,63 @@ func TestRunRemovesRedundantLinksAndLeavesTheRest(t *testing.T) {
 	}
 }
 
+func TestRunMakesCustomHomesVisible(t *testing.T) {
+	// A convention-tracked checkout and the fleet-home fallback each hold a
+	// custom skill. Sync wires both homes into opencode/pi and links each
+	// skill for the link-based harnesses, with no adopt or pull run.
+	p := fakeHome(t, "opencode", "pi", "codex", "claude", "cursor", "bob")
+	collection := filepath.Join(p.FleetReposDir(), "team", "skills")
+	writeFile(t, filepath.Join(collection, "my-notes", "SKILL.md"), "---\nname: my-notes\ndescription: notes\n---\n")
+	writeFile(t, filepath.Join(p.FleetHomeSkills(), "scratch", "SKILL.md"), "---\nname: scratch\ndescription: scratch\n---\n")
+
+	reports, err := Run(p)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	wired := map[string]bool{}
+	linked := map[string]string{}
+	for _, r := range reports {
+		for _, w := range r.Wired {
+			wired[r.Harness+" = "+w.Dir] = true
+		}
+		for _, l := range r.Linked {
+			linked[r.Harness+"/"+l.Name] = l.Target
+		}
+	}
+	for _, want := range []string{
+		"opencode = " + collection,
+		"pi = " + collection,
+		"opencode = " + p.FleetHomeSkills(),
+		"pi = " + p.FleetHomeSkills(),
+	} {
+		if !wired[want] {
+			t.Errorf("missing wiring %q; got %v", want, wired)
+		}
+	}
+	for _, h := range []string{"codex", "claude", "cursor", "bob"} {
+		if got := linked[h+"/my-notes"]; got != filepath.Join(collection, "my-notes") {
+			t.Errorf("%s my-notes target = %q, want the checkout", h, got)
+		}
+		if got := linked[h+"/scratch"]; got != filepath.Join(p.FleetHomeSkills(), "scratch") {
+			t.Errorf("%s scratch target = %q, want the fallback", h, got)
+		}
+	}
+	// The links are on disk, not just in the report.
+	if target, err := os.Readlink(filepath.Join(p.BobSkills(), "my-notes")); err != nil || target != filepath.Join(collection, "my-notes") {
+		t.Errorf("bob link = %q (err %v), want the checkout", target, err)
+	}
+
+	// Idempotent: a second run has nothing to say.
+	reports, err = Run(p)
+	if err != nil {
+		t.Fatalf("second Run() error = %v", err)
+	}
+	if len(reports) != 0 {
+		t.Errorf("second run reported %+v, want nothing", reports)
+	}
+}
+
 func TestRunRemovesRedundantLinksWithMissingTargets(t *testing.T) {
 	// The skill was uninstalled after the skills CLI linked it: cleanup is
 	// still safe and still idempotent. linkSpam's directories make every

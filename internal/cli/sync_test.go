@@ -37,13 +37,20 @@ func runSync(t *testing.T, p *paths.Paths, args ...string) (string, string, erro
 // a write side, without touching any config: maximal drift by construction.
 func recordDisables(t *testing.T, p *paths.Paths, name string) {
 	t.Helper()
+	for _, h := range []string{"opencode", "pi", "codex", "claude"} {
+		recordDisable(t, p, name, h)
+	}
+}
+
+// recordDisable records one skill's disable for one harness in the state
+// file, without touching any config.
+func recordDisable(t *testing.T, p *paths.Paths, name, h string) {
+	t.Helper()
 	st, err := state.Load(p.FleetStateFile())
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, h := range []string{"opencode", "pi", "codex", "claude"} {
-		st.SetDisabled(name, h)
-	}
+	st.SetDisabled(name, h)
 	if err := state.Save(p.FleetStateFile(), st); err != nil {
 		t.Fatal(err)
 	}
@@ -141,6 +148,34 @@ func TestSyncRepairsWhatAHandRunSkillsCLIDisturbs(t *testing.T) {
 	}
 
 	// Idempotent: a converged home syncs to silence.
+	out, _, err = runSync(t, p)
+	if err != nil {
+		t.Fatalf("second fleet skill sync: %v", err)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("second run reported work it did not do:\n%s", out)
+	}
+}
+
+func TestSyncLinksCustomSkillsAndReportsThem(t *testing.T) {
+	// A custom skill in a tracked collection with no adopt or pull run:
+	// sync links it for the link-based harnesses and prints each action.
+	p, collection := adoptHome(t)
+	writeSkillDir(t, collection, "my-notes", "Personal notes.")
+
+	out, _, err := runSync(t, p)
+	if err != nil {
+		t.Fatalf("fleet skill sync: %v", err)
+	}
+	want := `sync: bob: linked "my-notes" → ` + filepath.Join(collection, "my-notes")
+	if !strings.Contains(out, want) {
+		t.Errorf("output missing %q:\n%s", want, out)
+	}
+	if target, err := os.Readlink(filepath.Join(p.BobSkills(), "my-notes")); err != nil || target != filepath.Join(collection, "my-notes") {
+		t.Errorf("bob link = %q (err %v), want the collection", target, err)
+	}
+
+	// Idempotent: a visible home prints nothing next time.
 	out, _, err = runSync(t, p)
 	if err != nil {
 		t.Fatalf("second fleet skill sync: %v", err)
@@ -261,5 +296,32 @@ func TestSyncRejectsArguments(t *testing.T) {
 
 	if _, _, err := runSync(t, p, "sync", "tdd"); err == nil {
 		t.Error("sync takes no arguments")
+	}
+}
+
+func TestSyncHidesACustomSkillDisabledForBob(t *testing.T) {
+	// Bob's only lever over a custom skill is its managed link, so a state
+	// disable must remove the link and sync must report the removal.
+	p, collection := adoptHome(t)
+	writeSkillDir(t, collection, "my-notes", "Personal notes.")
+	if _, _, err := runSync(t, p); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(p.BobSkills(), "my-notes")
+	if _, err := os.Lstat(link); err != nil {
+		t.Fatalf("bob link missing after first sync: %v", err)
+	}
+
+	recordDisable(t, p, "my-notes", "bob")
+	out, _, err := runSync(t, p)
+	if err != nil {
+		t.Fatalf("fleet skill sync: %v", err)
+	}
+	want := `sync: bob: unlinked "my-notes" → ` + filepath.Join(collection, "my-notes")
+	if !strings.Contains(out, want) {
+		t.Errorf("output missing %q:\n%s", want, out)
+	}
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Error("bob link survived the recorded disable")
 	}
 }

@@ -33,7 +33,7 @@ Keys:
 | `?`               | help overlay                                                           |
 | `q`, `ctrl+c`     | quit (`q` is text while the filter holds input)                        |
 
-Cells read `●` on, `○` off, `-` absent. Columns for Cursor and Bob render faint with a `!` in the header: they have no per-skill off switch, so toggles there are no-ops.
+Cells read `●` on, `○` off, `-` absent. Columns for Cursor and Bob render faint with a `!` in the header: they have no config off switch, so a stored skill can't be toggled there. A custom skill can — its managed link is the toggle — so its cell shows the real state.
 
 `u` is the one-key update-all: it runs the same wrapped `skills update -g -y` the [update verb](#fleet-skill-update) runs, then sync, then reloads the matrix so the new badges and states show. `U` does the same for the selected skill only (`skills update -g -y <skill>`). A busy line takes over while either runs, the outcome notice reports fleet's own post-run state — the store scan and lockfile, never the skills CLI's prose — and a failed run shows the CLI's captured output raw.
 
@@ -57,7 +57,7 @@ tdd         on        on  on     -       on      on   ↑       example/tdd  Tes
 - The enablement columns sit right after the name — they are the table's point. The description goes last, truncated to whatever room the terminal has left, so no column ever wraps mid-word; piped output keeps the plain 60-column cap.
 - `SOURCE` is `custom` (the skill lives in a tracked collection or the fleet-home fallback, or has no lockfile entry) or the source repo the lockfile records.
 - `UPDATE` is the outdated badge: `↑` update available, `✓` current, `?` unknown, `—` never checked (custom skills). Non-GitHub sources and failed checks are `?` — fleet checks GitHub directly, one API call per source repo, cached for an hour under the fleet config dir, and reports unknown rather than guessing.
-- A harness column shows `on`, `off`, or `-`. `-` means the harness cannot discover the skill at all; for Claude Code that is the normal state until a link exists (see [Claude Code](harnesses.md#claude-code)).
+- A harness column shows `on`, `off`, or `-`. `-` means the harness cannot discover the skill at all: for Claude Code that is the normal state until a link exists, and for Cursor/Bob it is a custom skill whose managed link was removed (see [Per-Harness Reference](harnesses.md#states-across-harnesses)).
 - Color on a terminal only: `on` green, `off` dim, `↑` yellow, `✓` green, custom cyan. Piped output is plain.
 - On a terminal a one-line summary prints above the table (`fleet · 2 skills · 1 installed · 1 custom · …`). Piped output skips it, and `--quiet` skips it everywhere.
 
@@ -113,7 +113,7 @@ $ fleet skill ls --json
 fleet skill off <name> [--harness <harness>]...
 ```
 
-Disables a skill: records the toggle in the state file, then sync projects it into each harness's native config. The skill's files stay in the canonical store, so `skills update` keeps updating it.
+Disables a skill: records the toggle in the state file, then sync projects it into each harness's native config. The skill's files stay where they are, so a stored skill keeps updating and a custom skill stays in its collection.
 
 ```sh
 $ fleet skill off tdd
@@ -126,14 +126,14 @@ skill: bob: no per-skill disable mechanism — disable "tdd" is a no-op
 
 - The outcome is one line per harness (`skill: opencode: disabled "tdd"`). On a terminal the `skill:` prefix is dim, the harness cyan, the verb green.
 - Without `--harness`, every installed harness is targeted. `--harness` is repeatable and takes a harness ID: `opencode`, `pi`, `codex`, `claude`, `cursor`, `bob`.
-- Cursor and Bob have no per-skill disable mechanism. Toggling for them prints the no-op line and records nothing.
+- Cursor and Bob have no config per-skill disable. For a stored skill there is no lever at all, so toggling prints the no-op line and records nothing. A custom skill is different: their managed link (in `~/.cursor/skills` / `~/.bob/skills`) is the only path to it, so `off` removes that link and `on` restores it. The state file remembers the choice and sync never recreates a hidden link. `ls` then reports the custom `absent` for that harness.
 - A harness where something else overrode the write (a foreign config entry that keeps the skill enabled) is left out of the outcome list; its flag line prints instead — `sync: codex/tdd: a skills.config entry fleet doesn't manage overrides fleet's disable — left alone`.
-- Sync runs as part of the command and reports real repairs it made beyond the toggle: redundant-link removals and drift fixes print as `sync:` lines. Ambient findings about other skills (untracked config disables, foreign rules) stay out of the report; `fleet skill sync` and `fleet skill doctor` are where they are listed.
-- The name must exist in the canonical store. Disabling a typo would silently record state, so it fails loudly:
+- Sync runs as part of the command and reports real repairs it made beyond the toggle: custom wiring, custom links, redundant-link removals, and drift fixes print as `sync:` lines. Ambient findings about other skills (untracked config disables, foreign rules) stay out of the report; `fleet skill sync` and `fleet skill doctor` are where they are listed.
+- The name must exist in the canonical store or a custom home (a tracked collection or the fleet-home fallback). Disabling a typo would silently record state, so it fails loudly:
 
   ```sh
   $ fleet skill off typo-skill
-  Error: skill "typo-skill" not found in ~/.agents/skills
+  Error: skill "typo-skill" not found in ~/.agents/skills or a custom home
   ```
 
 - The command is idempotent: disabling an already-disabled skill changes nothing, and the outcome says so — `skill: opencode: "tdd" is already disabled` (one line per harness, `already` dim, verb green).
@@ -144,7 +144,7 @@ skill: bob: no per-skill disable mechanism — disable "tdd" is a no-op
 fleet skill on <name> [--harness <harness>]...
 ```
 
-Re-enables a skill by removing fleet's disable entries. Same targeting rules as `off`.
+Re-enables a skill by removing fleet's disable entries. Same targeting rules as `off`. For a custom skill disabled on Cursor or Bob, it recreates the managed link the disable removed.
 
 ```sh
 $ fleet skill on tdd --harness codex
@@ -243,7 +243,7 @@ The read-only report of what's wrong. It inspects every installed harness, the c
 - **broken symlinks** — targets missing or looping; `fleet skill doctor -i` offers to remove them
 - **unknown entries** — anything else in a skills dir (excluding managed custom-skill links into a tracked collection or the fallback); reported, never touched
 - **manual edits fleet can't manage** — pattern or blanket rules that disable a skill
-- **state drift** — state and config disagreeing in ways sync will resolve
+- **state drift** — the state disagreeing with a harness in a way sync will resolve: a config disable the state doesn't record (or vice versa), or, for a custom skill on Cursor/Bob, a missing managed link while the state leaves it enabled (sync links it), or a link that outlived the disable (sync removes it)
 - **double presence** — a skill name that exists in more than one scanned source (canonical store, explicit repos, fleet-home checkouts, fallback), so OpenCode and Pi would see it twice and one copy's rules may shadow the other; remove one of the copies by hand
 - **unscanned adopt target** — the configured adopt target points outside the scanned homes, so adopted skills would not appear in `ls`; point it at a tracked collection or the fallback
 - **non-git explicit repos** — an explicit list entry with no `.git`, so bare pull skips it; clone the repo there or remove the path from the list by hand
@@ -261,6 +261,8 @@ $ fleet skill doctor
   pi       git-helper    config off · state on
   pi       pdf-tools     config on · state off
   k keep my change · r restore — run `fleet skill doctor -i` to pick per skill
+⚠ state drift (1)
+  bob  "create-plan" is enabled in fleet's state, but bob cannot discover it (no link in ~/.bob/skills) — sync links it on the next command
 
 1 redundant link, 2 manual edits to resolve, run `fleet skill doctor -i` to resolve
 ```
@@ -291,15 +293,17 @@ Doctor never runs ambient sync — the point is to show what sync _would_ do bef
 fleet skill sync
 ```
 
-The explicit form of the sync that runs on every fleet command: converge harness configs with the state file now, as a scriptable step. The scenario is a hand-run `skills update` — it re-creates the per-agent symlinks and may resurrect enablement; sync repairs both and prints one line per fix:
+The explicit form of the sync that runs on every fleet command: make every custom home visible, converge harness configs with the state file, and clean redundant links now, as a scriptable step. Two scenarios drive it: a hand-run `skills update`, which re-creates per-agent symlinks and may resurrect enablement, and custom skills that were pulled or hand-created without a later `adopt` (sync links them into Codex, Claude Code, Cursor, and Bob, and wires OpenCode and Pi). A custom skill disabled on Cursor or Bob is the flip side: its managed link is that harness's only lever, so sync removes it and never recreates it. It prints one line per fix:
 
 ```sh
 $ fleet skill sync
 sync: opencode: removed redundant link "tdd" — opencode scans the canonical store natively — this link double-covers the skill
+sync: bob: linked "my-notes" → ~/Developer/customs/skills/my-notes
+sync: bob: unlinked "hidden-notes" → ~/Developer/customs/skills/hidden-notes
 sync: opencode: disabled "tdd" (was on)
 ```
 
-- The report goes to stdout, one line per fix, in sync's own order: link removals first, then enablement changes and flags.
+- The report goes to stdout, one line per fix, in sync's own order: link removals first, then custom wiring and links (added and hidden), then enablement changes and flags.
 - Nothing to repair is not an error: sync is idempotent, so a converged home prints nothing and exits 0.
 - Unknown entries and manual edits are reported and left as is — doctor explains them, and `fleet skill doctor -i`'s conflict prompts are how a kept edit becomes state.
 - The state file is never edited.
@@ -376,7 +380,7 @@ The file `~/.config/fleet/config.json` sits beside `state.json` and `tree-cache.
 fleet harness ls [--json]
 ```
 
-Lists the six harnesses fleet supports, marking each installed — its config directory exists, the same probe every command uses — or not, with the directory itself and whether fleet can write a per-skill off switch into its config. Cursor and Bob have no off switch; fleet says so instead of pretending.
+Lists the six harnesses fleet supports, marking each installed — its config directory exists, the same probe every command uses — or not, with the directory itself and whether fleet can write a per-skill off switch into its config. Cursor and Bob have no config off switch; they disable a custom skill by removing its managed link instead.
 
 Read-only: unlike most fleet commands, no sync runs — listing what is installed must not converge anything. Nothing is filtered: you see all six even when none is installed.
 
@@ -393,7 +397,7 @@ bob       ✓          /home/you/.bob                  no
 
 - `INSTALLED` is `✓` when the harness's config directory exists, `-` when it does not. A `-` harness is skipped by every other command.
 - `CONFIG DIR` is the probed directory itself.
-- `OFF SWITCH` is `yes` when fleet can write a per-skill disable into that harness's config, `no` where no such lever exists.
+- `OFF SWITCH` is `yes` when fleet can write a per-skill disable into that harness's config, `no` where no config lever exists.
 - On a terminal a one-line summary prints above the table (`fleet · 5 of 6 harnesses installed`). Piped output skips it.
 
 ### --json
@@ -416,7 +420,7 @@ $ fleet harness ls --json
 ```
 
 - Rows appear in fleet's fixed harness order: opencode, pi, codex, claude, cursor, bob.
-- `canDisable` is false exactly for cursor and bob.
+- `canDisable` is false exactly for cursor and bob: no config lever. Both still toggle a custom skill through its managed link.
 
 ## fleet completion
 
@@ -444,10 +448,11 @@ Release builds stamp the version at build time; `go install` builds report `dev`
 Sync runs on every fleet command and after every wrapped `skills` call, and [`fleet skill sync`](#fleet-skill-sync) runs the same machinery on demand. Its decision rules are short and [documented in full](undo.md#how-sync-decides-what-to-touch):
 
 1. Load the state file fresh.
-2. Remove redundant links: symlinks that provably resolve into the canonical store in harnesses that scan it natively (`nativeScanHarnesses`: opencode, pi, codex, Cursor, Bob — never claude code). Links into any tracked collection or the fleet-home fallback are never redundant and are never removed; broken links, real dirs/files, and foreign links stay.
-3. For each installed harness with a write side, write the harness's own off-entry for each state-recorded disable. Nothing else — an absent entry means on, and sync never writes "on" markers.
-4. Flag (never touch) entries it doesn't recognize: patterns, blankets, foreign shapes.
-5. Never edit the state file.
+2. Make customs visible: wire every scanned custom home (each tracked collection and the fleet-home fallback; a configured adopt target counts when it is one of those) into OpenCode and Pi, and link its skills into Codex, Claude Code, Cursor, and Bob. Idempotent — an already-visible home reports nothing.
+3. Remove redundant links: symlinks that provably resolve into the canonical store in harnesses that scan it natively (`nativeScanHarnesses`: opencode, pi, codex, Cursor, Bob — never claude code). Links into any tracked collection or the fleet-home fallback are never redundant and are never removed; broken links, real dirs/files, and foreign links stay.
+4. For each installed harness with a write side, write the harness's own off-entry for each state-recorded disable. Nothing else — an absent entry means on, and sync never writes "on" markers.
+5. Flag (never touch) entries it doesn't recognize: patterns, blankets, foreign shapes.
+6. Never edit the state file.
 
 `fleet skill doctor` previews all of it without changing anything.
 
@@ -457,7 +462,7 @@ Sync runs on every fleet command and after every wrapped `skills` call, and [`fl
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ---- |
 | Unknown `--harness` value                | `unknown harness "emacs" (want one of: opencode, pi, codex, claude, cursor, bob)`                                          | 1    |
 | `--harness` names an uninstalled harness | `opencode is not installed on this machine`                                                                                | 1    |
-| `off` for a skill not in the store       | `skill "typo-skill" not found in ~/.agents/skills`                                                                         | 1    |
+| `off` for a skill in no home             | `skill "typo-skill" not found in ~/.agents/skills or a custom home`                                                        | 1    |
 | `adopt` for a missing skill              | `skill "git-helper" not found in ~/.agents/skills`                                                                         | 1    |
 | `adopt` double presence                  | `skill "x" exists in … — resolve by hand before adopting` (names every copy)                                               | 1    |
 | `adopt` ambiguous, no terminal           | `adopt: multiple destinations available — re-run with --into <skills-dir> or from a terminal:` + numbered candidates       | 1    |

@@ -39,7 +39,7 @@ func dropExplicitHome(t *testing.T) (*paths.Paths, string, string) {
 	if _, err := harness.WireSkillSource(p, collection); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := harness.LinkCustomSkill(p, "my-notes", filepath.Join(collection, "my-notes")); err != nil {
+	if _, err := harness.LinkCustomSkill(p, "my-notes", filepath.Join(collection, "my-notes"), nil); err != nil {
 		t.Fatal(err)
 	}
 	// Redundant link spam for sync to clean while it is here.

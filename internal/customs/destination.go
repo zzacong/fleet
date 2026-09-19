@@ -49,6 +49,7 @@ func firstErr(idx *skillindex.Index, errs map[string]error) error {
 func adoptInto(p *paths.Paths, idx *skillindex.Index, name, target string) (*Report, error) {
 	var storeHit *skillindex.Hit
 	var customHits []skillindex.Hit
+	seenHome := map[string]bool{}
 	for _, h := range idx.Lookup(name) {
 		h := h
 		if h.Home == idx.Store() {
@@ -57,6 +58,14 @@ func adoptInto(p *paths.Paths, idx *skillindex.Index, name, target string) (*Rep
 			}
 			continue
 		}
+		// One hit per custom home: a name collision inside a single
+		// collection is that collection's business, not double presence
+		// across homes. Lookup's first hit for a home is its directory
+		// match, matching the old per-home findSkill order.
+		if seenHome[h.Home] {
+			continue
+		}
+		seenHome[h.Home] = true
 		customHits = append(customHits, h)
 	}
 

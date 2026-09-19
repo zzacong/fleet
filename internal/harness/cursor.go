@@ -2,6 +2,8 @@ package harness
 
 import (
 	"fmt"
+	"path/filepath"
+	"sort"
 
 	"github.com/zzacong/fleet/internal/paths"
 )
@@ -10,7 +12,9 @@ import (
 // config-level per-skill disable mechanism — the only documented lever,
 // `disable-model-invocation` frontmatter, would cross-talk with pi and
 // claude. The read side is therefore derived, not read: every skill is on.
-// Doctor explains the limitation in a later ticket.
+// It still reports link presence in ~/.cursor/skills: the links are how
+// Cursor reaches custom skills. Doctor explains the limitation in a later
+// ticket.
 type CursorAdapter struct {
 	home *paths.Paths
 }
@@ -29,7 +33,14 @@ func (a *CursorAdapter) Dir() string { return a.home.CursorDir() }
 
 // Read implements Adapter.
 func (a *CursorAdapter) Read(names []string) (ReadResult, error) {
-	return ReadResult{States: onForAll(names)}, nil
+	res := ReadResult{States: onForAll(names)}
+	for _, name := range names {
+		if linkPresent(filepath.Join(a.home.CursorSkills(), name)) {
+			res.Linked = append(res.Linked, name)
+		}
+	}
+	sort.Strings(res.Linked)
+	return res, nil
 }
 
 // CanProject implements Adapter: there is no config lever to write.

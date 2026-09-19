@@ -24,6 +24,8 @@ type WireResult struct {
 	Harness Harness
 	// Changed reports whether the config was written.
 	Changed bool
+	// Dir is the skill-discovery dir that was wired.
+	Dir string
 	// Where names the config location the path went into: "skills.paths"
 	// (opencode V1 object) or "skills" (opencode V2 array and pi).
 	Where string
@@ -116,7 +118,7 @@ func (a *OpenCodeAdapter) WireSkillSource(dir string) (WireResult, error) {
 	if err := writeIfConfigChanged(a.home.OpenCodeConfig(), src, renderConfig(src, doc)); err != nil {
 		return WireResult{}, err
 	}
-	return WireResult{Harness: OpenCode, Changed: true, Where: where}, nil
+	return WireResult{Harness: OpenCode, Changed: true, Dir: dir, Where: where}, nil
 }
 
 // WireSkillSource implements SourceWiring: the dir joins pi's `skills`
@@ -152,7 +154,7 @@ func (a *PiAdapter) WireSkillSource(dir string) (WireResult, error) {
 	if err := writeIfConfigChanged(a.home.PiSettings(), src, renderConfig(src, doc)); err != nil {
 		return WireResult{}, err
 	}
-	return WireResult{Harness: Pi, Changed: true, Where: "skills"}, nil
+	return WireResult{Harness: Pi, Changed: true, Dir: dir, Where: "skills"}, nil
 }
 
 // arrayHasString reports whether the array holds exactly the string s.

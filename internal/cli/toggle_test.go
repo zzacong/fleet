@@ -105,6 +105,37 @@ func TestOffRecordsStateAndWritesEachHarnessNativeOff(t *testing.T) {
 	}
 }
 
+func TestOffWorksForACustomSkill(t *testing.T) {
+	// A custom skill lives in a tracked collection, not the canonical
+	// store. Disabling it must pass validation, record state, and write
+	// each harness's off marker, exactly like a stored skill.
+	p, collection := adoptHome(t)
+	writeSkillDir(t, collection, "my-notes", "Personal notes.")
+
+	out, _ := runToggle(t, p, "off", "my-notes")
+
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatalf("state file: %v", err)
+	}
+	for _, h := range []string{"opencode", "pi", "codex"} {
+		if !st.IsDisabled("my-notes", h) {
+			t.Errorf("state: my-notes/%s not disabled", h)
+		}
+	}
+	if body := readFile(t, p.OpenCodeConfig()); !strings.Contains(body, `"my-notes"`) {
+		t.Errorf("opencode config missing the custom disable:\n%s", body)
+	}
+	if !strings.Contains(out, `skill: opencode: disabled "my-notes"`) {
+		t.Errorf("output missing the custom-skill outcome:\n%s", out)
+	}
+
+	// A name in no home (neither store nor custom) is still rejected.
+	if err := runToggleErr(t, p, "off", "no-such-skill"); err == nil {
+		t.Error("off with an unknown skill should still fail")
+	}
+}
+
 func TestOffWithHarnessFlagTouchesOnlyThatHarness(t *testing.T) {
 	p := toggleHome(t)
 
@@ -398,5 +429,44 @@ func TestAmbientSyncReportsRedundantLinkRemovals(t *testing.T) {
 	out, _ = runToggle(t, p, "off", "tdd")
 	if strings.Contains(out, "removed redundant link") {
 		t.Errorf("second run removed links again:\n%s", out)
+	}
+}
+
+func TestOffAndOnToggleACustomSkillThroughBobsLink(t *testing.T) {
+	// Bob has no config lever; for a custom skill his one lever is the
+	// managed link. Disabling removes it, enabling restores it, and sync
+	// never recreates a hidden one.
+	p, collection := adoptHome(t)
+	writeSkillDir(t, collection, "my-notes", "Personal notes.")
+	target := filepath.Join(collection, "my-notes")
+	if _, _, err := runSync(t, p); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(p.BobSkills(), "my-notes")
+
+	out, _ := runToggle(t, p, "off", "my-notes")
+	if !strings.Contains(out, `skill: bob: disabled "my-notes"`) {
+		t.Errorf("output missing the bob outcome:\n%s", out)
+	}
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Error("bob link survived the disable")
+	}
+
+	// sync must not recreate the hidden link.
+	if out, _, err := runSync(t, p); err != nil {
+		t.Fatal(err)
+	} else if strings.TrimSpace(out) != "" {
+		t.Errorf("sync reported work after a hidden disable:\n%s", out)
+	}
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Error("bob link came back after sync")
+	}
+
+	out, _ = runToggle(t, p, "on", "my-notes")
+	if !strings.Contains(out, `skill: bob: enabled "my-notes"`) {
+		t.Errorf("output missing the bob outcome:\n%s", out)
+	}
+	if got, err := os.Readlink(link); err != nil || got != target {
+		t.Errorf("bob link after on = %q (err %v), want %q", got, err, target)
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/snapshot"
 	"github.com/zzacong/fleet/internal/state"
+	fleetsync "github.com/zzacong/fleet/internal/sync"
 )
 
 // tuiHome builds a home with every harness installed, two installed skills
@@ -82,6 +83,15 @@ func writeLock(t *testing.T, p *paths.Paths) {
 	if err := os.WriteFile(p.SkillLock(), []byte(lock), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// opencodeDenies reports whether an opencode config disables a skill in
+// either dialect: the V1 key map or a V2 {action, resource, effect} rule.
+func opencodeDenies(body, name string) bool {
+	if strings.Contains(body, `"`+name+`": "deny"`) {
+		return true
+	}
+	return strings.Contains(body, `"resource": "`+name+`"`) && strings.Contains(body, `"effect": "deny"`)
 }
 
 // noNetwork is the stubbed GitHub seam: any fetch is a test failure. The
@@ -281,7 +291,9 @@ func TestStageThenApplyWritesStateAndHarnessConfigs(t *testing.T) {
 	}
 
 	// Each harness got its own native off marker; the others were untouched.
-	if body := readFile(t, p.OpenCodeConfig()); !strings.Contains(body, `"tdd": "deny"`) {
+	// Wiring the tracked collection makes opencode resolve to its V2 rule
+	// shape, so the deny may appear as a V1 key or a V2 rule.
+	if body := readFile(t, p.OpenCodeConfig()); !opencodeDenies(body, "tdd") {
 		t.Errorf("opencode config:\n%s", body)
 	}
 	if body := readFile(t, p.CodexConfig()); !strings.Contains(body, `name = "tdd"`) || !strings.Contains(body, "enabled = false") {
@@ -360,7 +372,10 @@ func TestEscDiscardsStagedWithoutWriting(t *testing.T) {
 	requireMissing(t, p.OpenCodeConfig(), "opencode config")
 }
 
-func TestTogglesForCursorAndBobAreExplainedNoOps(t *testing.T) {
+func TestTogglesForStoredSkillsOnCursorAndBobAreExplainedNoOps(t *testing.T) {
+	// A stored skill is visible to Bob/Cursor natively, and neither has a
+	// config lever, so there is nothing to toggle. (A custom skill does
+	// have a lever there: its managed link.)
 	p := tuiHome(t)
 	for _, tc := range []struct {
 		name   string
@@ -535,8 +550,9 @@ func TestPrepareSyncsBeforeTheFirstFrame(t *testing.T) {
 	}
 
 	// Sync converged the config with the state file and cleaned the link
-	// before the matrix rendered anything.
-	if body := readFile(t, p.OpenCodeConfig()); !strings.Contains(body, `"tdd": "deny"`) {
+	// before the matrix rendered anything. Once the tracked collection is
+	// wired, opencode resolves to its V2 rule shape for the deny.
+	if body := readFile(t, p.OpenCodeConfig()); !opencodeDenies(body, "tdd") {
 		t.Errorf("opencode config after launch sync:\n%s", body)
 	}
 	requireMissing(t, filepath.Join(p.OpenCodeSkills(), "tdd"), "redundant link")
@@ -546,6 +562,25 @@ func TestPrepareSyncsBeforeTheFirstFrame(t *testing.T) {
 	row := findRow(t, m, "tdd")
 	if row.States["opencode"] != string(harness.StateOff) {
 		t.Errorf("opencode=%s in the first frame, want off", row.States["opencode"])
+	}
+}
+
+func TestSyncNoticeCountsCustomWiringAndLinks(t *testing.T) {
+	// The launch notice must report the custom-visibility work sync does,
+	// not just removals and enablement flips.
+	reports := []fleetsync.Report{
+		{
+			Harness: "opencode",
+			Wired:   []harness.WireResult{{Harness: harness.OpenCode, Dir: "/repo/skills", Where: "skills"}},
+		},
+		{
+			Harness: "bob",
+			Linked:  []harness.LinkResult{{Harness: harness.Bob, Name: "my-notes", Target: "/repo/skills/my-notes"}},
+		},
+	}
+	got := syncNotice(reports)
+	if !strings.Contains(got, "1 custom source wired") || !strings.Contains(got, "1 custom link added") {
+		t.Errorf("syncNotice = %q, want the wiring and link counts", got)
 	}
 }
 
@@ -597,7 +632,7 @@ func TestViewCarriesBannerStatusAndHelp(t *testing.T) {
 	if !strings.Contains(help, "oc = opencode") || !strings.Contains(help, "cx = codex") {
 		t.Error("help missing the column abbreviation legend")
 	}
-	if !strings.Contains(help, "no per-skill off switch") {
+	if !strings.Contains(help, "no config off switch") {
 		t.Error("help missing the cursor/bob note")
 	}
 	if !strings.Contains(help, "opencode has no live reload") {
@@ -727,5 +762,58 @@ func TestQuitKeys(t *testing.T) {
 	m = sendKey(m, tea.KeyPressMsg{Code: 'q', Text: "q"})
 	if v := m.filter.Value(); !strings.Contains(v, "tddq") {
 		t.Errorf("filter value %q, want the q appended", v)
+	}
+}
+
+func TestStagingACustomSkillOnBobsCellTogglesTheLink(t *testing.T) {
+	// Bob reaches a custom skill only through its managed link, so his
+	// cell is toggleable for a custom even though he has no config write
+	// side: the link's presence is the state.
+	p := tuiHome(t)
+	if _, err := fleetsync.Run(p); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(p.BobSkills(), "my-notes")
+
+	m := newTestModel(t, p)
+	m = selectSkill(m, "my-notes")
+	m = moveRight(m, colBob)
+	if got := m.cellState("my-notes", "bob"); got != harness.StateOn {
+		t.Fatalf("bob=%s before staging, want on", got)
+	}
+	m = sendKey(m, keySpace) // on -> staging targets off
+	if len(m.staged) != 1 {
+		t.Fatalf("staged %d cells, want 1", len(m.staged))
+	}
+	m2, cmd := m.Update(keyEnter)
+	m = m2.(model)
+
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.IsDisabled("my-notes", "bob") {
+		t.Error("state does not disable my-notes/bob")
+	}
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Error("bob link survived the staged disable")
+	}
+	m = settle(t, m, cmd)
+	if got := findRow(t, m, "my-notes").States["bob"]; got != string(harness.StateAbsent) {
+		t.Errorf("bob=%s after disable, want absent", got)
+	}
+
+	// An absent custom cell stages back on, recreating the link.
+	m = selectSkill(m, "my-notes")
+	m = moveRight(m, colBob)
+	m = sendKey(m, keySpace)
+	m2, cmd = m.Update(keyEnter)
+	m = m2.(model)
+	if _, err := os.Lstat(link); err != nil {
+		t.Errorf("bob link not restored: %v", err)
+	}
+	m = settle(t, m, cmd)
+	if got := findRow(t, m, "my-notes").States["bob"]; got != string(harness.StateOn) {
+		t.Errorf("bob=%s after re-enable, want on", got)
 	}
 }

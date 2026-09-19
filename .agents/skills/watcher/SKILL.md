@@ -49,7 +49,7 @@ stays at `scripts/watcher/watch.ts`).
 | `claude-config`   | `~/.claude/settings.json`           | file                                                                                                                                                   |
 | `cursor-skills`   | `~/.cursor/skills`                  | dir                                                                                                                                                    |
 | `bob-skills`      | `~/.bob/skills`                     | dir                                                                                                                                                    |
-| `bob-settings`    | `~/.bob/settings.json`              | file                                                                                                                                                   |
+| `bob-settings`    | `~/.bob/settings/settings.json`     | file                                                                                                                                                   |
 | `repo-skills`     | `<repo>/skills`                     | dir — monorepo `skills/` publishable collection at the repo root (versioned collection; what skills.sh publishes; checkout's `skills/` for dogfooding) |
 
 ## Protocol

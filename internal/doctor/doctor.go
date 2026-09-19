@@ -125,10 +125,16 @@ func Analyze(p *paths.Paths) (Report, error) {
 	// tracked repos) so managed links into any of them are filtered from
 	// unknown entries.
 	customHomes, customByDir, customByName := customLinkIndex(p)
+	present := map[harness.Harness]map[string]bool{}
+	managed := map[harness.Harness]map[string]bool{}
 	for _, d := range harness.SkillDirs(p) {
 		entries, err := harness.ScanSkillDir(d, p.SkillsStore())
 		if err != nil {
 			return Report{}, fmt.Errorf("scan %s skills dir: %w", d.Harness, err)
+		}
+		if present[d.Harness] == nil {
+			present[d.Harness] = map[string]bool{}
+			managed[d.Harness] = map[string]bool{}
 		}
 		if len(entries) == 0 && !d.NativeScan {
 			if _, err := os.Stat(d.Path); os.IsNotExist(err) {
@@ -141,7 +147,9 @@ func Analyze(p *paths.Paths) (Report, error) {
 			}
 		}
 		for _, e := range entries {
+			present[d.Harness][e.Name] = true
 			if isManagedCustomLink(e, customHomes, customByDir, customByName) {
+				managed[d.Harness][e.Name] = true
 				continue
 			}
 			f, ok := linkFinding(e)
@@ -150,6 +158,12 @@ func Analyze(p *paths.Paths) (Report, error) {
 			}
 		}
 	}
+
+	toggleFindings, err := analyzeLinkToggles(p, customByDir, present, managed)
+	if err != nil {
+		return Report{}, err
+	}
+	rep.Findings = append(rep.Findings, toggleFindings...)
 
 	conflicts, findings, err := analyzeConfigs(p)
 	if err != nil {
@@ -411,6 +425,68 @@ func analyzeConfigs(p *paths.Paths) ([]Conflict, []Finding, error) {
 		}
 	}
 	return conflicts, findings, nil
+}
+
+// analyzeLinkToggles compares the state with the managed custom links of
+// the link-toggleable harnesses (Bob, Cursor). For a custom skill the link
+// is that harness's only path to it and therefore its enablement: a missing
+// link for a skill the state leaves enabled (sync links it), or a managed
+// link for a skill the state disables (sync removes it), is drift. Stored
+// skills are exempt — those harnesses read the canonical store natively, so
+// their link presence says nothing.
+func analyzeLinkToggles(p *paths.Paths, customByDir map[string]string, present, managed map[harness.Harness]map[string]bool) ([]Finding, error) {
+	if len(customByDir) == 0 {
+		return nil, nil
+	}
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		return nil, err
+	}
+
+	toggle := map[harness.Harness]bool{}
+	for _, a := range harness.Installed(p) {
+		if harness.LinkToggleable(a) {
+			toggle[a.Harness()] = true
+		}
+	}
+
+	dirs := make([]string, 0, len(customByDir))
+	for dir := range customByDir {
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+
+	var findings []Finding
+	for _, d := range harness.SkillDirs(p) {
+		if !toggle[d.Harness] {
+			continue
+		}
+		h := string(d.Harness)
+		for _, dir := range dirs {
+			name := customByDir[dir]
+			stateOff := st.IsDisabled(name, h)
+			switch {
+			case !stateOff && !present[d.Harness][dir]:
+				findings = append(findings, Finding{
+					Kind:    KindDrift,
+					Harness: h,
+					Skill:   name,
+					Message: fmt.Sprintf("%q is enabled in fleet's state, but %s cannot discover it (no link in %s) — sync links it on the next command",
+						name, h, d.Path),
+				})
+			case stateOff && managed[d.Harness][dir]:
+				findings = append(findings, Finding{
+					Kind:    KindDrift,
+					Harness: h,
+					Skill:   name,
+					Path:    filepath.Join(d.Path, dir),
+					Message: fmt.Sprintf("%q is disabled in fleet's state, but %s still has a link for it in %s — sync removes it on the next command",
+						name, h, d.Path),
+				})
+			}
+		}
+	}
+	return findings, nil
 }
 
 // analyzeRepoSkills cross-checks every skill home — the canonical store

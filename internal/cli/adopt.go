@@ -212,10 +212,10 @@ func promptAdoptSaveback(out io.Writer, in *bufio.Scanner, p *paths.Paths, targe
 	return config.Save(p.FleetConfigFile(), f)
 }
 
-// formatLink renders one managed-link action: 'codex: linked "my-notes" →
-// /repo/skills/my-notes'.
-//
-//nolint:unused // kept for reference; styled variant is used in output
+// formatLink renders one managed-link action as plain text: 'codex: linked
+// "my-notes" → /repo/skills/my-notes'. Adopt styles it separately; sync
+// reuses the plain form and lets styleSyncLine add the prefix and scope
+// color.
 func formatLink(harnessName string, l harness.LinkResult) string {
 	switch l.Change.Action {
 	case harness.LinkRepointed:
@@ -229,6 +229,12 @@ func formatLink(harnessName string, l harness.LinkResult) string {
 
 func formatWired(harness, dir, where string, pal palette) string {
 	return fmt.Sprintf("%s: %s %q as a skill source %s", pal.info(harness), pal.good("wired"), dir, pal.dim("("+where+")"))
+}
+
+// formatWiredPlain renders one wiring as plain sync text, which
+// styleSyncLine then dims and scopes.
+func formatWiredPlain(w harness.WireResult) string {
+	return fmt.Sprintf("sync: %s: wired %q as a skill source (%s)", w.Harness, w.Dir, w.Where)
 }
 
 func formatLinkStyled(harnessName string, l harness.LinkResult, pal palette) string {

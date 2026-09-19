@@ -6,8 +6,10 @@
 // findings
 // (real repairs, and flags that kept the toggle from landing). Ambient
 // findings about other skills are sync's and doctor's business; the
-// toggle stays quiet about them. Cursor and Bob have no write side —
-// toggling for them is a no-op with a clear message.
+// toggle stays quiet about them. Cursor and Bob have no config write
+// side: for a custom skill their managed link is the toggle, so disabling
+// removes it and enabling restores it; for a stored skill there is no
+// lever and the toggle is a no-op with a clear message.
 
 package cli
 
@@ -50,26 +52,33 @@ func newSkillToggleCmd(p *paths.Paths, on bool) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
+			custom, err := isCustomSkill(p, name)
+			if err != nil {
+				return err
+			}
 			targets, err := resolveTargets(p, harnessFlags)
 			if err != nil {
 				return err
 			}
-			if !on {
-				// Disabling a typo'd name would silently record state; the
-				// skill must exist in the canonical store. Enabling is
-				// lenient: it also cleans up entries for skills that were
-				// uninstalled while disabled.
+			if !on && !custom {
+				// Disabling a typo'd name would silently record state; a
+				// non-custom skill must exist in the canonical store.
+				// Enabling is lenient: it also cleans up entries for skills
+				// that were uninstalled while disabled.
 				if err := requireStoredSkill(p, name); err != nil {
 					return err
 				}
 			}
 
-			// Harnesses without a write side get their no-op message; they
-			// contribute no toggle (and no state entry).
+			// Every harness with a lever contributes a toggle. A custom
+			// skill's managed link is Bob's and Cursor's lever; harnesses
+			// with no lever at all (including Bob/Cursor on a stored skill)
+			// get their no-op message instead.
 			var toggles []toggle.Toggle
 			var nowrite []harness.Adapter
 			for _, a := range targets {
-				if !a.CanProject() {
+				lever := a.CanProject() || (custom && harness.LinkToggleable(a))
+				if !lever {
 					nowrite = append(nowrite, a)
 					continue
 				}
@@ -154,8 +163,9 @@ func harnessList(adapters []harness.Adapter) string {
 	return strings.Join(names, ", ")
 }
 
-// requireStoredSkill fails when the named skill is not in the canonical
-// store.
+// requireStoredSkill fails when the named skill is in neither the canonical
+// store nor any custom home. Toggling a custom skill is uniform with an
+// installed one, so a custom name must pass this check too.
 func requireStoredSkill(p *paths.Paths, name string) error {
 	skills, err := scan.ScanStore(p.SkillsStore())
 	if err != nil {
@@ -166,7 +176,12 @@ func requireStoredSkill(p *paths.Paths, name string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("skill %q not found in %s", name, p.SkillsStore())
+	if ok, err := isCustomSkill(p, name); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+	return fmt.Errorf("skill %q not found in %s or a custom home", name, p.SkillsStore())
 }
 
 // printToggleOutcome writes the command's headline: one line per harness
@@ -231,9 +246,10 @@ func toggledFlagHarnesses(name string, targets []string, projected []toggle.Proj
 	return blocked
 }
 
-// toggledFlips reports whether any targeted harness's config actually
-// moved for the skill: the direct "on" writes report their own flips,
-// sync's reports carry the "off" projections.
+// toggledFlips reports whether any targeted harness actually moved for the
+// skill: the direct "on" writes report their own flips, sync's reports
+// carry the "off" projections and the link toggles (a custom link created
+// for Bob/Cursor on "on", removed on "off").
 func toggledFlips(name string, targets []string, projected []toggle.Projected, reports []fleetsync.Report) bool {
 	for _, pr := range projected {
 		for _, c := range pr.Report.Changed {
@@ -243,8 +259,21 @@ func toggledFlips(name string, targets []string, projected []toggle.Projected, r
 		}
 	}
 	for _, r := range reports {
+		if !slices.Contains(targets, r.Harness) {
+			continue
+		}
 		for _, c := range r.Changed {
-			if c.Skill == name && slices.Contains(targets, r.Harness) {
+			if c.Skill == name {
+				return true
+			}
+		}
+		for _, l := range r.Linked {
+			if l.Name == name {
+				return true
+			}
+		}
+		for _, l := range r.Unlinked {
+			if l.Name == name {
 				return true
 			}
 		}
@@ -334,6 +363,21 @@ func printSyncReports(out io.Writer, reports []fleetsync.Report) error {
 	for _, r := range reports {
 		for _, e := range r.Removed {
 			if _, err := fmt.Fprintln(out, styleSyncLine(formatRemoved(r.Harness, e), pal)); err != nil {
+				return err
+			}
+		}
+		for _, w := range r.Wired {
+			if _, err := fmt.Fprintln(out, styleSyncLine(formatWiredPlain(w), pal)); err != nil {
+				return err
+			}
+		}
+		for _, l := range r.Linked {
+			if _, err := fmt.Fprintln(out, styleSyncLine("sync: "+formatLink(r.Harness, l), pal)); err != nil {
+				return err
+			}
+		}
+		for _, l := range r.Unlinked {
+			if _, err := fmt.Fprintln(out, styleSyncLine("sync: "+formatUnlinked(r.Harness, l, pal), pal)); err != nil {
 				return err
 			}
 		}

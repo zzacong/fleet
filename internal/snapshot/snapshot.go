@@ -94,7 +94,15 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 	homes := idx.Homes()
 	for i := len(homes) - 1; i >= 0; i-- {
 		home := homes[i]
+		// Within one home the first directory wins a frontmatter-name
+		// collision (the scan is sorted by directory); the home then
+		// overwrites the lower-precedence homes applied before it.
+		seenInHome := map[string]bool{}
 		for _, s := range idx.Skills(home) {
+			if seenInHome[s.Name] {
+				continue
+			}
+			seenInHome[s.Name] = true
 			skillsByName[s.Name] = s
 			if home != idx.Store() {
 				customHomeNames[s.Name] = true
@@ -118,12 +126,25 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 		names[i] = s.Name
 	}
 	reads := make([]harness.ReadResult, len(installed))
+	linkToggle := make([]bool, len(installed))
+	linkedNames := make([]map[string]bool, len(installed))
 	for i, a := range installed {
 		read, err := a.Read(names)
 		if err != nil {
 			return nil, nil, fmt.Errorf("read %s config: %w", a.Harness(), err)
 		}
 		reads[i] = read
+		// A link-toggleable harness reaches a custom skill only through
+		// its managed link, so for customs the link's presence is the
+		// enablement. Canonical skills stay on: it reads the store natively.
+		if harness.LinkToggleable(a) {
+			linkToggle[i] = true
+			set := make(map[string]bool, len(read.Linked))
+			for _, n := range read.Linked {
+				set[n] = true
+			}
+			linkedNames[i] = set
+		}
 	}
 
 	harnessNames := make([]string, len(installed))
@@ -162,6 +183,13 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 		states := make(map[string]string, len(installed))
 		for j := range installed {
 			state := reads[j].States[s.Name]
+			if customHomeNames[s.Name] && linkToggle[j] {
+				if linkedNames[j][s.Name] {
+					state = harness.StateOn
+				} else {
+					state = harness.StateAbsent
+				}
+			}
 			if state == "" {
 				state = harness.StateOn // adapters report every name; be defensive anyway
 			}

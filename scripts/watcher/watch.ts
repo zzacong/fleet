@@ -55,7 +55,7 @@ const WATCH_TARGETS: Array<[string, string]> = [
   ["claude-config", path.join(HOME, ".claude/settings.json")],
   ["cursor-skills", path.join(HOME, ".cursor/skills")],
   ["bob-skills", path.join(HOME, ".bob/skills")],
-  ["bob-settings", path.join(HOME, ".bob/settings.json")],
+  ["bob-settings", path.join(HOME, ".bob/settings/settings.json")],
   ["repo-skills", path.join(REPO, "skills")],
 ];
 
