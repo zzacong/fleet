@@ -7,11 +7,13 @@
 package customs
 
 import (
+	"os"
 	"path/filepath"
 
 	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/scan"
+	"github.com/zzacong/fleet/internal/skillindex"
 )
 
 // Visibility is what one make-visible run did. Empty slices mean nothing
@@ -54,6 +56,41 @@ func MakeVisible(p *paths.Paths, collectionDir string) (*Visibility, error) {
 			return nil, err
 		}
 		vis.Linked = append(vis.Linked, linked...)
+	}
+	return vis, nil
+}
+
+// EnsureVisible makes every scanned custom home discoverable: it is
+// MakeVisible applied to the skill index's custom homes (each tracked
+// collection plus the fleet-home fallback, which is where a configured
+// adopt target lands when it is tracked). Sync calls it so customs stay
+// visible without an adopt or pull run. It is idempotent like the
+// primitive underneath, and homes that do not exist on disk are skipped:
+// wiring a phantom dir into a harness config would make every later run
+// report a change.
+func EnsureVisible(p *paths.Paths) (*Visibility, error) {
+	homes, err := skillindex.CustomHomes(p)
+	if err != nil {
+		return nil, err
+	}
+	vis := &Visibility{}
+	for _, home := range homes {
+		info, err := os.Stat(home)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+		if !info.IsDir() {
+			continue
+		}
+		one, err := MakeVisible(p, home)
+		if err != nil {
+			return nil, err
+		}
+		vis.Wired = append(vis.Wired, one.Wired...)
+		vis.Linked = append(vis.Linked, one.Linked...)
 	}
 	return vis, nil
 }

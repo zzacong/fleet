@@ -49,6 +49,33 @@ func TestMakeVisibleIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestEnsureVisibleLinksEveryCustomHome(t *testing.T) {
+	// The explicit tracked collection and the fleet-home fallback are both
+	// scanned custom homes; sync makes both visible in one run.
+	p, collection := adoptHome(t, nil, []string{"my-notes"})
+	writeSkill(t, p.FleetHomeSkills(), "scratch")
+
+	vis, err := EnsureVisible(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vis.Wired) != 4 {
+		t.Errorf("wired = %v, want opencode and pi for each of the two homes", vis.Wired)
+	}
+	if len(vis.Linked) != 8 {
+		t.Errorf("linked = %d, want 8 (2 skills x 4 harnesses)", len(vis.Linked))
+	}
+	if _, err := os.Readlink(filepath.Join(p.BobSkills(), "scratch")); err != nil {
+		t.Errorf("fallback skill not linked: %v", err)
+	}
+	if _, err := os.Readlink(filepath.Join(p.BobSkills(), "my-notes")); err != nil {
+		t.Errorf("collection skill not linked: %v", err)
+	}
+	if target, _ := os.Readlink(filepath.Join(p.CodexSkills(), "my-notes")); target != filepath.Join(collection, "my-notes") {
+		t.Errorf("collection link target = %q, want the collection", target)
+	}
+}
+
 func TestWithdrawUndoesMakeVisible(t *testing.T) {
 	p, collection := adoptHome(t, nil, []string{"my-notes"})
 

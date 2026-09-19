@@ -84,6 +84,15 @@ func writeLock(t *testing.T, p *paths.Paths) {
 	}
 }
 
+// opencodeDenies reports whether an opencode config disables a skill in
+// either dialect: the V1 key map or a V2 {action, resource, effect} rule.
+func opencodeDenies(body, name string) bool {
+	if strings.Contains(body, `"`+name+`": "deny"`) {
+		return true
+	}
+	return strings.Contains(body, `"resource": "`+name+`"`) && strings.Contains(body, `"effect": "deny"`)
+}
+
 // noNetwork is the stubbed GitHub seam: any fetch is a test failure. The
 // matrix must work from the lockfile and the configs alone.
 type noNetwork struct{}
@@ -281,7 +290,9 @@ func TestStageThenApplyWritesStateAndHarnessConfigs(t *testing.T) {
 	}
 
 	// Each harness got its own native off marker; the others were untouched.
-	if body := readFile(t, p.OpenCodeConfig()); !strings.Contains(body, `"tdd": "deny"`) {
+	// Wiring the tracked collection makes opencode resolve to its V2 rule
+	// shape, so the deny may appear as a V1 key or a V2 rule.
+	if body := readFile(t, p.OpenCodeConfig()); !opencodeDenies(body, "tdd") {
 		t.Errorf("opencode config:\n%s", body)
 	}
 	if body := readFile(t, p.CodexConfig()); !strings.Contains(body, `name = "tdd"`) || !strings.Contains(body, "enabled = false") {
@@ -535,8 +546,9 @@ func TestPrepareSyncsBeforeTheFirstFrame(t *testing.T) {
 	}
 
 	// Sync converged the config with the state file and cleaned the link
-	// before the matrix rendered anything.
-	if body := readFile(t, p.OpenCodeConfig()); !strings.Contains(body, `"tdd": "deny"`) {
+	// before the matrix rendered anything. Once the tracked collection is
+	// wired, opencode resolves to its V2 rule shape for the deny.
+	if body := readFile(t, p.OpenCodeConfig()); !opencodeDenies(body, "tdd") {
 		t.Errorf("opencode config after launch sync:\n%s", body)
 	}
 	requireMissing(t, filepath.Join(p.OpenCodeSkills(), "tdd"), "redundant link")

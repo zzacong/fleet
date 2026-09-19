@@ -337,6 +337,16 @@ func printSyncReports(out io.Writer, reports []fleetsync.Report) error {
 				return err
 			}
 		}
+		for _, w := range r.Wired {
+			if _, err := fmt.Fprintln(out, styleSyncLine(formatWiredPlain(w), pal)); err != nil {
+				return err
+			}
+		}
+		for _, l := range r.Linked {
+			if _, err := fmt.Fprintln(out, styleSyncLine("sync: "+formatLink(r.Harness, l), pal)); err != nil {
+				return err
+			}
+		}
 		if err := printReport(out, r.Harness, r.Changed, r.Flags); err != nil {
 			return err
 		}
