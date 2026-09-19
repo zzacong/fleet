@@ -77,7 +77,8 @@ func newSkillToggleCmd(p *paths.Paths, on bool) *cobra.Command {
 			var toggles []toggle.Toggle
 			var nowrite []harness.Adapter
 			for _, a := range targets {
-				if !a.CanProject() && !(custom && harness.LinkToggleable(a)) {
+				lever := a.CanProject() || (custom && harness.LinkToggleable(a))
+				if !lever {
 					nowrite = append(nowrite, a)
 					continue
 				}

@@ -60,7 +60,7 @@ func MakeVisible(p *paths.Paths, collectionDir string) (*Visibility, error) {
 	vis := &Visibility{Wired: wired}
 	for _, s := range skills {
 		keep := func(h harness.Harness) bool {
-			return !(toggleable[h] && st.IsDisabled(s.Name, string(h)))
+			return !toggleable[h] || !st.IsDisabled(s.Name, string(h))
 		}
 		linked, err := harness.LinkCustomSkill(p, s.Dir, filepath.Join(collectionDir, s.Dir), keep)
 		if err != nil {

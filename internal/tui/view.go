@@ -343,6 +343,7 @@ func (m model) renderCells(r snapshot.SkillRow, l layout) string {
 		}
 		var label string
 		var sty lipgloss.Style
+		linkCustom := m.linkToggle[h] && r.Custom
 		switch {
 		case m.hasStaged(r.Name, h):
 			glyph := "○"
@@ -350,7 +351,7 @@ func (m model) renderCells(r snapshot.SkillRow, l layout) string {
 				glyph = "●"
 			}
 			label, sty = glyph, styStaged
-		case !m.writable[h] && !(m.linkToggle[h] && r.Custom):
+		case !m.writable[h] && !linkCustom:
 			label, sty = "●", styNowrite
 		default:
 			switch m.cellState(r.Name, h) {
