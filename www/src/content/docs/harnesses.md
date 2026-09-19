@@ -15,10 +15,10 @@ Fleet targets six harnesses. Each section states exactly which files fleet touch
 | Pi          | `~/.pi`              | `~/.pi/agent/settings.json`         | force-exclude entry in the `skills` array            | plain path entry in the same array |
 | Codex       | `~/.codex`           | `~/.codex/config.toml`              | `[[skills.config]]` with `enabled = false`           | symlink into `~/.codex/skills`     |
 | Claude Code | `~/.claude`          | `~/.claude/settings.json`           | `skillOverrides: {"<name>": "off"}`                  | symlink into `~/.claude/skills`    |
-| Cursor      | `~/.cursor`          | none                                | none (no config lever exists)                        | symlink into `~/.cursor/skills`    |
-| IBM Bob     | `~/.bob`             | none                                | none (undocumented, unverified)                      | symlink into `~/.bob/skills`       |
+| Cursor      | `~/.cursor`          | none                                | custom skills: remove the managed link               | symlink into `~/.cursor/skills`    |
+| IBM Bob     | `~/.bob`             | none                                | custom skills: remove the managed link               | symlink into `~/.bob/skills`       |
 
-A harness counts as installed when its config directory exists — the same probe the `skills` CLI uses. Commands only act on installed harnesses. `fleet harness ls` shows all six with their installed state, config directory, and whether fleet can write a per-skill off switch.
+A harness counts as installed when its config directory exists — the same probe the `skills` CLI uses. Commands only act on installed harnesses. `fleet harness ls` shows all six with their installed state, config directory, and whether fleet can write a per-skill off switch into their config.
 
 What fleet never touches, for every harness:
 
@@ -127,19 +127,19 @@ The skills CLI's own store links in `~/.claude/skills` are load-bearing (they ar
 
 ## Cursor
 
-**Config written:** none. Cursor reads `~/.agents/skills` natively (documented) and has no config-level per-skill disable. The only documented lever, the `disable-model-invocation` frontmatter flag, would cross-talk with Pi and Claude Code, so per-skill disable for Cursor is out of scope. Every skill reads as `on`, toggles for Cursor are explicit no-ops, and the TUI marks the column `cursor!`.
+**Config written:** none. Cursor reads `~/.agents/skills` natively (documented) and has no config-level per-skill disable. The only documented lever, the `disable-model-invocation` frontmatter flag, would cross-talk with Pi and Claude Code, so per-skill disable for Cursor is out of scope. A stored skill therefore reads as `on` and toggles for it are explicit no-ops; the TUI marks the column `cursor!`.
 
-**Custom skills** get a symlink in `~/.cursor/skills` pointing inside the adopt destination (symlinks supported since IDE 2.5 / CLI 2026.02.27).
+**Custom skills** get a symlink in `~/.cursor/skills` pointing inside the adopt destination (symlinks supported since IDE 2.5 / CLI 2026.02.27). That link is Cursor's only path to a custom, so it is also the toggle: `fleet skill off <custom>` removes it (Cursor then reports the custom `absent`), `fleet skill on <custom>` restores it, and sync never recreates a hidden link.
 
 **Never touched:** any Cursor config file, ever. Redundant store links in `~/.cursor/skills` are removed by sync, since Cursor scans the canonical store natively.
 
 ## IBM Bob
 
-**Config written:** none. Bob reads `~/.agents/skills` natively — verified empirically on this machine; the docs only mention `~/.bob/skills` (and have an open bug about global skills, #288). No per-skill disable mechanism is documented or verified, so Bob behaves like Cursor: every skill reads as `on`, toggles are explicit no-ops, the column is marked `bob!`. Doctor surfaces the discovery picture if Bob's global-skill behavior ever changes.
+**Config written:** none. Bob reads `~/.agents/skills` natively — verified empirically on this machine; the docs only mention `~/.bob/skills` (and have an open bug about global skills, #288). No per-skill disable mechanism is documented or verified, so a stored skill reads as `on`, toggles for it are explicit no-ops, and the column is marked `bob!`. Doctor surfaces the discovery picture if Bob's global-skill behavior ever changes.
 
-**Custom skills** get a symlink in `~/.bob/skills` pointing inside the adopt destination — customs live outside what Bob scans, so the link is Bob's only path to them.
+**Custom skills** get a symlink in `~/.bob/skills` pointing inside the adopt destination — customs live outside what Bob scans, so the link is Bob's only path to them. As with Cursor, that link is the toggle: `fleet skill off <custom>` removes it and `fleet skill on <custom>` restores it.
 
-**Redundant links here are a judgment call:** the `skills` CLI auto-creates store links in `~/.bob/skills`, which double-cover skills Bob already sees through the canonical store. Sync removes those (a user decision, locked in the spec) while managed custom-home links for custom skills always stay — they point outside the store, so they are never classified as redundant.
+**Redundant links here are a judgment call:** the `skills` CLI auto-creates store links in `~/.bob/skills`, which double-cover skills Bob already sees through the canonical store. Sync removes those (a user decision, locked in the spec) while managed custom-home links for custom skills stay — they point outside the store, so they are never classified as redundant. A disabled custom's link is removed by sync instead.
 
 ## States across harnesses
 
@@ -147,6 +147,6 @@ The skills CLI's own store links in `~/.claude/skills` are load-bearing (they ar
 
 - `on` — the harness discovers the skill and nothing disables it
 - `off` — the harness discovers the skill but its config disables it
-- `absent` — the harness cannot discover the skill at all (today, only Claude Code, when no link exists); the table shows `-`
+- `absent` — the harness cannot discover the skill at all (Claude Code with no link; Cursor and Bob for a custom skill whose managed link was removed); the table shows `-`
 
-Cursor and Bob never report `off`: with no disable mechanism, `on` is the only state they can express.
+Cursor and Bob never report `off`: a stored skill is visible natively and always `on`, and hiding a custom removes its only link, so it reads `absent`.

@@ -50,12 +50,13 @@ Fleet keeps a single state file as the source of truth and projects it into each
 | Pi          | ✅                   |
 | Codex       | ✅                   |
 | Claude Code | ✅                   |
-| Cursor      | ❌                   |
-| IBM Bob     | ❌                   |
+| Cursor      | custom skills only   |
+| IBM Bob     | custom skills only   |
 
-Cursor and Bob read the canonical store natively and have no per-skill off
-switch. See the [per-harness reference](/harnesses/) for files touched, written
-shapes, and limitations.
+Cursor and Bob read the canonical store natively, so a stored skill has no per-skill
+off switch there. A custom skill does: it reaches them only through fleet's managed
+symlink, so turning it off removes that link and turning it on restores it. See the
+[per-harness reference](/harnesses/) for files touched, written shapes, and limitations.
 
 ## Supported OS
 
