@@ -291,15 +291,16 @@ Doctor never runs ambient sync — the point is to show what sync _would_ do bef
 fleet skill sync
 ```
 
-The explicit form of the sync that runs on every fleet command: converge harness configs with the state file now, as a scriptable step. The scenario is a hand-run `skills update` — it re-creates the per-agent symlinks and may resurrect enablement; sync repairs both and prints one line per fix:
+The explicit form of the sync that runs on every fleet command: make every custom home visible, converge harness configs with the state file, and clean redundant links now, as a scriptable step. Two scenarios drive it: a hand-run `skills update`, which re-creates per-agent symlinks and may resurrect enablement, and custom skills that were pulled or hand-created without a later `adopt` (sync links them into Codex, Claude Code, Cursor, and Bob, and wires OpenCode and Pi). It prints one line per fix:
 
 ```sh
 $ fleet skill sync
 sync: opencode: removed redundant link "tdd" — opencode scans the canonical store natively — this link double-covers the skill
+sync: bob: linked "my-notes" → ~/Developer/customs/skills/my-notes
 sync: opencode: disabled "tdd" (was on)
 ```
 
-- The report goes to stdout, one line per fix, in sync's own order: link removals first, then enablement changes and flags.
+- The report goes to stdout, one line per fix, in sync's own order: link removals first, then custom wiring and links, then enablement changes and flags.
 - Nothing to repair is not an error: sync is idempotent, so a converged home prints nothing and exits 0.
 - Unknown entries and manual edits are reported and left as is — doctor explains them, and `fleet skill doctor -i`'s conflict prompts are how a kept edit becomes state.
 - The state file is never edited.
@@ -444,10 +445,11 @@ Release builds stamp the version at build time; `go install` builds report `dev`
 Sync runs on every fleet command and after every wrapped `skills` call, and [`fleet skill sync`](#fleet-skill-sync) runs the same machinery on demand. Its decision rules are short and [documented in full](undo.md#how-sync-decides-what-to-touch):
 
 1. Load the state file fresh.
-2. Remove redundant links: symlinks that provably resolve into the canonical store in harnesses that scan it natively (`nativeScanHarnesses`: opencode, pi, codex, Cursor, Bob — never claude code). Links into any tracked collection or the fleet-home fallback are never redundant and are never removed; broken links, real dirs/files, and foreign links stay.
-3. For each installed harness with a write side, write the harness's own off-entry for each state-recorded disable. Nothing else — an absent entry means on, and sync never writes "on" markers.
-4. Flag (never touch) entries it doesn't recognize: patterns, blankets, foreign shapes.
-5. Never edit the state file.
+2. Make customs visible: wire every scanned custom home (each tracked collection and the fleet-home fallback; a configured adopt target counts when it is one of those) into OpenCode and Pi, and link its skills into Codex, Claude Code, Cursor, and Bob. Idempotent — an already-visible home reports nothing.
+3. Remove redundant links: symlinks that provably resolve into the canonical store in harnesses that scan it natively (`nativeScanHarnesses`: opencode, pi, codex, Cursor, Bob — never claude code). Links into any tracked collection or the fleet-home fallback are never redundant and are never removed; broken links, real dirs/files, and foreign links stay.
+4. For each installed harness with a write side, write the harness's own off-entry for each state-recorded disable. Nothing else — an absent entry means on, and sync never writes "on" markers.
+5. Flag (never touch) entries it doesn't recognize: patterns, blankets, foreign shapes.
+6. Never edit the state file.
 
 `fleet skill doctor` previews all of it without changing anything.
 
