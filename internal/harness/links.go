@@ -73,14 +73,20 @@ type LinkResult struct {
 }
 
 // LinkCustomSkill manages every installed link-based harness's link for
-// one custom skill: <harness skills dir>/<name> → target. Harnesses that
-// discover through config paths (opencode, pi) get no links, and harnesses
-// with nothing left to change are omitted.
-func LinkCustomSkill(p *paths.Paths, name, target string) ([]LinkResult, error) {
+// one custom skill: <harness skills dir>/<name> → target. keep, when
+// non-nil, filters harnesses: a harness it rejects is left entirely alone
+// (no link created, nothing removed), which is how a custom link toggle's
+// "off" state keeps its link from being recreated. Harnesses that discover
+// through config paths (opencode, pi) get no links, and harnesses with
+// nothing left to change are omitted.
+func LinkCustomSkill(p *paths.Paths, name, target string, keep func(Harness) bool) ([]LinkResult, error) {
 	var results []LinkResult
 	for _, a := range All(p) {
 		l, ok := a.(SkillLinker)
 		if !ok || !a.Installed() {
+			continue
+		}
+		if keep != nil && !keep(a.Harness()) {
 			continue
 		}
 		change, err := l.LinkSkill(name, target)
@@ -92,6 +98,71 @@ func LinkCustomSkill(p *paths.Paths, name, target string) ([]LinkResult, error) 
 		}
 	}
 	return results, nil
+}
+
+// LinkToggleable reports whether a harness's only lever over a custom
+// skill is its managed link: the harness scans the canonical store
+// natively, so a store skill needs no link, yet it has no config-level
+// per-skill disable — leaving link presence as the only way to hide a
+// custom skill. Bob and Cursor are the two; Claude and Codex have a config
+// lever, so their links stay for discovery even when disabled.
+func LinkToggleable(a Adapter) bool {
+	if _, ok := a.(SkillLinker); !ok {
+		return false
+	}
+	return nativeScanHarnesses[a.Harness()] && !a.CanProject()
+}
+
+// RemoveCustomSkillLink removes name's managed link from one harness's
+// skills dir when the entry is a symlink resolving into one of customHomes.
+// Foreign links, real directories and files, broken links, and links into
+// the canonical store are left alone. removed reports whether a link went.
+func RemoveCustomSkillLink(p *paths.Paths, a Adapter, name string, customHomes []string) (UnlinkResult, bool, error) {
+	if _, ok := a.(SkillLinker); !ok || !a.Installed() {
+		return UnlinkResult{}, false, nil
+	}
+	link := filepath.Join(skillDirPaths(p)[a.Harness()], name)
+	info, err := os.Lstat(link)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return UnlinkResult{}, false, nil
+		}
+		return UnlinkResult{}, false, err
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return UnlinkResult{}, false, nil
+	}
+	final, err := resolveLink(link)
+	if err != nil {
+		return UnlinkResult{}, false, nil // symlink loop: broken, left alone
+	}
+	inside := false
+	for _, home := range customHomes {
+		if home == "" {
+			continue
+		}
+		if pathInside(final, home) || final == filepath.Clean(home) {
+			inside = true
+			break
+		}
+	}
+	if !inside {
+		return UnlinkResult{}, false, nil
+	}
+	written, err := os.Readlink(link)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return UnlinkResult{}, false, nil
+		}
+		return UnlinkResult{}, false, err
+	}
+	if err := os.Remove(link); err != nil {
+		if os.IsNotExist(err) {
+			return UnlinkResult{}, false, nil
+		}
+		return UnlinkResult{}, false, err
+	}
+	return UnlinkResult{Harness: a.Harness(), Name: name, Target: written}, true, nil
 }
 
 // LinkSkill implements SkillLinker: customs reach codex through

@@ -431,3 +431,42 @@ func TestAmbientSyncReportsRedundantLinkRemovals(t *testing.T) {
 		t.Errorf("second run removed links again:\n%s", out)
 	}
 }
+
+func TestOffAndOnToggleACustomSkillThroughBobsLink(t *testing.T) {
+	// Bob has no config lever; for a custom skill his one lever is the
+	// managed link. Disabling removes it, enabling restores it, and sync
+	// never recreates a hidden one.
+	p, collection := adoptHome(t)
+	writeSkillDir(t, collection, "my-notes", "Personal notes.")
+	target := filepath.Join(collection, "my-notes")
+	if _, _, err := runSync(t, p); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(p.BobSkills(), "my-notes")
+
+	out, _ := runToggle(t, p, "off", "my-notes")
+	if !strings.Contains(out, `skill: bob: disabled "my-notes"`) {
+		t.Errorf("output missing the bob outcome:\n%s", out)
+	}
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Error("bob link survived the disable")
+	}
+
+	// sync must not recreate the hidden link.
+	if out, _, err := runSync(t, p); err != nil {
+		t.Fatal(err)
+	} else if strings.TrimSpace(out) != "" {
+		t.Errorf("sync reported work after a hidden disable:\n%s", out)
+	}
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Error("bob link came back after sync")
+	}
+
+	out, _ = runToggle(t, p, "on", "my-notes")
+	if !strings.Contains(out, `skill: bob: enabled "my-notes"`) {
+		t.Errorf("output missing the bob outcome:\n%s", out)
+	}
+	if got, err := os.Readlink(link); err != nil || got != target {
+		t.Errorf("bob link after on = %q (err %v), want %q", got, err, target)
+	}
+}

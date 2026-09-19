@@ -31,6 +31,10 @@ type Report struct {
 	// Linked lists the managed custom-skill links created or repointed
 	// this run, one entry per harness per custom skill.
 	Linked []harness.LinkResult
+	// Unlinked lists managed custom-skill links removed this run because
+	// the state disables the skill on a link-toggleable harness (Bob,
+	// Cursor), where the link is the only disable lever.
+	Unlinked []harness.UnlinkResult
 	// Removed lists the redundant links deleted from this harness's
 	// skills dir. Nothing else in the dir is ever touched.
 	Removed []harness.Entry
@@ -39,7 +43,8 @@ type Report struct {
 // Empty reports whether the report has nothing to tell the user.
 func (r Report) Empty() bool {
 	return len(r.Changed) == 0 && len(r.Flags) == 0 &&
-		len(r.Wired) == 0 && len(r.Linked) == 0 && len(r.Removed) == 0
+		len(r.Wired) == 0 && len(r.Linked) == 0 && len(r.Unlinked) == 0 &&
+		len(r.Removed) == 0
 }
 
 // Run projects the state file into every installed harness that can be
@@ -106,6 +111,19 @@ func Run(p *paths.Paths) ([]Report, error) {
 	for _, l := range vis.Linked {
 		r := reportFor(l.Harness)
 		r.Linked = append(r.Linked, l)
+	}
+
+	// A link-toggleable harness (Bob, Cursor) reaches a custom skill only
+	// through its managed link, so a recorded disable is projected by
+	// removing that link. MakeVisible already skipped re-creating it; this
+	// cleans up a link that predates the disable.
+	unlinked, err := customs.PruneHiddenLinks(p)
+	if err != nil {
+		return nil, fmt.Errorf("hide disabled customs: %w", err)
+	}
+	for _, u := range unlinked {
+		r := reportFor(u.Harness)
+		r.Unlinked = append(r.Unlinked, u)
 	}
 
 	for _, a := range harness.Installed(p) {

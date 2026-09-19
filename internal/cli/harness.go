@@ -29,7 +29,7 @@ func newHarnessLsCmd(p *paths.Paths) *cobra.Command {
 		Use:   "ls",
 		Short: "List the supported harnesses and which are installed",
 		Long: "List the six harnesses fleet supports, marking each installed (its config directory exists) or not, with the directory itself and whether fleet can write a per-skill off switch into its config.\n" +
-			"\nRead-only: unlike most fleet commands, no sync runs — listing what is installed must not converge anything. Cursor and Bob have no per-skill off switch; fleet says so instead of pretending.",
+			"\nRead-only: unlike most fleet commands, no sync runs — listing what is installed must not converge anything. Cursor and Bob have no config off switch; a custom skill is disabled there by removing its managed link, which the toggle verbs do instead.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
@@ -111,7 +111,7 @@ func harnessCheck(installed bool) string {
 }
 
 // yesNo renders a capability flag for the table: fleet says so instead of
-// pretending (Cursor and Bob have no off switch).
+// pretending (Cursor and Bob have no config off switch).
 func yesNo(v bool) string {
 	if v {
 		return "yes"

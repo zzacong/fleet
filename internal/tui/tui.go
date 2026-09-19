@@ -77,6 +77,10 @@ type model struct {
 	adapters  []harness.Adapter
 	harnesses []string
 	writable  map[string]bool
+	// linkToggle names the harnesses whose only lever over a custom skill
+	// is its managed link (Bob, Cursor): those cells are toggleable for
+	// customs even though they have no config write side.
+	linkToggle map[string]bool
 
 	rows   []snapshot.SkillRow
 	col    int // harness column cursor
@@ -123,10 +127,12 @@ func (m *model) rebuildColumns() {
 	m.adapters = nil
 	m.harnesses = nil
 	m.writable = map[string]bool{}
+	m.linkToggle = map[string]bool{}
 	for _, a := range harness.Installed(m.p) {
 		m.adapters = append(m.adapters, a)
 		m.harnesses = append(m.harnesses, string(a.Harness()))
 		m.writable[string(a.Harness())] = a.CanProject()
+		m.linkToggle[string(a.Harness())] = harness.LinkToggleable(a)
 	}
 	if m.col >= len(m.harnesses) {
 		m.col = 0
@@ -216,15 +222,16 @@ func fleetUpdateLine(p *paths.Paths) string {
 
 // syncNotice compresses sync's reports into one launch line.
 func syncNotice(reports []fleetsync.Report) string {
-	var removed, wired, linked, changed, flagged int
+	var removed, wired, linked, unlinked, changed, flagged int
 	for _, r := range reports {
 		removed += len(r.Removed)
 		wired += len(r.Wired)
 		linked += len(r.Linked)
+		unlinked += len(r.Unlinked)
 		changed += len(r.Changed)
 		flagged += len(r.Flags)
 	}
-	if removed+wired+linked+changed+flagged == 0 {
+	if removed+wired+linked+unlinked+changed+flagged == 0 {
 		return ""
 	}
 	var parts []string
@@ -236,6 +243,9 @@ func syncNotice(reports []fleetsync.Report) string {
 	}
 	if linked > 0 {
 		parts = append(parts, fmt.Sprintf("%d custom link%s added", linked, plural(linked)))
+	}
+	if unlinked > 0 {
+		parts = append(parts, fmt.Sprintf("%d custom link%s hidden", unlinked, plural(unlinked)))
 	}
 	if changed > 0 {
 		parts = append(parts, fmt.Sprintf("%d state change%s applied", changed, plural(changed)))
@@ -566,15 +576,18 @@ func (m model) cellState(skill, harnessName string) harness.State {
 }
 
 // stage flips the selected cell's staged intent. Cells that cannot be
-// toggled — harnesses without a write side, skills a harness cannot
-// discover — say so instead of staging a silent no-op.
+// toggled — harnesses with no config write side and no custom-link lever,
+// skills a harness cannot discover — say so instead of staging a silent
+// no-op. A custom skill on Bob/Cursor is toggleable through its managed
+// link even when the link is currently absent (that absence is the "off").
 func (m *model) stage() {
 	name := m.selectedName()
 	if name == "" || len(m.harnesses) == 0 {
 		return
 	}
 	h := m.harnesses[m.col]
-	if !m.writable[h] {
+	linkCustom := m.linkToggle[h] && m.isCustom(name)
+	if !m.writable[h] && !linkCustom {
 		m.notice = notice{
 			text: fmt.Sprintf("%s has no per-skill disable mechanism — toggle is a no-op", h),
 			kind: noticeInfo,
@@ -582,7 +595,7 @@ func (m *model) stage() {
 		return
 	}
 	state := m.cellState(name, h)
-	if state == harness.StateAbsent {
+	if state == harness.StateAbsent && !linkCustom {
 		m.notice = notice{
 			text: fmt.Sprintf("%q isn't discoverable by %s — nothing to toggle", name, h),
 			kind: noticeInfo,

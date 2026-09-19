@@ -78,7 +78,7 @@ func (m model) layout() layout {
 	for _, h := range m.harnesses {
 		label := harnessLabel(h)
 		if !m.writable[h] {
-			label += "!" // flagged: no per-skill off switch, see the help
+			label += "!" // flagged: no config off switch, see the help
 		}
 		l.cellW = append(l.cellW, max(runeLen(label), minCellW))
 	}
@@ -254,8 +254,9 @@ func (m model) filterLine() string {
 }
 
 // columnHeaderLine labels the harness columns. The ! marks harnesses
-// without a per-skill off switch (Cursor, Bob); long names render
-// abbreviated, keyed in the help overlay.
+// without a config per-skill off switch (Cursor, Bob) — a stored skill
+// can't be toggled there, though a custom toggles through its link; long
+// names render abbreviated, keyed in the help overlay.
 func (m model) columnHeaderLine() string {
 	l := m.layout()
 	prefix := 3 + l.nameW + 1 + 3 // glyph, mark, space; name, space; badge, two spaces
@@ -349,7 +350,7 @@ func (m model) renderCells(r snapshot.SkillRow, l layout) string {
 				glyph = "●"
 			}
 			label, sty = glyph, styStaged
-		case !m.writable[h]:
+		case !m.writable[h] && !(m.linkToggle[h] && r.Custom):
 			label, sty = "●", styNowrite
 		default:
 			switch m.cellState(r.Name, h) {
@@ -444,8 +445,8 @@ func (m model) helpOverlay() string {
 		"",
 		"notes",
 		"",
-		"cursor and bob have no per-skill off switch — they read the",
-		"canonical store natively, so toggles for them are no-ops.",
+		"cursor and bob have no config off switch — a stored skill can't",
+		"be toggled there, but a custom skill toggles via its managed link.",
 		"some harnesses pick up config changes on their next session",
 		"(opencode has no live reload).",
 	}

@@ -708,3 +708,74 @@ func TestSnapshotStoreDuplicateNameKeepsFirstDirectory(t *testing.T) {
 		t.Errorf("Source = %q, want owner/repo", row.Source)
 	}
 }
+
+func TestSnapshotCustomLinkToggleState(t *testing.T) {
+	// Bob and Cursor reach a custom skill only through its managed link,
+	// so for customs the link's presence is the state; a stored skill is
+	// visible natively either way.
+	home := t.TempDir()
+	p := paths.New(home)
+	t.Setenv("FLEET_REPO", "")
+	for _, dir := range []string{p.BobDir(), p.CursorDir()} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeSkill(t, p.SkillsStore(), "tdd", "tdd", "stored")
+	explicit := t.TempDir()
+	writeExplicitRepos(t, p, explicit)
+	writeSkill(t, filepath.Join(explicit, "skills"), "my-notes", "my-notes", "custom")
+	target := filepath.Join(explicit, "skills", "my-notes")
+
+	state := func(t *testing.T) map[string]string {
+		t.Helper()
+		report, _, err := Build(context.Background(), p, &fakeTrees{})
+		if err != nil {
+			t.Fatalf("Build error: %v", err)
+		}
+		for _, row := range report.Skills {
+			if row.Name == "my-notes" {
+				return row.States
+			}
+		}
+		t.Fatal("my-notes row missing")
+		return nil
+	}
+
+	// Linked: both see it.
+	for _, dir := range []string{p.BobSkills(), p.CursorSkills()} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, filepath.Join(dir, "my-notes")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := state(t); got["bob"] != "on" || got["cursor"] != "on" {
+		t.Errorf("linked custom states = %v, want bob/cursor on", got)
+	}
+
+	// Link removed (the disable lever): both are absent, not on.
+	for _, dir := range []string{p.BobSkills(), p.CursorSkills()} {
+		if err := os.Remove(filepath.Join(dir, "my-notes")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := state(t); got["bob"] != "absent" || got["cursor"] != "absent" {
+		t.Errorf("unlinked custom states = %v, want bob/cursor absent", got)
+	}
+
+	// The stored skill is untouched by link presence: always on.
+	report, _, err := Build(context.Background(), p, &fakeTrees{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range report.Skills {
+		if row.Name != "tdd" {
+			continue
+		}
+		if row.States["bob"] != "on" || row.States["cursor"] != "on" {
+			t.Errorf("stored skill states = %v, want bob/cursor on", row.States)
+		}
+	}
+}

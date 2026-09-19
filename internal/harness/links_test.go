@@ -46,7 +46,7 @@ func TestLinkCustomSkillLinksEveryLinkBasedHarnessAtTheRepo(t *testing.T) {
 	p := linksHome(t)
 	target := "/repo/skills/my-notes"
 
-	res, err := LinkCustomSkill(p, "my-notes", target)
+	res, err := LinkCustomSkill(p, "my-notes", target, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestLinkCustomSkillRepointsStaleLinksAtTheRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, err := LinkCustomSkill(p, "my-notes", "/repo/skills/my-notes")
+	res, err := LinkCustomSkill(p, "my-notes", "/repo/skills/my-notes", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,11 +111,11 @@ func TestLinkCustomSkillIsIdempotentAndNeverClobbersRealFiles(t *testing.T) {
 	p := linksHome(t)
 	target := "/repo/skills/my-notes"
 
-	if _, err := LinkCustomSkill(p, "my-notes", target); err != nil {
+	if _, err := LinkCustomSkill(p, "my-notes", target, nil); err != nil {
 		t.Fatal(err)
 	}
 	// A second run changes nothing: unchanged links are omitted.
-	res, err := LinkCustomSkill(p, "my-notes", target)
+	res, err := LinkCustomSkill(p, "my-notes", target, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestLinkCustomSkillIsIdempotentAndNeverClobbersRealFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(real, "SKILL.md"), []byte("mine"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	res, err = LinkCustomSkill(p, "my-notes", target)
+	res, err = LinkCustomSkill(p, "my-notes", target, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestLinkCustomSkillSkipsUninstalledHarnesses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, err := LinkCustomSkill(p, "my-notes", "/repo/skills/my-notes")
+	res, err := LinkCustomSkill(p, "my-notes", "/repo/skills/my-notes", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -639,5 +639,64 @@ func TestRemoveCustomLinksMissingDirsAreNoOps(t *testing.T) {
 	}
 	if _, err := os.Lstat(q.ClaudeSkills()); !os.IsNotExist(err) {
 		t.Error("claude skills dir touched although claude is not installed")
+	}
+}
+
+func TestLinkToggleableIsBobAndCursorOnly(t *testing.T) {
+	// Only harnesses with no config lever reach a custom skill solely
+	// through the managed link; Claude and Codex have a config disable, so
+	// their links stay for discovery.
+	p := linksHome(t)
+	want := map[Harness]bool{Bob: true, Cursor: true}
+	for _, a := range All(p) {
+		if got := LinkToggleable(a); got != want[a.Harness()] {
+			t.Errorf("LinkToggleable(%s) = %v, want %v", a.Harness(), got, want[a.Harness()])
+		}
+	}
+}
+
+func TestRemoveCustomSkillLinkOnlyRemovesCustomLinks(t *testing.T) {
+	p := linksHome(t)
+	home := filepath.Join(p.Home, "repos", "custom", "skills")
+	if err := os.MkdirAll(filepath.Join(home, "my-notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	homes := []string{home}
+
+	// A managed custom link goes.
+	symlink(t, filepath.Join(home, "my-notes"), filepath.Join(p.BobSkills(), "my-notes"))
+	res, removed, err := RemoveCustomSkillLink(p, NewBob(p), "my-notes", homes)
+	if err != nil {
+		t.Fatalf("RemoveCustomSkillLink() error = %v", err)
+	}
+	if !removed || res.Harness != Bob || res.Name != "my-notes" {
+		t.Fatalf("removed = %v, result = %+v", removed, res)
+	}
+	if _, err := os.Lstat(filepath.Join(p.BobSkills(), "my-notes")); !os.IsNotExist(err) {
+		t.Error("custom link survived")
+	}
+
+	// A link into the canonical store is not a custom link: left alone.
+	storeSkill := filepath.Join(p.SkillsStore(), "tdd")
+	if err := os.MkdirAll(storeSkill, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	symlink(t, storeSkill, filepath.Join(p.BobSkills(), "tdd"))
+	if _, removed, err := RemoveCustomSkillLink(p, NewBob(p), "tdd", homes); err != nil || removed {
+		t.Errorf("store link removed=%v err=%v, want left alone", removed, err)
+	}
+
+	// A real directory is never touched.
+	real := filepath.Join(p.BobSkills(), "real")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, removed, err := RemoveCustomSkillLink(p, NewBob(p), "real", homes); err != nil || removed {
+		t.Errorf("real dir removed=%v err=%v, want left alone", removed, err)
+	}
+
+	// Missing link: no-op, no error.
+	if _, removed, err := RemoveCustomSkillLink(p, NewBob(p), "absent", homes); err != nil || removed {
+		t.Errorf("missing link removed=%v err=%v, want no-op", removed, err)
 	}
 }
