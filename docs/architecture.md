@@ -32,7 +32,7 @@ read side:  snapshot.Build ──► scan (canonical + tracked set + fallback, p
 | `internal/state`               | The state file: versioned schema, unknown-field preservation, atomic save.                                                                                                                                                                                                                                                                            |
 | `internal/harness`             | The seam. The `Adapter` interface, six adapters with their read and write sides, link management and classification, skill-source wiring.                                                                                                                                                                                                             |
 | `internal/jsonc`               | Comment-, key-order-, and formatting-preserving JSONC editing, used by the JSON-config writers.                                                                                                                                                                                                                                                       |
-| `internal/sync`                | State → adapters, plus custom-visibility (wire every custom home and link its skills) and redundant-link removal (canonical-store links only; tracked-collection/fallback links never removed). Never edits the state file.                                                                                                                          |
+| `internal/sync`                | State → adapters, plus custom-visibility (wire every custom home and link its skills) and link hygiene: redundant canonical-store links are removed (tracked-collection/fallback links are never removed that way), and a custom the state disables on a link-toggleable harness (Cursor, Bob) has its managed link pruned. Never edits the state file.                                                                                                                          |
 | `internal/toggle`              | The one write path: record toggles in the state file, strip "on" markers directly, then sync. Shared by the CLI verbs and the TUI's staged apply.                                                                                                                                                                                                     |
 | `internal/doctor`              | Read-only report of drift, links, and manual edits; keep-or-restore resolution for conflicts; double presence across canonical, tracked collections, and fallback; unscanned-adopt-target and non-git-repo warnings.                                                                                                                                  |
 | `internal/customs`             | `adopt`: move a custom skill into the adopt destination (`--into` for the run, else the configured target, else the tracked-collections-plus-fallback prompt), wire that home, manage the links.                                                                                                                                                      |
@@ -62,9 +62,9 @@ type Adapter interface {
 
 - `on` — the harness discovers the skill and nothing disables it
 - `off` — the harness discovers it but its config disables it
-- `absent` — the harness cannot discover it at all (Claude Code without a link)
+- `absent` — the harness cannot discover it at all (Claude Code without a link; Cursor or Bob for a custom skill whose managed link was removed)
 
-It also reports `Linked` (names with a link in the harness's skills dir), `Disables` (every skill the config disables through an exact-name entry fleet could own, including names not in the store — doctor compares this against the state file), and, for OpenCode, the detected `Dialect` and configured `SkillSources`. A missing config file means everything `on` (or `absent` for Claude Code), not an error.
+It also reports `Linked` (names with a link in the harness's skills dir), `Disables` (every skill the config disables through an exact-name entry fleet could own, including names not in the store — doctor compares this against the state file), and, for OpenCode, the detected `Dialect` and configured `SkillSources`. A missing config file means everything `on` (or `absent` for Claude Code), not an error. Cursor and Bob report every name `on` (they read the store natively and have no config lever); the snapshot refines a _custom_ row from `Linked`, because for those two the managed link is the only path to a custom skill, so no link reads `absent`.
 
 **Write side.** `Project` is a read-modify-write that takes desired `SkillWrite{Name, State}` values and returns what changed (`Changed`: state flips, `From` → `To`) and what it deliberately left alone (`Flags`). The preservation rules:
 
@@ -86,6 +86,8 @@ Two optional interfaces extend the seam for custom skills, both targeting the ad
 - `SkillLinker.LinkSkill(name, target)` — keep `<harness skills dir>/<name>` a symlink to the adopt destination: created when missing, repointed when it targets something else, never touching a real directory or file. Implemented by Codex, Claude Code, Cursor, and Bob.
 - `SourceWiring.WireSkillSource(dir)` — add a directory as an extra skill-discovery source in the config shape the file already speaks. Implemented by OpenCode and Pi.
 
+For a harness that reads the store natively and has _no_ config lever — Cursor and Bob — that link is the only way to hide a custom skill, so it doubles as the toggle: `harness.LinkToggleable` names them, `off` removes the link and `on` recreates it, and sync both skips re-linking a disabled custom and prunes an existing link. Stored skills have no lever there and stay no-ops.
+
 ## The write sequence for toggles
 
 `toggle.Apply` is the only code that changes enablement, and the CLI's `on`/`off` and the TUI's staged apply both call it:
@@ -97,7 +99,7 @@ Two optional interfaces extend the seam for custom skills, both targeting the ad
 
 ## Sync
 
-`sync.Run` reads the state file fresh, then: make every scanned custom home visible (`customs.EnsureVisible` wires each tracked collection and the fleet-home fallback into the config-path harnesses and links its skills for the link-based ones), remove redundant links (symlinks provably resolving into the canonical store in harnesses that scan it natively — never Claude Code, never non-symlinks, never links into any tracked collection or the fallback), then project one off-entry per recorded disable into each installed writable harness. Unrecognized entries are flagged, not touched. The state file is never edited. Every command runs this ambiently, and `fleet skill sync` exposes the same run as an explicit verb. The full decision list lives in [undo and escape hatches](undo.md#how-sync-decides-what-to-touch).
+`sync.Run` reads the state file fresh, then: make every scanned custom home visible (`customs.EnsureVisible` wires each tracked collection and the fleet-home fallback into the config-path harnesses and links its skills for the link-based ones, skipping a custom the state disables on Cursor or Bob), prune those hidden customs' managed links (`customs.PruneHiddenLinks`), remove redundant links (symlinks provably resolving into the canonical store in harnesses that scan it natively — never Claude Code, never non-symlinks, never links into any tracked collection or the fallback), then project one off-entry per recorded disable into each installed writable harness. Unrecognized entries are flagged, not touched. The state file is never edited. Every command runs this ambiently, and `fleet skill sync` exposes the same run as an explicit verb. The full decision list lives in [undo and escape hatches](undo.md#how-sync-decides-what-to-touch).
 
 ## Doctor
 
@@ -105,7 +107,7 @@ Two optional interfaces extend the seam for custom skills, both targeting the ad
 
 ## Adding a new harness
 
-The guide assumes the harness has some per-skill disable mechanism; if it doesn't, Cursor and Bob show the pattern (read side reports `on`, `CanProject()` false, toggles are explicit no-ops).
+The guide assumes the harness has some per-skill disable mechanism; if it doesn't, Cursor and Bob show the pattern (read side reports `on`, `CanProject()` false, stored-skill toggles are explicit no-ops). If such a harness also reads the canonical store natively and reaches customs by link, that link is a real lever for customs — `harness.LinkToggleable` derives it from `SkillLinker` + `NativeScan` + `!CanProject`, so no extra flag is needed.
 
 1. **Pin down the mechanism first.** Which file, which syntax, what a disable looks like, what the harness does natively (does it scan the canonical store?). Write it down in the spec before code — every current adapter's quirks trace back to verified behavior, not guesswork.
 2. **Paths.** Add accessors to `internal/paths/paths.go`: the config dir (the `Installed()` probe), the config file, and the skills dir if the harness has one.
@@ -115,7 +117,7 @@ The guide assumes the harness has some per-skill disable mechanism; if it doesn'
    - `CanProject()` returns whether there is a real config lever.
    - Put the write side in `<name>_write.go`: parse, edit, `writeIfConfigChanged` (or the TOML line-level equivalent), return `Changed`/`Flags`. Only fleet's exact shapes are removable; everything else is a flag.
 4. **Register.** Add the adapter to `All(p)`. The slice order is the column order in `ls`, the TUI, and every report, so place it deliberately.
-5. **Custom skills.** If customs reach the harness through a skills dir, implement `SkillLinker` and add the dir to `skillDirPaths`; decide `NativeScan` in `nativeScanHarnesses` (does the harness scan the canonical store on its own? If yes, sync removes store links there). If customs arrive through a config path instead, implement `SourceWiring`. Neither, and customs simply don't reach it — say so in the docs.
+5. **Custom skills.** If customs reach the harness through a skills dir, implement `SkillLinker` and add the dir to `skillDirPaths`; decide `NativeScan` in `nativeScanHarnesses` (does the harness scan the canonical store on its own? If yes, sync removes store links there — and if the harness also has no config lever, its custom link becomes a toggle through `LinkToggleable`). If customs arrive through a config path instead, implement `SourceWiring`. Neither, and customs simply don't reach it — say so in the docs.
 6. **Tests.** Build the adapter a fake home (`paths.New(filepath.Join(t.TempDir(), "home"))`), write fixtures, run `Read`/`Project`, and assert the whole file's bytes plus the report. Add the adapter to the cross-harness test files (`disables_test.go`, `links_test.go`, `wiring_test.go`, `harness_test.go`) so shared behavior stays shared. See the [testing guide](testing.md#anatomy-of-an-adapter-test).
 7. **Docs.** Add a row to the [per-harness reference](harnesses.md) overview and a section with the same shape as the others: file, written shape, never touched, limitations. `--harness` validation, `ls` columns, and the TUI pick the harness up automatically; `CONTEXT.md` changes only if you introduced new vocabulary.
 

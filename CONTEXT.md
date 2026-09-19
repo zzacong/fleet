@@ -77,7 +77,7 @@ Fleet's record of intended per-harness enablement. The single source of truth. H
 _Avoid_: config, lockfile
 
 **Sync**:
-Making each harness's config match the state file, plus making every custom home visible (wiring the config-path harnesses and linking the link-based ones). Runs on every fleet command and after every wrapped `skills` CLI call. Fixing a mismatched config is part of sync — there is no separate repair step.
+Making each harness's config match the state file, plus making every custom home visible (wiring the config-path harnesses and linking the link-based ones, minus any custom the state disables on Cursor or Bob, whose managed link is the only lever). Runs on every fleet command and after every wrapped `skills` CLI call. Fixing a mismatched config is part of sync — there is no separate repair step.
 _Avoid_: reconcile, repair, apply
 
 **Doctor**:
