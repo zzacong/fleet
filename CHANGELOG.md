@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/zzacong/fleet/compare/v0.3.1...v0.3.2) (2026-09-19)
+
+
+### Features
+
+* **cli:** make custom skills visible and toggleable in every harness ([#17](https://github.com/zzacong/fleet/issues/17)) ([1977c80](https://github.com/zzacong/fleet/commit/1977c807a8e574977b518a5a420e3bce1d707a04))
+
 ## [0.3.1](https://github.com/zzacong/fleet/compare/v0.3.0...v0.3.1) (2026-09-09)
 
 
