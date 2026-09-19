@@ -154,8 +154,9 @@ func harnessList(adapters []harness.Adapter) string {
 	return strings.Join(names, ", ")
 }
 
-// requireStoredSkill fails when the named skill is not in the canonical
-// store.
+// requireStoredSkill fails when the named skill is in neither the canonical
+// store nor any custom home. Toggling a custom skill is uniform with an
+// installed one, so a custom name must pass this check too.
 func requireStoredSkill(p *paths.Paths, name string) error {
 	skills, err := scan.ScanStore(p.SkillsStore())
 	if err != nil {
@@ -166,7 +167,12 @@ func requireStoredSkill(p *paths.Paths, name string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("skill %q not found in %s", name, p.SkillsStore())
+	if ok, err := isCustomSkill(p, name); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+	return fmt.Errorf("skill %q not found in %s or a custom home", name, p.SkillsStore())
 }
 
 // printToggleOutcome writes the command's headline: one line per harness

@@ -105,6 +105,37 @@ func TestOffRecordsStateAndWritesEachHarnessNativeOff(t *testing.T) {
 	}
 }
 
+func TestOffWorksForACustomSkill(t *testing.T) {
+	// A custom skill lives in a tracked collection, not the canonical
+	// store. Disabling it must pass validation, record state, and write
+	// each harness's off marker, exactly like a stored skill.
+	p, collection := adoptHome(t)
+	writeSkillDir(t, collection, "my-notes", "Personal notes.")
+
+	out, _ := runToggle(t, p, "off", "my-notes")
+
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatalf("state file: %v", err)
+	}
+	for _, h := range []string{"opencode", "pi", "codex"} {
+		if !st.IsDisabled("my-notes", h) {
+			t.Errorf("state: my-notes/%s not disabled", h)
+		}
+	}
+	if body := readFile(t, p.OpenCodeConfig()); !strings.Contains(body, `"my-notes"`) {
+		t.Errorf("opencode config missing the custom disable:\n%s", body)
+	}
+	if !strings.Contains(out, `skill: opencode: disabled "my-notes"`) {
+		t.Errorf("output missing the custom-skill outcome:\n%s", out)
+	}
+
+	// A name in no home (neither store nor custom) is still rejected.
+	if err := runToggleErr(t, p, "off", "no-such-skill"); err == nil {
+		t.Error("off with an unknown skill should still fail")
+	}
+}
+
 func TestOffWithHarnessFlagTouchesOnlyThatHarness(t *testing.T) {
 	p := toggleHome(t)
 
