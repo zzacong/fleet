@@ -113,7 +113,7 @@ $ fleet skill ls --json
 fleet skill off <name> [--harness <harness>]...
 ```
 
-Disables a skill: records the toggle in the state file, then sync projects it into each harness's native config. The skill's files stay in the canonical store, so `skills update` keeps updating it.
+Disables a skill: records the toggle in the state file, then sync projects it into each harness's native config. The skill's files stay where they are, so a stored skill keeps updating and a custom skill stays in its collection.
 
 ```sh
 $ fleet skill off tdd
@@ -128,12 +128,12 @@ skill: bob: no per-skill disable mechanism — disable "tdd" is a no-op
 - Without `--harness`, every installed harness is targeted. `--harness` is repeatable and takes a harness ID: `opencode`, `pi`, `codex`, `claude`, `cursor`, `bob`.
 - Cursor and Bob have no per-skill disable mechanism. Toggling for them prints the no-op line and records nothing.
 - A harness where something else overrode the write (a foreign config entry that keeps the skill enabled) is left out of the outcome list; its flag line prints instead — `sync: codex/tdd: a skills.config entry fleet doesn't manage overrides fleet's disable — left alone`.
-- Sync runs as part of the command and reports real repairs it made beyond the toggle: redundant-link removals and drift fixes print as `sync:` lines. Ambient findings about other skills (untracked config disables, foreign rules) stay out of the report; `fleet skill sync` and `fleet skill doctor` are where they are listed.
-- The name must exist in the canonical store. Disabling a typo would silently record state, so it fails loudly:
+- Sync runs as part of the command and reports real repairs it made beyond the toggle: custom wiring, custom links, redundant-link removals, and drift fixes print as `sync:` lines. Ambient findings about other skills (untracked config disables, foreign rules) stay out of the report; `fleet skill sync` and `fleet skill doctor` are where they are listed.
+- The name must exist in the canonical store or a custom home (a tracked collection or the fleet-home fallback). Disabling a typo would silently record state, so it fails loudly:
 
   ```sh
   $ fleet skill off typo-skill
-  Error: skill "typo-skill" not found in ~/.agents/skills
+  Error: skill "typo-skill" not found in ~/.agents/skills or a custom home
   ```
 
 - The command is idempotent: disabling an already-disabled skill changes nothing, and the outcome says so — `skill: opencode: "tdd" is already disabled` (one line per harness, `already` dim, verb green).
@@ -459,7 +459,7 @@ Sync runs on every fleet command and after every wrapped `skills` call, and [`fl
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ---- |
 | Unknown `--harness` value                | `unknown harness "emacs" (want one of: opencode, pi, codex, claude, cursor, bob)`                                          | 1    |
 | `--harness` names an uninstalled harness | `opencode is not installed on this machine`                                                                                | 1    |
-| `off` for a skill not in the store       | `skill "typo-skill" not found in ~/.agents/skills`                                                                         | 1    |
+| `off` for a skill in no home             | `skill "typo-skill" not found in ~/.agents/skills or a custom home`                                                        | 1    |
 | `adopt` for a missing skill              | `skill "git-helper" not found in ~/.agents/skills`                                                                         | 1    |
 | `adopt` double presence                  | `skill "x" exists in … — resolve by hand before adopting` (names every copy)                                               | 1    |
 | `adopt` ambiguous, no terminal           | `adopt: multiple destinations available — re-run with --into <skills-dir> or from a terminal:` + numbered candidates       | 1    |
