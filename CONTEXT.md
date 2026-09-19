@@ -81,7 +81,7 @@ Making each harness's config match the state file, plus making every custom home
 _Avoid_: reconcile, repair, apply
 
 **Doctor**:
-The read-only report of what's wrong: manual edits that disagree with the state file, redundant links, missing harness dirs. Doctor reports; Sync fixes.
+The read-only report of what's wrong: manual edits that disagree with the state file, redundant links, missing harness dirs, and a custom skill's managed link on Cursor or Bob disagreeing with the state. Doctor reports; Sync fixes.
 _Avoid_: reconcile, audit
 
 **Adopt**:
