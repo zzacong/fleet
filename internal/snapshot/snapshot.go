@@ -94,7 +94,15 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 	homes := idx.Homes()
 	for i := len(homes) - 1; i >= 0; i-- {
 		home := homes[i]
+		// Within one home the first directory wins a frontmatter-name
+		// collision (the scan is sorted by directory); the home then
+		// overwrites the lower-precedence homes applied before it.
+		seenInHome := map[string]bool{}
 		for _, s := range idx.Skills(home) {
+			if seenInHome[s.Name] {
+				continue
+			}
+			seenInHome[s.Name] = true
 			skillsByName[s.Name] = s
 			if home != idx.Store() {
 				customHomeNames[s.Name] = true
