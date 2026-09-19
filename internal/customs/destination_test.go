@@ -103,6 +103,30 @@ func TestAdoptToReEnsuresWhenAlreadyThere(t *testing.T) {
 	}
 }
 
+func TestAdoptToReEnsuresDespiteSameHomeDuplicateName(t *testing.T) {
+	// Two directories in one collection declare the same frontmatter name.
+	// That is not double presence across homes, so adopt re-ensures the
+	// directory match instead of refusing.
+	p := destinationHome(t, nil, nil)
+	writeSkill(t, p.FleetHomeSkills(), "foo")
+	alias := filepath.Join(p.FleetHomeSkills(), "bar", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(alias), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\nname: foo\ndescription: alias\n---\n\n# bar\n"
+	if err := os.WriteFile(alias, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := AdoptTo(p, "foo", p.FleetHomeSkills())
+	if err != nil {
+		t.Fatalf("same-home duplicate must not read as double presence: %v", err)
+	}
+	if rep.To != filepath.Join(p.FleetHomeSkills(), "foo") {
+		t.Errorf("rep.To = %q, want the directory match", rep.To)
+	}
+}
+
 func TestAdoptToRefusesDoublePresenceAcrossTrackedSet(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "tracked")
 	p := destinationHome(t, []string{outside}, nil, "my-notes")
