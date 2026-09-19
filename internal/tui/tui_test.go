@@ -16,6 +16,7 @@ import (
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/snapshot"
 	"github.com/zzacong/fleet/internal/state"
+	fleetsync "github.com/zzacong/fleet/internal/sync"
 )
 
 // tuiHome builds a home with every harness installed, two installed skills
@@ -558,6 +559,25 @@ func TestPrepareSyncsBeforeTheFirstFrame(t *testing.T) {
 	row := findRow(t, m, "tdd")
 	if row.States["opencode"] != string(harness.StateOff) {
 		t.Errorf("opencode=%s in the first frame, want off", row.States["opencode"])
+	}
+}
+
+func TestSyncNoticeCountsCustomWiringAndLinks(t *testing.T) {
+	// The launch notice must report the custom-visibility work sync does,
+	// not just removals and enablement flips.
+	reports := []fleetsync.Report{
+		{
+			Harness: "opencode",
+			Wired:   []harness.WireResult{{Harness: harness.OpenCode, Dir: "/repo/skills", Where: "skills"}},
+		},
+		{
+			Harness: "bob",
+			Linked:  []harness.LinkResult{{Harness: harness.Bob, Name: "my-notes", Target: "/repo/skills/my-notes"}},
+		},
+	}
+	got := syncNotice(reports)
+	if !strings.Contains(got, "1 custom source wired") || !strings.Contains(got, "1 custom link added") {
+		t.Errorf("syncNotice = %q, want the wiring and link counts", got)
 	}
 }
 
