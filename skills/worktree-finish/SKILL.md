@@ -93,7 +93,7 @@ AGENTS.md, with the individual commits as body bullets.
 
 ## 5. Move session, remove, verify
 
-When `opencode2` and `jq` exist, move the session home before the
+When `opencode` and `jq` exist, move the session home before the
 worktree disappears (the reverse of `worktree-session`'s move). If the
 move fails, continue but say plainly that the session still points at
 the removed path.
@@ -101,7 +101,7 @@ the removed path.
 ```sh
 session_id="<current session ID>"
 payload="$(jq -n --arg directory "$main_root" '{directory: $directory}')"
-opencode2 api v2.session.move \
+opencode api session.move \
   --param "sessionID=$session_id" --data "$payload"
 
 git -C "$main_root" worktree remove "$destination"

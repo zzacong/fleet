@@ -24,13 +24,13 @@ Use this skill as the first step for work that should happen on a new branch. It
 
    If `git status --short` prints anything, stop and ask the user to commit, stash, or otherwise account for those changes. `git worktree add` starts from `HEAD`; it does not copy uncommitted changes.
 
-5. Confirm that `opencode2` is available and that the current session can be read through the V2 API. Use the current conversation session ID supplied in the session context, not a newly created session or an arbitrary session from the list:
+5. Confirm that `opencode` is available and that the current session can be read through the V2 API. Use the current conversation session ID supplied in the session context, not a newly created session or an arbitrary session from the list:
 
    ```sh
-   command -v opencode2
+   command -v opencode
    command -v jq
    session_id="<current session ID>"
-   opencode2 api v2.session.get --param "sessionID=$session_id"
+   opencode api session.get --param "sessionID=$session_id"
    ```
 
    Stop before changing Git state if any check fails.
@@ -78,7 +78,7 @@ After that command succeeds, move the current session to the new directory throu
 
 ```sh
 payload="$(jq -n --arg directory "$destination" '{directory: $directory}')"
-opencode2 api v2.session.move \
+opencode api session.move \
   --param "sessionID=$session_id" \
   --data "$payload"
 ```
@@ -94,7 +94,7 @@ test "$(git -C "$destination" rev-parse --show-toplevel)" = "$destination"
 test "$(git -C "$destination" branch --show-current)" = "$branch"
 test -z "$(git -C "$destination" status --short)"
 
-opencode2 api v2.session.get --param "sessionID=$session_id" \
+opencode api session.get --param "sessionID=$session_id" \
   | jq -e --arg directory "$destination" '.data.location.directory == $directory' >/dev/null
 ```
 
