@@ -80,6 +80,26 @@ While the frontier is non-empty:
    git worktree add -b ticket/<NN>-<slug> .worktrees/<NN>-<slug> "$WAVE_BASE"
    ```
 
+   A worktree is a fresh checkout, so Git-ignored local files would be
+   missing and a sub-agent could run without local credentials,
+   environment files, or machine-specific config. Copy any files named by
+   a root `.worktreeinclude` into the worktree before dispatch:
+
+   ```sh
+   wt=".worktrees/<NN>-<slug>"
+   if [ -f .worktreeinclude ]; then
+     while IFS= read -r entry || [ -n "$entry" ]; do
+       case "$entry" in ''|\#*) continue ;; esac
+       git ls-files --others --ignored --exclude-standard -- "$entry" |
+         while IFS= read -r file; do
+           [ -n "$file" ] || continue
+           mkdir -p "$wt/$(dirname "$file")"
+           cp -p "$file" "$wt/$file"
+         done
+     done < .worktreeinclude
+   fi
+   ```
+
 2. Delegate each frontier ticket to a `general` sub-agent. Include its exact
    ticket path, worktree path, and `WAVE_BASE` in the prompt. Tell it:
 

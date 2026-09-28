@@ -74,6 +74,30 @@ Create the branch and worktree from the current `HEAD`:
 git worktree add -b "$branch" "$destination" HEAD
 ```
 
+A worktree holds only tracked files, so Git-ignored local files stay
+behind and the new checkout can behave differently from the one it came
+from. Local credentials, environment files, and machine-specific config
+are common cases. If the repository root has a `.worktreeinclude` file
+(the Claude Code convention, Git-ignore syntax, only ignored files are
+copied), copy every file it names into the worktree:
+
+```sh
+if [ -f "$repo_root/.worktreeinclude" ]; then
+  while IFS= read -r entry || [ -n "$entry" ]; do
+    case "$entry" in ''|\#*) continue ;; esac
+    git -C "$repo_root" ls-files --others --ignored --exclude-standard -- "$entry" |
+      while IFS= read -r file; do
+        [ -n "$file" ] || continue
+        mkdir -p "$destination/$(dirname "$file")"
+        cp -p "$repo_root/$file" "$destination/$file"
+      done
+  done < "$repo_root/.worktreeinclude"
+fi
+```
+
+Do this before the session move so the checkout is complete when the
+session lands, and stop if the copy fails.
+
 After that command succeeds, move the current session to the new directory through the OpenCode V2 session API. The destination is another checkout of the same Git project, so the move transfers the session location without creating a second session:
 
 ```sh
