@@ -1,5 +1,5 @@
 // `fleet --version` prints the build-stamped version. `go install` builds
-// keep the `dev` fallback; `make build` and goreleaser overwrite it via
+// keep the `dev` fallback; `just build` and goreleaser overwrite it via
 // -ldflags -X. Cobra answers the flag before RunE, so the TUI never starts.
 
 package cli

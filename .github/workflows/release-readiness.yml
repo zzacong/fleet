@@ -20,7 +20,7 @@ on:
       - "go.sum"
       - "cmd/**"
       - "internal/**"
-      - "Makefile"
+      - "justfile"
       - "CHANGELOG.md"
       - ".github/workflows/**"
 

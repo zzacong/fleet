@@ -5,7 +5,18 @@
       "release-type": "go",
       "include-v-in-tag": true,
       "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": true
+      "bump-patch-for-minor-pre-major": true,
+      "exclude-paths": [
+        "docs",
+        "www",
+        "skills",
+        ".agents",
+        ".claude",
+        ".scratch",
+        ".vscode",
+        ".github",
+        "scripts"
+      ]
     }
   }
 }

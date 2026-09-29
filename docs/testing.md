@@ -106,17 +106,17 @@ pnpm run check     # fmt-check + lint + typecheck + Go lint/test — single entr
 pnpm run check:ci  # lint + typecheck + Go lint/test — what CI runs (no fmt)
 go test ./...      # Go only
 go test ./internal/harness -run TestCodex -v # one slice
-make check         # fmt + test + lint + build — Go only
+just check         # fmt-check + test + lint + build — Go only
 ```
 
-CI runs `pnpm run check:ci` then `make build` and `pnpm --filter www build`; format checks are `oxfmt --check` / `prettier --check` (no `git diff` guard). Run `pnpm run fmt` (JS/TS/MD/Astro) and `make fmt` (Go) before committing.
+CI runs `pnpm run check:ci` then `just build` and `pnpm --filter www build`; format checks are `oxfmt --check` / `prettier --check` (no `git diff` guard). Run `pnpm run fmt` (JS/TS/MD/Astro) and `just fmt` (Go) before committing.
 
 ## Manual sandbox runs with FLEET_HOME
 
 The same injected-home rule works from the shell. Build, then point `FLEET_HOME` at a throwaway directory — fleet will happily create an empty canonical store, state file, and harness dirs inside it:
 
 ```sh
-make build
+just build
 sandbox=$(mktemp -d)
 
 FLEET_HOME=$sandbox ./bin/fleet skill ls          # empty store: "no skills found"

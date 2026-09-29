@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Cross-compile the fleet Go binary for every npm platform package. Binaries
 // land in `npm/fleet-<os>-<arch>/bin/fleet`, stamped with the given version
-// via ldflags (`internal/buildinfo.Version` — the same knob `make build` and
+// via ldflags (`internal/buildinfo.Version` — the same knob `just build` and
 // GoReleaser use). The npm tarballs publish those dirs; GoReleaser's `dist/`
 // layout is never parsed.
 //

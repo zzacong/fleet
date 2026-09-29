@@ -20,7 +20,7 @@ node scripts/watcher/watch.ts --initial --label=baseline  # record baseline
 node scripts/watcher/watch.ts --label=go-1  # snapshot + diff vs previous
 ```
 
-Runs directly with Node 22+ — no install step, no Makefile targets (dev
+Runs directly with Node 22+ — no install step, no just recipes (dev
 tool only, not CI).
 
 State lives in `scripts/watcher/.state/` (gitignored at `.gitignore:17`):
