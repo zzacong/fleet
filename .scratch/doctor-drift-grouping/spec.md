@@ -12,7 +12,7 @@ The stale config and stale state sections already solved this shape: `printStale
 
 ## Solution
 
-Render state drift like the stale sections. Group findings by harness and by drift direction, print the cause and the fix once per group, then list every skill name on its own line under the group. List all names; do not cap. Shorten a home-directory prefix in the directory annotation to `~`.
+Render state drift like the stale sections. Group findings by harness and by drift direction, print the cause and the fix once per group, then list every skill name comma-joined under the group. List all names; do not cap. Shorten a home-directory prefix in the directory annotation to `~`.
 
 Drift has three directions:
 
