@@ -32,7 +32,8 @@ func newSkillDoctorCmd(p *paths.Paths) *cobra.Command {
 			"redundant per-agent links, broken symlinks, unknown entries in skills dirs, " +
 			"a skill name present in more than one source, stale lockfile entries for adopted skills, " +
 			"an adopt target outside the scanned homes, " +
-			"missing directories, a custom skill whose managed link on a native-scanning harness disagrees with the state, " +
+			"missing directories, a tracked dir that is missing, empty, or overlaps another, " +
+			"a custom skill whose managed link on a native-scanning harness disagrees with the state, " +
 			"manual config edits that disagree with the state file, and stale disable rules or state entries for skills installed nowhere.\n\n" +
 			"Doctor is read-only: it reports without changing anything, so you see what sync would " +
 			"do before sync does it (sync runs on every other command).\n\n" +
@@ -102,6 +103,9 @@ var findingSections = []struct {
 	{doctor.KindIncompleteScan, "incomplete scan", "stale disables not reported", "warn"},
 	{doctor.KindUnscannedAdoptTarget, "unscanned adopt target", "", "warn"},
 	{doctor.KindMissingDir, "missing directories", "", "warn"},
+	{doctor.KindTrackedDirMissing, "missing tracked dirs", "fix the skillsDirs list or the disk", "warn"},
+	{doctor.KindTrackedDirEmpty, "empty tracked dirs", "no skills will reach a harness", "warn"},
+	{doctor.KindTrackedSetOverlap, "overlapping tracked dirs", "hand-edited skillsDirs", "warn"},
 	{doctor.KindBrokenConfig, "unreadable configs", "", "broken"},
 }
 
@@ -883,6 +887,12 @@ func findingLabel(kind doctor.Kind, n int) string {
 			return "missing directory"
 		}
 		return "missing directories"
+	case doctor.KindTrackedDirMissing:
+		return pluralized("missing tracked dir", n)
+	case doctor.KindTrackedDirEmpty:
+		return pluralized("empty tracked dir", n)
+	case doctor.KindTrackedSetOverlap:
+		return pluralized("overlapping tracked dir", n)
 	case doctor.KindBrokenConfig:
 		return pluralized("unreadable config", n)
 	}

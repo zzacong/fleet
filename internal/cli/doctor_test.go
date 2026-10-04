@@ -791,3 +791,44 @@ func TestShortenHome(t *testing.T) {
 		}
 	}
 }
+
+func TestDoctorReportsTrackedSetProblems(t *testing.T) {
+	// A hand-edited skillsDirs list with a missing entry, an empty entry,
+	// and a repeated entry: each is its own section in the report.
+	p := doctorHome(t)
+	missing := filepath.Join(t.TempDir(), "gone")
+	empty := filepath.Join(t.TempDir(), "empty")
+	if err := os.MkdirAll(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	duplicated := filepath.Join(t.TempDir(), "duplicated")
+	writeSkillDir(t, duplicated, "helper", "Helper.")
+	body, err := json.Marshal(map[string]any{
+		"skillsDirs": []string{missing, empty, duplicated, duplicated},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeAdoptConfig(t, p, string(body))
+
+	out := runDoctor(t, p, "")
+
+	if !strings.Contains(out, "missing tracked dirs (1)") {
+		t.Errorf("output missing the missing-tracked-dir section:\n%s", out)
+	}
+	if !strings.Contains(out, missing) {
+		t.Errorf("output missing the missing dir path:\n%s", out)
+	}
+	if !strings.Contains(out, "empty tracked dirs (1)") {
+		t.Errorf("output missing the empty-tracked-dir section:\n%s", out)
+	}
+	if !strings.Contains(out, "overlapping tracked dirs (1)") {
+		t.Errorf("output missing the overlapping-tracked-dir section:\n%s", out)
+	}
+	if !strings.Contains(out, "more than once") {
+		t.Errorf("output missing the duplicate explanation:\n%s", out)
+	}
+	if !strings.Contains(out, "1 missing tracked dir, 1 empty tracked dir, 1 overlapping tracked dir") {
+		t.Errorf("output missing the count summary:\n%s", out)
+	}
+}

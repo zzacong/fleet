@@ -71,6 +71,18 @@ const (
 	// "installed nowhere" answer can't be trusted and stale findings are
 	// suppressed. Names the home that blocked the scan.
 	KindIncompleteScan Kind = "incomplete-scan"
+	// KindTrackedDirMissing: an explicit skillsDirs entry that is missing
+	// from disk or is not a directory — a registration the scan can't turn
+	// into skills. Only the user can fix the config or the disk.
+	KindTrackedDirMissing Kind = "tracked-dir-missing"
+	// KindTrackedDirEmpty: an explicit skillsDirs entry that is a directory
+	// but holds no skills — a registration that wires nothing into any
+	// harness.
+	KindTrackedDirEmpty Kind = "tracked-dir-empty"
+	// KindTrackedSetOverlap: a hand-edited skillsDirs list that repeats an
+	// entry or nests one tracked dir inside another, making precedence
+	// ambiguous. Add refuses both; only a manual edit can produce them.
+	KindTrackedSetOverlap Kind = "tracked-set-overlap"
 )
 
 // DriftReason names why a KindDrift finding exists, so the report can group
@@ -231,6 +243,14 @@ func Analyze(p *paths.Paths) (Report, error) {
 		return Report{}, err
 	}
 	rep.Findings = append(rep.Findings, repoFindings...)
+
+	// The tracked set itself: entries a hand-edited config can leave
+	// missing, empty, or overlapping.
+	trackedFindings, err := analyzeTrackedSet(p)
+	if err != nil {
+		return Report{}, err
+	}
+	rep.Findings = append(rep.Findings, trackedFindings...)
 
 	return rep, nil
 }
@@ -688,6 +708,13 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 			continue
 		}
 		reserved[dir] = true
+		if _, ok := errs[dir]; ok {
+			// An unscannable tracked dir (a file, an unreadable path) is
+			// reported by analyzeTrackedSet and named by the incomplete-scan
+			// finding; skip it as a double-presence source rather than
+			// failing the whole checkup.
+			continue
+		}
 		if err := addSource("tracked:"+dir, "the tracked dir", dir); err != nil {
 			return nil, err
 		}
@@ -858,6 +885,112 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 		return findings[i].Message < findings[j].Message
 	})
 	return findings, nil
+}
+
+// analyzeTrackedSet reports what a hand-edited skillsDirs list gets wrong:
+// an entry missing from disk or not a directory, an entry that is a
+// directory but holds no skills, and duplicate or nested entries that make
+// precedence ambiguous. Add refuses all of these at write time, so each
+// finding points at a config the user edited by hand. A dir already reported
+// missing is not also reported empty, and a duplicate is reported once, not
+// once per copy.
+func analyzeTrackedSet(p *paths.Paths) ([]Finding, error) {
+	tracked, err := trackedset.List(p)
+	if err != nil {
+		return nil, fmt.Errorf("resolve tracked dirs: %w", err)
+	}
+	if len(tracked) == 0 {
+		return nil, nil
+	}
+
+	var findings []Finding
+	seen := map[string]bool{}
+	for _, dir := range tracked {
+		clean := filepath.Clean(dir)
+		if seen[clean] {
+			continue
+		}
+		seen[clean] = true
+		findings = append(findings, trackedDirFindings(clean)...)
+	}
+	findings = append(findings, trackedSetOverlapFindings(tracked)...)
+	return findings, nil
+}
+
+// trackedDirFindings reports a single unusable or empty tracked dir: missing
+// from disk, not a directory, unreadable, or a directory holding no skills.
+// An unreadable dir yields none here because the incomplete-scan finding
+// already names it.
+func trackedDirFindings(dir string) []Finding {
+	info, err := os.Stat(dir)
+	switch {
+	case os.IsNotExist(err):
+		return []Finding{{
+			Kind:    KindTrackedDirMissing,
+			Path:    dir,
+			Message: fmt.Sprintf("tracked dir %s does not exist — `fleet skill remove-dir` it, or restore the directory", dir),
+		}}
+	case err != nil:
+		return []Finding{{
+			Kind:    KindTrackedDirMissing,
+			Path:    dir,
+			Message: fmt.Sprintf("tracked dir %s can't be read (%v) — fix the path or remove it with `fleet skill remove-dir`", dir, err),
+		}}
+	case !info.IsDir():
+		return []Finding{{
+			Kind:    KindTrackedDirMissing,
+			Path:    dir,
+			Message: fmt.Sprintf("tracked dir %s is not a directory — `fleet skill remove-dir` it, or point the entry at a collection dir", dir),
+		}}
+	}
+	skills, err := scan.ScanStore(dir)
+	if err != nil {
+		return nil // an unreadable dir is already an incomplete-scan finding
+	}
+	if len(skills) == 0 {
+		return []Finding{{
+			Kind:    KindTrackedDirEmpty,
+			Path:    dir,
+			Message: fmt.Sprintf("tracked dir %s holds no skills — a collection dir's immediate children must each hold a SKILL.md", dir),
+		}}
+	}
+	return nil
+}
+
+// trackedSetOverlapFindings reports duplicate and nested entries: for each
+// entry, every earlier entry it repeats or overlaps is one finding.
+// Duplicates are exact-path repeats; nesting is a strict descendant in
+// either direction. Both make precedence ambiguous and only a hand edit can
+// produce them.
+func trackedSetOverlapFindings(tracked []string) []Finding {
+	var findings []Finding
+	for i, dir := range tracked {
+		clean := filepath.Clean(dir)
+		for j := 0; j < i; j++ {
+			prev := filepath.Clean(tracked[j])
+			switch {
+			case prev == clean:
+				findings = append(findings, Finding{
+					Kind:    KindTrackedSetOverlap,
+					Path:    clean,
+					Message: fmt.Sprintf("tracked dir %s is listed more than once — remove the duplicate from the skillsDirs list by hand", clean),
+				})
+			case under(clean, prev):
+				findings = append(findings, Finding{
+					Kind:    KindTrackedSetOverlap,
+					Path:    clean,
+					Message: fmt.Sprintf("tracked dir %s is nested inside tracked dir %s — precedence between overlapping collections is ambiguous; remove one from the skillsDirs list by hand", clean, prev),
+				})
+			case under(prev, clean):
+				findings = append(findings, Finding{
+					Kind:    KindTrackedSetOverlap,
+					Path:    clean,
+					Message: fmt.Sprintf("tracked dir %s contains tracked dir %s — precedence between overlapping collections is ambiguous; remove one from the skillsDirs list by hand", prev, clean),
+				})
+			}
+		}
+	}
+	return findings
 }
 
 // Resolve applies the chosen resolution for one conflict. keep records the

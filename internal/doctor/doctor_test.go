@@ -628,11 +628,19 @@ func TestAnalyzeDanglingCustomLinkIsBrokenNotDrift(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Analyze() error = %v", err)
 	}
-	if got := kinds(rep); !reflect.DeepEqual(got, []Kind{KindBrokenLink}) {
-		t.Fatalf("findings = %+v, want one broken-link finding", rep.Findings)
+	f := findKind(rep, KindBrokenLink)
+	if f == nil {
+		t.Fatalf("findings = %+v, want a broken-link finding", rep.Findings)
 	}
-	if f := rep.Findings[0]; f.Harness != "opencode" || f.Skill != "my-notes" || f.Path == "" {
-		t.Errorf("finding = %+v, want opencode/my-notes with the link path", f)
+	if f.Harness != "opencode" || f.Skill != "my-notes" || f.Path == "" {
+		t.Errorf("finding = %+v, want opencode/my-notes with the link path", *f)
+	}
+	// Removing the only skill left the tracked dir empty, which doctor also
+	// reports; the dangling link itself must not be misread as drift.
+	for _, finding := range rep.Findings {
+		if finding.Kind == KindDrift {
+			t.Errorf("dangling custom link reported as drift: %+v", finding)
+		}
 	}
 }
 
@@ -967,6 +975,7 @@ func TestResolveRefusesHarnessesWithoutALever(t *testing.T) {
 func TestAnalyzeFlagsStaleLockEntryForFleetHomeSkill(t *testing.T) {
 	p := fakeHome(t)
 	fakeRepo(t, p)
+	repoSkill(t, p, "repo-helper")
 	storeSkill(t, p, "tdd")
 	fleetSkill(t, p, "fleet-helper")
 	writeLock(t, p, map[string]scan.Provenance{
@@ -1413,5 +1422,149 @@ func TestAnalyzeIncompleteScanSuppressesStaleFindings(t *testing.T) {
 		if f.Kind == KindStaleConfig || f.Kind == KindStaleState {
 			t.Errorf("incomplete scan still produced a stale finding: %+v", f)
 		}
+	}
+}
+
+// findKind returns the first finding of a kind, or nil.
+func findKind(rep Report, kind Kind) *Finding {
+	for i := range rep.Findings {
+		if rep.Findings[i].Kind == kind {
+			return &rep.Findings[i]
+		}
+	}
+	return nil
+}
+
+func TestAnalyzeFlagsTrackedDirMissingFromDisk(t *testing.T) {
+	// A tracked dir the user deleted (or never created) leaves an
+	// incomplete index: report it, never create it.
+	p := fakeHome(t)
+	storeSkill(t, p, "tdd")
+	missing := filepath.Join(t.TempDir(), "gone")
+	writeSkillsDirs(t, p, missing)
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	f := findKind(rep, KindTrackedDirMissing)
+	if f == nil {
+		t.Fatalf("findings = %+v, want a tracked-dir-missing finding", rep.Findings)
+	}
+	if f.Path != missing {
+		t.Errorf("path = %q, want %q", f.Path, missing)
+	}
+	if !strings.Contains(f.Message, missing) || !strings.Contains(f.Message, "does not exist") {
+		t.Errorf("message must name the missing tracked dir: %q", f.Message)
+	}
+}
+
+func TestAnalyzeFlagsTrackedDirThatIsNotADirectory(t *testing.T) {
+	// A file where a collection dir should be: the same "unusable tracked
+	// dir" report, worded for the shape.
+	p := fakeHome(t)
+	storeSkill(t, p, "tdd")
+	file := filepath.Join(t.TempDir(), "not-a-dir")
+	writeFile(t, file, "i am a file")
+	writeSkillsDirs(t, p, file)
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	f := findKind(rep, KindTrackedDirMissing)
+	if f == nil {
+		t.Fatalf("findings = %+v, want a tracked-dir-missing finding", rep.Findings)
+	}
+	if f.Path != file || !strings.Contains(f.Message, "not a directory") {
+		t.Errorf("finding = %+v, want the file path and a not-a-directory message", *f)
+	}
+}
+
+func TestAnalyzeFlagsTrackedDirWithNoSkills(t *testing.T) {
+	// An empty registration is a mistake worth surfacing: nothing will ever
+	// reach a harness from it.
+	p := fakeHome(t)
+	storeSkill(t, p, "tdd")
+	empty := filepath.Join(t.TempDir(), "empty")
+	if err := os.MkdirAll(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSkillsDirs(t, p, empty)
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	f := findKind(rep, KindTrackedDirEmpty)
+	if f == nil {
+		t.Fatalf("findings = %+v, want a tracked-dir-empty finding", rep.Findings)
+	}
+	if f.Path != empty || !strings.Contains(f.Message, empty) || !strings.Contains(f.Message, "no skills") {
+		t.Errorf("finding = %+v, want the empty dir named and the zero-skill reason", *f)
+	}
+}
+
+func TestAnalyzeFlagsDuplicateTrackedDir(t *testing.T) {
+	// A hand-edited config that lists one collection twice: the same dir is
+	// tracked twice, which is always a mistake.
+	p := fakeHome(t)
+	storeSkill(t, p, "tdd")
+	dir := filepath.Join(t.TempDir(), "dup")
+	collectionSkill(t, dir, "helper")
+	writeSkillsDirs(t, p, dir, dir)
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	f := findKind(rep, KindTrackedSetOverlap)
+	if f == nil {
+		t.Fatalf("findings = %+v, want a tracked-set-overlap finding", rep.Findings)
+	}
+	if !strings.Contains(f.Message, dir) || !strings.Contains(f.Message, "more than once") {
+		t.Errorf("message must name the duplicate and say so: %q", f.Message)
+	}
+}
+
+func TestAnalyzeFlagsNestedTrackedDirs(t *testing.T) {
+	// One tracked collection inside another makes precedence ambiguous;
+	// report it for the hand-edit that caused it.
+	p := fakeHome(t)
+	storeSkill(t, p, "tdd")
+	parent := filepath.Join(t.TempDir(), "parent")
+	child := filepath.Join(parent, "child")
+	collectionSkill(t, parent, "outer")
+	collectionSkill(t, child, "inner")
+	writeSkillsDirs(t, p, parent, child)
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	f := findKind(rep, KindTrackedSetOverlap)
+	if f == nil {
+		t.Fatalf("findings = %+v, want a tracked-set-overlap finding", rep.Findings)
+	}
+	if !strings.Contains(f.Message, parent) || !strings.Contains(f.Message, child) || !strings.Contains(f.Message, "nested") {
+		t.Errorf("message must name both dirs and the nesting: %q", f.Message)
+	}
+}
+
+func TestAnalyzeQuietOnPlainNonGitTrackedDir(t *testing.T) {
+	// The git model is gone: a tracked collection with no .git and a valid
+	// skill is a normal home, not a warning.
+	p := fakeHome(t)
+	storeSkill(t, p, "tdd")
+	dir := filepath.Join(t.TempDir(), "plain")
+	collectionSkill(t, dir, "helper")
+	writeSkillsDirs(t, p, dir)
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if len(rep.Findings) != 0 || len(rep.Conflicts) != 0 {
+		t.Fatalf("report = %+v, want quiet for a non-git tracked dir", rep)
 	}
 }
