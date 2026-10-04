@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.3](https://github.com/zzacong/fleet/compare/v0.3.2...v0.3.3) (2026-10-04)
+
+
+### Features
+
+* **cli:** fix silent Pi disable by toggling custom skills via managed links ([#19](https://github.com/zzacong/fleet/issues/19)) ([1aede50](https://github.com/zzacong/fleet/commit/1aede5020c38b994a914e48ab5c7a4c2e3e2b7c8))
+* **cli:** stop stale disables for uninstalled skills and add fleet skill prune ([#21](https://github.com/zzacong/fleet/issues/21)) ([f176aa7](https://github.com/zzacong/fleet/commit/f176aa7ff268f2bebebbd32df1c2eb3b451d22ee))
+
 ## [0.3.2](https://github.com/zzacong/fleet/compare/v0.3.1...v0.3.2) (2026-09-19)
 
 
