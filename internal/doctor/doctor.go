@@ -113,6 +113,22 @@ type Finding struct {
 	// Dir is the harness skills directory a drift finding concerns (the link
 	// that is missing or stale); empty otherwise.
 	Dir string
+	// Copies lists each copy of a double-presence finding, in source order.
+	// The CLI groups collisions that share the same homes and prints the
+	// shared explanation once. Empty otherwise.
+	Copies []DoublePresenceCopy
+	// Harnesses lists the installed native-scanning harnesses that would see
+	// a double-present name twice, in column order. The CLI expands a finding
+	// under each of them so the section groups by harness. Empty otherwise.
+	Harnesses []string
+}
+
+// DoublePresenceCopy is one copy of a double-present name: the scanned home
+// (collection dir) that holds it and the copy's absolute path. The CLI groups
+// by Home, so two names colliding in the same pair of homes share one label.
+type DoublePresenceCopy struct {
+	Home string
+	Path string
 }
 
 // Conflict is a manual edit that disagrees with the state file, offered to
@@ -605,8 +621,9 @@ func analyzeLinkToggles(p *paths.Paths, customByDir map[string]string, present, 
 // then auto-tracked fleet-home checkouts alphabetically, env override
 // first), the unversioned fleet-home fallback — plus the skills CLI lockfile
 // and the machine-local config. A name present in more than one home is
-// double visibility — opencode and pi read the canonical store and the
-// linked custom homes, so they would see the skill twice. A lock entry for a custom
+// double visibility: the installed native-scanning harnesses read the
+// canonical store and the linked custom homes, so they would see the skill
+// twice. A lock entry for a custom
 // skill is stale provenance from before its adoption: the skills CLI keys
 // updates by it and would keep touching a skill that moved. An adopt target
 // outside the scanned homes and an explicit entry without a git checkout are
@@ -717,11 +734,23 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 	}
 	sort.Strings(names)
 
+	// The installed harnesses that read the canonical store natively would
+	// see a double-present name twice. Claude is link-only and does not scan
+	// the store, so it is excluded. Empty when no such harness is installed;
+	// the CLI then reports the collision without a harness column.
+	var scanners []string
+	for _, d := range harness.SkillDirs(p) {
+		if d.NativeScan {
+			scanners = append(scanners, string(d.Harness))
+		}
+	}
+
 	var findings []Finding
 	for _, name := range names {
 		homes := byName[name]
 		var parts []string
 		var copyPaths []string
+		var copies []DoublePresenceCopy
 		for _, src := range sources {
 			copyPath, ok := homes[src.key]
 			if !ok {
@@ -729,6 +758,7 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 			}
 			parts = append(parts, fmt.Sprintf("%s (%s)", labels[src.key], copyPath))
 			copyPaths = append(copyPaths, copyPath)
+			copies = append(copies, DoublePresenceCopy{Home: src.skillsDir, Path: copyPath})
 		}
 		// Keep message stable for two-way and N-way cases while
 		// guaranteeing it mentions every conflicting path and the manual
@@ -742,11 +772,17 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 		if len(parts) == 2 {
 			prefix = "exists in both "
 		}
+		who := "a native-scanning harness"
+		if len(scanners) > 0 {
+			who = strings.Join(scanners, " and ")
+		}
 		findings = append(findings, Finding{
-			Kind:  KindDoublePresence,
-			Skill: name,
-			Message: fmt.Sprintf("%q %s%s — opencode and pi would see it twice, and one copy's rules may shadow the other — resolve by hand (remove one of the copies: %s)",
-				name, prefix, joined, strings.Join(copyPaths, ", ")),
+			Kind:      KindDoublePresence,
+			Skill:     name,
+			Copies:    copies,
+			Harnesses: scanners,
+			Message: fmt.Sprintf("%q %s%s — %s would see it twice, and one copy's rules may shadow the other — resolve by hand (remove one of the copies: %s)",
+				name, prefix, joined, who, strings.Join(copyPaths, ", ")),
 		})
 	}
 	// Stale lock entries for every custom home (union, deduped by Dir).

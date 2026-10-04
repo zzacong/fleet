@@ -239,8 +239,11 @@ func TestDoctorFlagsAdoptionFollowups(t *testing.T) {
 
 	out := runDoctor(t, p, "")
 
-	if !strings.Contains(out, "double presence (1)") || !strings.Contains(out, `"tdd" exists in both`) {
-		t.Errorf("output missing the double-presence finding:\n%s", out)
+	if !strings.Contains(out, "double presence (1)") {
+		t.Errorf("output missing the double-presence section:\n%s", out)
+	}
+	if !strings.Contains(out, "duplicated in ~/.agents/skills and "+trackedCollection+" — remove one copy by hand") {
+		t.Errorf("output missing the grouped double-presence label:\n%s", out)
 	}
 	if !strings.Contains(out, "stale lockfile entries (1) · fleet never writes the lockfile") {
 		t.Errorf("output missing the stale-lock section:\n%s", out)
@@ -606,6 +609,48 @@ func TestDoctorDriftGroupsByHarnessAndDirection(t *testing.T) {
 		t.Errorf("home directory not shortened to ~:\n%s", out)
 	}
 	if strings.Contains(out, p.OpenCodeSkills()) {
+		t.Errorf("absolute home path still shown:\n%s", out)
+	}
+}
+
+// TestDoctorDoublePresenceGroupsByHarnessAndHomes checks that two tracked
+// repos sharing two names collapse into one group per native-scanning
+// harness: the shared homes and the manual resolution print once, then both
+// names, not one paragraph each.
+func TestDoctorDoublePresenceGroupsByHarnessAndHomes(t *testing.T) {
+	p := doctorHome(t)
+	first := filepath.Join(p.Home, "repos-a")
+	second := filepath.Join(p.Home, "repos-b")
+	for _, repo := range []string{first, second} {
+		if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeAdoptConfig(t, p, `{"skillsRepos": ["`+first+`", "`+second+`"]}`)
+	writeSkillDir(t, filepath.Join(first, "skills"), "babysit-pr", "Reviews PRs.")
+	writeSkillDir(t, filepath.Join(second, "skills"), "babysit-pr", "Reviews PRs.")
+	writeSkillDir(t, filepath.Join(first, "skills"), "choose-flow", "Picks a flow.")
+	writeSkillDir(t, filepath.Join(second, "skills"), "choose-flow", "Picks a flow.")
+
+	out := runDoctor(t, p, "")
+
+	if !strings.Contains(out, "double presence (2)") {
+		t.Errorf("want a double-presence count of 2:\n%s", out)
+	}
+	// One group per native scanner (opencode, pi, codex, cursor, bob);
+	// claude is link-only and never sees a name twice.
+	label := "duplicated in " + shortenHome(p.Home, filepath.Join(first, "skills")) +
+		" and " + shortenHome(p.Home, filepath.Join(second, "skills")) + " — remove one copy by hand"
+	if got := strings.Count(out, label); got != 5 {
+		t.Errorf("grouped label appears %d times, want 5 (one per native scanner):\n%s", got, out)
+	}
+	if !strings.Contains(out, "babysit-pr, choose-flow\n") {
+		t.Errorf("names not listed under their group:\n%s", out)
+	}
+	if strings.Contains(out, "exists in both") || strings.Contains(out, "would see it twice") {
+		t.Errorf("per-finding double-presence prose still present:\n%s", out)
+	}
+	if strings.Contains(out, p.Home) {
 		t.Errorf("absolute home path still shown:\n%s", out)
 	}
 }
