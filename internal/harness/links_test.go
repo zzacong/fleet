@@ -641,15 +641,43 @@ func TestRemoveCustomLinksMissingDirsAreNoOps(t *testing.T) {
 	}
 }
 
-func TestLinkToggleableIsBobAndCursorOnly(t *testing.T) {
-	// Only harnesses with no config lever reach a custom skill solely
-	// through the managed link; OpenCode, Pi, Codex, and Claude have a
-	// config disable, so their links stay for discovery.
+func TestLinkToggleableIsEveryNativeScanningLinker(t *testing.T) {
+	// A custom skill toggles by its managed link on every harness that
+	// links skills and scans the canonical store natively: opencode, pi,
+	// codex, Cursor, and Bob. Claude is a linker but not a native scanner,
+	// so its custom toggle stays on skillOverrides.
 	p := linksHome(t)
-	want := map[Harness]bool{Bob: true, Cursor: true}
+	want := map[Harness]bool{OpenCode: true, Pi: true, Codex: true, Cursor: true, Bob: true}
 	for _, a := range All(p) {
 		if got := LinkToggleable(a); got != want[a.Harness()] {
 			t.Errorf("LinkToggleable(%s) = %v, want %v", a.Harness(), got, want[a.Harness()])
+		}
+	}
+}
+
+func TestNativeScannersReportLinkPresence(t *testing.T) {
+	// opencode, codex, and pi reach custom skills through a link in their
+	// own skills dir; Read reports which requested names have one, so
+	// snapshot can render a disabled custom absent. Their config-derived
+	// state is unchanged.
+	p := linksHome(t)
+	for _, a := range []Adapter{NewOpenCode(p), NewCodex(p), NewPi(p)} {
+		dir := skillDirPaths(p)[a.Harness()]
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		symlink(t, filepath.Join(p.Home, "repos", "custom", "skills", "my-notes"), filepath.Join(dir, "my-notes"))
+	}
+	for _, a := range []Adapter{NewOpenCode(p), NewCodex(p), NewPi(p)} {
+		res, err := a.Read([]string{"my-notes", "tdd"})
+		if err != nil {
+			t.Fatalf("%s Read: %v", a.Harness(), err)
+		}
+		if len(res.Linked) != 1 || res.Linked[0] != "my-notes" {
+			t.Errorf("%s Linked = %v, want [my-notes]", a.Harness(), res.Linked)
+		}
+		if res.States["my-notes"] != StateOn || res.States["tdd"] != StateOn {
+			t.Errorf("%s states = %v, want on", a.Harness(), res.States)
 		}
 	}
 }

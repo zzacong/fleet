@@ -255,8 +255,11 @@ func TestAdoptLeavesARealDirectoryAloneAndSaysSo(t *testing.T) {
 }
 
 func TestAdoptKeepsExistingDisablesWorking(t *testing.T) {
-	// Disables recorded before adoption target the skill's name; they must
-	// survive the move untouched.
+	// A disable recorded before adoption targets the skill's name; it must
+	// survive the move. After adoption the skill is custom, so on opencode
+	// the recorded disable is projected by link absence rather than the
+	// config entry the pre-adoption disable wrote (that legacy entry is the
+	// upgrade migration's to remove).
 	p, _ := adoptHome(t, "my-notes")
 	if err := runToggleErr(t, p, "off", "my-notes", "--harness", "opencode"); err != nil {
 		t.Fatal(err)
@@ -273,12 +276,9 @@ func TestAdoptKeepsExistingDisablesWorking(t *testing.T) {
 	if !st.IsDisabled("my-notes", "opencode") {
 		t.Error("adoption lost the recorded disable")
 	}
-	if body := readFile(t, p.OpenCodeConfig()); !strings.Contains(body, `"my-notes": "deny"`) {
-		t.Errorf("opencode deny rule did not survive adoption:\n%s", body)
-	}
 	jsonOut := runLs(t, p, "--json")
-	if !strings.Contains(jsonOut, `"opencode": "off"`) {
-		t.Errorf("ls should still show my-notes off for opencode:\n%s", jsonOut)
+	if !strings.Contains(jsonOut, `"opencode": "absent"`) {
+		t.Errorf("ls should show my-notes absent for opencode after adoption:\n%s", jsonOut)
 	}
 }
 

@@ -4,13 +4,13 @@
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `fleet skill off <custom> --harness <h>` removes the managed link for h in OpenCode, Codex, Pi, Cursor, Bob, and writes no config off-entry for it; `fleet skill on <custom>` recreates the link.
-- [ ] `fleet skill off <canonical> --harness opencode|codex|pi` still writes that harness's own config off-entry; Cursor and Bob remain explicit no-ops.
-- [ ] `fleet skill ls`, table and JSON, shows `absent` for a custom with no link on any of those five harnesses, and unchanged `on`/`off` for canonical skills.
-- [ ] Disabling a custom on Claude Code still writes its `skillOverrides` entry and reads `off`; Claude is not link-toggled.
-- [ ] Sync never writes a config off-entry for a custom name on a native-scanning link harness, even if an old one is recorded; canonical names still project.
-- [ ] `fleet skill doctor` reports drift when an enabled custom's link is missing and when a disabled custom's link is present, for the five harnesses, and never reports a canonical skill for link drift.
-- [ ] A custom skill with a broken (dangling) link surfaces through the existing broken-link diagnostics, not a new state.
-- [ ] A user-added non-custom path entry and any foreign config entry are left untouched.
+- [x] `fleet skill off <custom> --harness <h>` removes the managed link for h in OpenCode, Codex, Pi, Cursor, Bob, and writes no config off-entry for it; `fleet skill on <custom>` recreates the link.
+- [x] `fleet skill off <canonical> --harness opencode|codex|pi` still writes that harness's own config off-entry; Cursor and Bob remain explicit no-ops.
+- [x] `fleet skill ls`, table and JSON, shows `absent` for a custom with no link on any of those five harnesses, and unchanged `on`/`off` for canonical skills.
+- [x] Disabling a custom on Claude Code still writes its `skillOverrides` entry and reads `off`; Claude is not link-toggled.
+- [x] Sync never writes a config off-entry for a custom name on a native-scanning link harness, even if an old one is recorded; canonical names still project.
+- [x] `fleet skill doctor` reports drift when an enabled custom's link is missing and when a disabled custom's link is present, for the five harnesses, and never reports a canonical skill for link drift.
+- [x] A custom skill with a broken (dangling) link surfaces through the existing broken-link diagnostics, not a new state.
+- [x] A user-added non-custom path entry and any foreign config entry are left untouched.

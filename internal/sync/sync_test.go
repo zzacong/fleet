@@ -113,6 +113,90 @@ func TestRunProjectsDisabledSkillsIntoInstalledHarnesses(t *testing.T) {
 	}
 }
 
+func TestRunNeverWritesCustomOffEntriesOnNativeScanners(t *testing.T) {
+	// State disables a custom skill on the native-scanning link harnesses.
+	// Their lever is the managed link, so sync removes the link and writes
+	// no config off-entry; a canonical skill disabled for the same
+	// harnesses still projects to config.
+	p := fakeHome(t, "opencode", "pi", "codex", "claude", "cursor", "bob")
+	collection := filepath.Join(p.FleetReposDir(), "team", "skills")
+	writeFile(t, filepath.Join(collection, "my-notes", "SKILL.md"), "---\nname: my-notes\ndescription: notes\n---\n")
+	writeFile(t, filepath.Join(p.SkillsStore(), "tdd", "SKILL.md"), "---\nname: tdd\ndescription: tdd\n---\n")
+
+	// The custom's managed links exist before the disable.
+	linkDirs := []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.CursorSkills(), p.BobSkills()}
+	for _, dir := range linkDirs {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(collection, "my-notes"), filepath.Join(dir, "my-notes")); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	st, _ := state.Load(p.FleetStateFile())
+	for _, h := range []string{"opencode", "pi", "codex", "cursor", "bob"} {
+		st.SetDisabled("my-notes", h)
+	}
+	for _, h := range []string{"opencode", "pi", "codex"} {
+		st.SetDisabled("tdd", h)
+	}
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Run(p); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	// No custom off-entry lands in any writable config.
+	for _, path := range []string{p.OpenCodeConfig(), p.PiSettings(), p.CodexConfig()} {
+		if body := readFile(t, path); strings.Contains(body, "my-notes") {
+			t.Errorf("%s wrote a custom off-entry:\n%s", filepath.Base(path), body)
+		}
+	}
+	// The canonical disable still projects.
+	if body := readFile(t, p.OpenCodeConfig()); !strings.Contains(body, `"tdd": "deny"`) {
+		t.Errorf("opencode config missing the canonical deny:\n%s", body)
+	}
+	if body := readFile(t, p.PiSettings()); !strings.Contains(body, "-skills/tdd/SKILL.md") {
+		t.Errorf("pi settings missing the canonical exclusion:\n%s", body)
+	}
+	if body := readFile(t, p.CodexConfig()); !strings.Contains(body, `name = "tdd"`) || !strings.Contains(body, "enabled = false") {
+		t.Errorf("codex config missing the canonical disable:\n%s", body)
+	}
+	// The custom's link is gone from every native scanner.
+	for _, dir := range linkDirs {
+		if _, err := os.Lstat(filepath.Join(dir, "my-notes")); !os.IsNotExist(err) {
+			t.Errorf("custom link in %s survived the disable", dir)
+		}
+	}
+}
+
+func TestRunLeavesLegacyCustomOffEntryAlone(t *testing.T) {
+	// A config off-entry recorded before this model is not sync's to
+	// remove here (the upgrade migration owns that); sync must not write a
+	// second entry or otherwise rewrite the file.
+	p := fakeHome(t, "opencode")
+	before := `{"permission": {"skill": {"my-notes": "deny"}}}`
+	writeFile(t, p.OpenCodeConfig(), before)
+	collection := filepath.Join(p.FleetReposDir(), "team", "skills")
+	writeFile(t, filepath.Join(collection, "my-notes", "SKILL.md"), "---\nname: my-notes\ndescription: notes\n---\n")
+
+	st, _ := state.Load(p.FleetStateFile())
+	st.SetDisabled("my-notes", "opencode")
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Run(p); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got := readFile(t, p.OpenCodeConfig()); got != before {
+		t.Errorf("opencode config rewritten:\n%s\nwas\n%s", got, before)
+	}
+}
+
 func TestRunFlagsManualEditsWithoutState(t *testing.T) {
 	// The manual-edit drift scenario: no state file, configs hold denies
 	// fleet didn't write. Sync leaves every byte alone and flags them.

@@ -165,7 +165,7 @@ func Analyze(p *paths.Paths) (Report, error) {
 	}
 	rep.Findings = append(rep.Findings, toggleFindings...)
 
-	conflicts, findings, err := analyzeConfigs(p)
+	conflicts, findings, err := analyzeConfigs(p, customByName)
 	if err != nil {
 		return Report{}, err
 	}
@@ -319,8 +319,11 @@ func RemoveBroken(f Finding) error {
 
 // analyzeConfigs compares each writable harness's own config against the
 // state file. Configs that don't parse become findings instead of failing
-// the whole checkup.
-func analyzeConfigs(p *paths.Paths) ([]Conflict, []Finding, error) {
+// the whole checkup. A custom skill on a link-toggleable harness is
+// skipped: its lever is the managed link, so a config entry for it is not
+// a disagreement the state can resolve (link drift is analyzeLinkToggles'
+// business, and the legacy-entry migration removes stale entries).
+func analyzeConfigs(p *paths.Paths, customByName map[string]bool) ([]Conflict, []Finding, error) {
 	st, err := state.Load(p.FleetStateFile())
 	if err != nil {
 		return nil, nil, err
@@ -350,6 +353,7 @@ func analyzeConfigs(p *paths.Paths) ([]Conflict, []Finding, error) {
 			continue // no config lever: nothing to disagree with
 		}
 		h := string(a.Harness())
+		linkCustom := harness.LinkToggleable(a)
 
 		read, err := a.Read(sortedNames(universe))
 		if err != nil {
@@ -378,6 +382,9 @@ func analyzeConfigs(p *paths.Paths) ([]Conflict, []Finding, error) {
 			exact[name] = true
 		}
 		for _, name := range sortedNames(universe) {
+			if linkCustom && customByName[name] {
+				continue // custom skills on a native scanner toggle by link
+			}
 			stateOff := st.IsDisabled(name, h)
 			cfgState := read.States[name]
 			switch {

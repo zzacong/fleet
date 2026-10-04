@@ -99,17 +99,18 @@ func LinkCustomSkill(p *paths.Paths, name, target string, keep func(Harness) boo
 	return results, nil
 }
 
-// LinkToggleable reports whether a harness's only lever over a custom
-// skill is its managed link: the harness scans the canonical store
-// natively, so a store skill needs no link, yet it has no config-level
-// per-skill disable — leaving link presence as the only way to hide a
-// custom skill. Bob and Cursor are the two; OpenCode, Pi, and Codex have a
-// config lever, so their links stay for discovery even when disabled.
+// LinkToggleable reports whether a custom skill's enable/disable on this
+// harness is its managed link. The predicate is a harness that both links
+// skills (SkillLinker) and scans the canonical store natively
+// (nativeScanHarnesses): a store skill needs no link there, so a link
+// exists only for customs and its presence is the lever. OpenCode, Codex,
+// Pi, Cursor, and Bob qualify. Claude is a linker but not a native scanner,
+// so it keeps its config lever (skillOverrides) for customs too.
 func LinkToggleable(a Adapter) bool {
 	if _, ok := a.(SkillLinker); !ok {
 		return false
 	}
-	return nativeScanHarnesses[a.Harness()] && !a.CanProject()
+	return nativeScanHarnesses[a.Harness()]
 }
 
 // RemoveCustomSkillLink removes name's managed link from one harness's

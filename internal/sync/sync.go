@@ -16,6 +16,7 @@ import (
 	"github.com/zzacong/fleet/internal/customs"
 	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/skillindex"
 	"github.com/zzacong/fleet/internal/state"
 )
 
@@ -51,6 +52,10 @@ func Run(p *paths.Paths) ([]Report, error) {
 	st, err := state.Load(p.FleetStateFile())
 	if err != nil {
 		return nil, err
+	}
+	idx, _, err := skillindex.Load(p)
+	if err != nil {
+		return nil, fmt.Errorf("resolve tracked repos: %w", err)
 	}
 
 	reports := map[string]*Report{}
@@ -122,9 +127,16 @@ func Run(p *paths.Paths) ([]Report, error) {
 		if !a.CanProject() {
 			continue
 		}
-		// The state schema is sparse: every entry is a disable.
+		// The state schema is sparse: every entry is a disable. On a
+		// link-toggleable harness a custom skill's lever is its managed
+		// link, so its disable never becomes a config off-entry; canonical
+		// names still project.
+		linkCustom := harness.LinkToggleable(a)
 		var writes []harness.SkillWrite
 		for _, name := range st.Disabled(string(a.Harness())) {
+			if linkCustom && idx.IsCustom(name) {
+				continue
+			}
 			writes = append(writes, harness.SkillWrite{Name: name, State: harness.StateOff})
 		}
 		rep, err := a.Project(writes)

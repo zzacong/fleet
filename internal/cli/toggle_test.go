@@ -107,10 +107,15 @@ func TestOffRecordsStateAndWritesEachHarnessNativeOff(t *testing.T) {
 
 func TestOffWorksForACustomSkill(t *testing.T) {
 	// A custom skill lives in a tracked collection, not the canonical
-	// store. Disabling it must pass validation, record state, and write
-	// each harness's off marker, exactly like a stored skill.
+	// store. On every native-scanning link harness its managed link is the
+	// lever: disabling removes the link and writes no config off-entry.
+	// Claude keeps its config lever (skillOverrides).
 	p, collection := adoptHome(t)
 	writeSkillDir(t, collection, "my-notes", "Personal notes.")
+	if _, _, err := runSync(t, p); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	target := filepath.Join(collection, "my-notes")
 
 	out, _ := runToggle(t, p, "off", "my-notes")
 
@@ -118,32 +123,57 @@ func TestOffWorksForACustomSkill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("state file: %v", err)
 	}
-	for _, h := range []string{"opencode", "pi", "codex"} {
+	for _, h := range []string{"opencode", "pi", "codex", "claude", "cursor", "bob"} {
 		if !st.IsDisabled("my-notes", h) {
 			t.Errorf("state: my-notes/%s not disabled", h)
 		}
 	}
-	if body := readFile(t, p.OpenCodeConfig()); !strings.Contains(body, `"my-notes"`) {
-		t.Errorf("opencode config missing the custom disable:\n%s", body)
-	}
-	if !strings.Contains(out, `skill: opencode: disabled "my-notes"`) {
-		t.Errorf("output missing the custom-skill outcome:\n%s", out)
-	}
 
-	// Disabling a custom still uses the config lever for now: the managed
-	// link stays present on the harnesses with a config lever, and ls keeps
-	// rendering off for them.
-	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.ClaudeSkills()} {
-		got, err := os.Readlink(filepath.Join(dir, "my-notes"))
-		if err != nil || got != filepath.Join(collection, "my-notes") {
-			t.Errorf("link in %s = %q, %v; want the managed link present", dir, got, err)
+	// The five native-scanning link harnesses lose the managed link.
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.CursorSkills(), p.BobSkills()} {
+		if _, err := os.Lstat(filepath.Join(dir, "my-notes")); !os.IsNotExist(err) {
+			t.Errorf("link in %s survived the disable", dir)
 		}
 	}
+	// No config off-entry is written for the custom.
+	for _, path := range []string{p.OpenCodeConfig(), p.PiSettings(), p.CodexConfig()} {
+		if body := readFile(t, path); strings.Contains(body, "my-notes") {
+			t.Errorf("%s wrote a custom off-entry:\n%s", filepath.Base(path), body)
+		}
+	}
+	// Claude is not link-toggled: its link stays and its override lands.
+	if body := readFile(t, p.ClaudeSettings()); !strings.Contains(body, `"my-notes": "off"`) {
+		t.Errorf("claude settings missing the override:\n%s", body)
+	}
+	if got, err := os.Readlink(filepath.Join(p.ClaudeSkills(), "my-notes")); err != nil || got != target {
+		t.Errorf("claude link = %q, %v; want the managed link present", got, err)
+	}
+	for _, want := range []string{`skill: opencode: disabled "my-notes"`, `skill: bob: disabled "my-notes"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+
+	// ls renders absent on the five and off on claude.
 	jsonOut := runLs(t, p, "--json")
-	for _, want := range []string{`"opencode": "off"`, `"pi": "off"`, `"codex": "off"`} {
+	for _, want := range []string{
+		`"opencode": "absent"`, `"pi": "absent"`, `"codex": "absent"`,
+		`"cursor": "absent"`, `"bob": "absent"`, `"claude": "off"`,
+	} {
 		if !strings.Contains(jsonOut, want) {
 			t.Errorf("ls missing %s after disabling the custom:\n%s", want, jsonOut)
 		}
+	}
+
+	// Enabling recreates the managed link on the five.
+	out, _ = runToggle(t, p, "on", "my-notes")
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.CursorSkills(), p.BobSkills()} {
+		if got, err := os.Readlink(filepath.Join(dir, "my-notes")); err != nil || got != target {
+			t.Errorf("link in %s after on = %q, %v; want %q", dir, got, err, target)
+		}
+	}
+	if !strings.Contains(out, `skill: opencode: enabled "my-notes"`) {
+		t.Errorf("output missing the custom-skill enable outcome:\n%s", out)
 	}
 
 	// A name in no home (neither store nor custom) is still rejected.
@@ -445,6 +475,63 @@ func TestAmbientSyncReportsRedundantLinkRemovals(t *testing.T) {
 	out, _ = runToggle(t, p, "off", "tdd")
 	if strings.Contains(out, "removed redundant link") {
 		t.Errorf("second run removed links again:\n%s", out)
+	}
+}
+
+func TestOffCustomWithHarnessFlagRemovesOnlyThatLink(t *testing.T) {
+	// --harness narrows a custom toggle to one native-scanning harness's
+	// managed link: that link goes, the others stay, and no config
+	// off-entry is written.
+	p, collection := adoptHome(t)
+	writeSkillDir(t, collection, "my-notes", "Personal notes.")
+	if _, _, err := runSync(t, p); err != nil {
+		t.Fatal(err)
+	}
+	linkDirs := map[string]string{
+		"opencode": p.OpenCodeSkills(),
+		"pi":       p.PiSkills(),
+		"codex":    p.CodexSkills(),
+		"cursor":   p.CursorSkills(),
+		"bob":      p.BobSkills(),
+	}
+	for _, h := range []string{"opencode", "pi", "codex", "cursor", "bob"} {
+		if err := runToggleErr(t, p, "off", "my-notes", "--harness", h); err != nil {
+			t.Fatalf("off --harness %s: %v", h, err)
+		}
+		if _, err := os.Lstat(filepath.Join(linkDirs[h], "my-notes")); !os.IsNotExist(err) {
+			t.Errorf("%s link survived its own --harness off", h)
+		}
+	}
+	// Untargeted claude keeps its link and is never config-disabled.
+	if _, err := os.Lstat(filepath.Join(p.ClaudeSkills(), "my-notes")); err != nil {
+		t.Errorf("claude link removed though claude was not targeted: %v", err)
+	}
+	for _, path := range []string{p.OpenCodeConfig(), p.PiSettings(), p.CodexConfig()} {
+		if body := readFile(t, path); strings.Contains(body, "my-notes") {
+			t.Errorf("%s wrote a custom off-entry:\n%s", filepath.Base(path), body)
+		}
+	}
+}
+
+func TestLsTableShowsAbsentForACustomWithNoLink(t *testing.T) {
+	// A custom skill with no managed link reads as a bare dash in the
+	// table for every harness whose lever is the link; claude, which is
+	// config-toggled, reads off once its override is written.
+	p, collection := adoptHome(t)
+	writeSkillDir(t, collection, "scratch", "Scratch notes.")
+	if _, _, err := runSync(t, p); err != nil {
+		t.Fatal(err)
+	}
+	if err := runToggleErr(t, p, "off", "scratch"); err != nil {
+		t.Fatal(err)
+	}
+
+	row := tableRow(t, runLs(t, p), "scratch")
+	if got := strings.Count(row, "-"); got < 5 {
+		t.Errorf("unlinked custom row has %d dash cells, want one per native scanner: %q", got, row)
+	}
+	if !strings.Contains(row, "off") {
+		t.Errorf("claude cell should read off: %q", row)
 	}
 }
 

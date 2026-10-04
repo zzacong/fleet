@@ -48,7 +48,7 @@ func TestOpenCodeReadsV1PermissionSkillMap(t *testing.T) {
 		t.Errorf("Dialect = %q, want v1", res.Dialect)
 	}
 	if res.Linked != nil {
-		t.Errorf("Linked = %v, want nil for opencode", res.Linked)
+		t.Errorf("Linked = %v, want none (opencode reports link presence; there are no links here)", res.Linked)
 	}
 }
 

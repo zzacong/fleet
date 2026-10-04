@@ -41,13 +41,14 @@ type Projected struct {
 //   - "off" writes need no direct step — sync projects them.
 //   - sync then runs anyway, repairing any other drift it finds.
 //
-// A toggle naming a harness with no config lever is still recorded when
-// the harness reaches the skill through a managed link (Bob or Cursor on a
-// custom skill): there the link's presence is the enablement, and sync
-// projects the state by creating or removing it. Every other no-lever
-// toggle is skipped: there is nothing to record or write, and callers
-// surface that limitation themselves. It returns how many toggles were
-// recorded, what the direct "on" writes changed, and sync's reports.
+// A custom skill on a link-toggleable harness is recorded and projected
+// through its managed link even when the harness can otherwise write
+// config: sync creates or removes the link, and no config off-entry is
+// written. Canonical skills (and every skill on Claude) keep the config
+// branch. Every other no-lever toggle is skipped: there is nothing to
+// record or write, and callers surface that limitation themselves. It
+// returns how many toggles were recorded, what the direct "on" writes
+// changed, and sync's reports.
 func Apply(p *paths.Paths, toggles []Toggle) (int, []Projected, []fleetsync.Report, error) {
 	st, err := state.Load(p.FleetStateFile())
 	if err != nil {
@@ -65,19 +66,22 @@ func Apply(p *paths.Paths, toggles []Toggle) (int, []Projected, []fleetsync.Repo
 		switch {
 		case a == nil:
 			continue
-		case a.CanProject():
+		case harness.LinkToggleable(a) && idx.IsCustom(t.Name):
+			// A custom skill's managed link is this harness's lever even
+			// when the harness can otherwise write config: sync creates
+			// the link for "on" and removes it for "off", and no config
+			// off-entry is written. Canonical-store skills fall through to
+			// the config branch below.
 			if t.On {
 				st.SetEnabled(t.Name, t.Harness)
-				onWrites[t.Harness] = append(onWrites[t.Harness], harness.SkillWrite{Name: t.Name, State: harness.StateOn})
 			} else {
 				st.SetDisabled(t.Name, t.Harness)
 			}
 			applied++
-		case harness.LinkToggleable(a) && idx.IsCustom(t.Name):
-			// The managed link is this harness's only lever over a custom
-			// skill; sync creates it for "on" and removes it for "off".
+		case a.CanProject():
 			if t.On {
 				st.SetEnabled(t.Name, t.Harness)
+				onWrites[t.Harness] = append(onWrites[t.Harness], harness.SkillWrite{Name: t.Name, State: harness.StateOn})
 			} else {
 				st.SetDisabled(t.Name, t.Harness)
 			}

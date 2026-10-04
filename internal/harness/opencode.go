@@ -40,6 +40,7 @@ func (a *OpenCodeAdapter) Dir() string { return a.home.OpenCodeDir() }
 // Read implements Adapter.
 func (a *OpenCodeAdapter) Read(names []string) (ReadResult, error) {
 	res := ReadResult{States: onForAll(names)}
+	res.Linked = linkedNames(a.home.OpenCodeSkills(), names)
 
 	body, err := os.ReadFile(a.home.OpenCodeConfig())
 	if err != nil {
