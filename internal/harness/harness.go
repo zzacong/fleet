@@ -46,12 +46,19 @@ type ReadResult struct {
 	// "v1", "v2", or "" when no marker was found. Only opencode sets it.
 	Dialect string
 	// Disables lists every skill name the harness's own config disables
-	// through an exact-name entry fleet could own — including names that
-	// aren't in the canonical store. Glob patterns, blanket rules, and
-	// shapes fleet can't write are excluded: they surface as flags, never
-	// as state-tracked entries. Adapters without a config lever leave it
-	// nil. Doctor compares this against the state file.
+	// through an exact-name entry — including names that aren't in the
+	// canonical store, and including shapes fleet can't write (a codex
+	// path selector, an opencode V2 rule with extra keys). Glob patterns
+	// and blanket rules are excluded: they surface as flags, never as
+	// state-tracked entries. Adapters without a config lever leave it nil.
+	// Doctor grows its comparison universe from this.
 	Disables []string
+	// ExactDisables is the subset of Disables that is exactly the shape
+	// the write side owns and can remove: the opencode V1 exact deny and
+	// V2 three-key deny, the pi exact exclusion, the codex simple name
+	// block, and the claude "off" override. Doctor uses it to tell a
+	// fleet-owned leftover prune can remove from a manual edit it can't.
+	ExactDisables []string
 }
 
 // SkillWrite is one skill's desired enablement for one harness.
@@ -60,6 +67,18 @@ type SkillWrite struct {
 	// State is the desired state: StateOff ensures fleet's own marker is
 	// present, StateOn ensures it is gone.
 	State State
+	// Dormant marks a disable the state owns but whose skill is installed
+	// nowhere. An adapter never creates a new off entry for a dormant
+	// write, but the name still counts as fleet-owned, so the unmanaged
+	// sweep leaves an existing rule in place and stays quiet. Sync sets it
+	// only when the skill index scan is complete, so an incomplete scan
+	// still projects every disable.
+	Dormant bool
+	// DryRun marks a write that is only previewed: the adapter computes
+	// its report exactly as a real write would but leaves the config file
+	// untouched. Prune sets it for its no-flag listing; every other caller
+	// leaves it false.
+	DryRun bool
 }
 
 // Change records one enablement flip a write actually applied: the skill's

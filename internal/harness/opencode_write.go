@@ -60,8 +60,10 @@ func (a *OpenCodeAdapter) Project(writes []SkillWrite) (WriteReport, error) {
 
 	flagUnmanagedOpenCode(root, writes, &rep)
 
-	if err := writeIfConfigChanged(a.home.OpenCodeConfig(), src, renderConfig(src, doc)); err != nil {
-		return WriteReport{}, err
+	if !allPreview(writes) {
+		if err := writeIfConfigChanged(a.home.OpenCodeConfig(), src, renderConfig(src, doc)); err != nil {
+			return WriteReport{}, err
+		}
 	}
 	return rep, nil
 }
@@ -160,6 +162,9 @@ func projectOpenCodeV1(root *jsonc.Object, writes []SkillWrite, read ReadResult,
 	var fresh []string
 
 	for _, w := range writes {
+		if w.Dormant {
+			continue // installed nowhere: leave any existing rule, write none
+		}
 		before := read.States[w.Name]
 		switch w.State {
 		case StateOff:
@@ -321,6 +326,9 @@ func projectOpenCodeV2(root *jsonc.Object, writes []SkillWrite, read ReadResult,
 	var fresh []string
 
 	for _, w := range writes {
+		if w.Dormant {
+			continue // installed nowhere: leave any existing rule, write none
+		}
 		before := read.States[w.Name]
 		switch w.State {
 		case StateOff:

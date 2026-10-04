@@ -356,6 +356,19 @@ func TestOpenCodeProjectPreservesModeOnRewrite(t *testing.T) {
 	}
 }
 
+func TestOpenCodeProjectDryRunReportsWithoutWriting(t *testing.T) {
+	fixture := `{"permission": {"skill": {"tdd": "deny"}}}`
+	rep, got := runOpenCodeProject(t, filepath.Join(t.TempDir(), "home"), fixture,
+		[]SkillWrite{{Name: "tdd", State: StateOn, DryRun: true}})
+	if got != fixture {
+		t.Errorf("dry run wrote the config:\n%s", got)
+	}
+	want := []Change{{Skill: "tdd", From: StateOff, To: StateOn}}
+	if !reflect.DeepEqual(rep.Changed, want) {
+		t.Errorf("Changed = %v, want %v", rep.Changed, want)
+	}
+}
+
 func TestOpenCodeProjectMalformedConfigIsAnError(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
 	if _, _, err := runOpenCodeProjectErr(t, home, `{"permission": {`); err == nil {

@@ -3,6 +3,7 @@ package skillindex
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -217,5 +218,157 @@ func TestLoadReportsPerHomeErrors(t *testing.T) {
 	}
 	if len(idx.Skills(blocker)) != 0 {
 		t.Errorf("Skills(failed) = %v, want empty", idx.Skills(blocker))
+	}
+}
+
+func TestCompleteWhenStoreScansAndFallbackMissing(t *testing.T) {
+	p := indexHome(t, nil, nil)
+	writeIndexSkill(t, p.SkillsStore(), "alpha", "alpha")
+
+	idx, errs, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(errs) != 0 {
+		t.Fatalf("Load() errs = %v, want none", errs)
+	}
+	if !idx.Complete() {
+		t.Fatalf("Complete() = false, want true: the store scans and the absent fallback is optional")
+	}
+}
+
+func TestMissingStoreMakesScanIncomplete(t *testing.T) {
+	p := indexHome(t, nil, nil)
+	writeIndexSkill(t, p.FleetHomeSkills(), "custom", "custom")
+
+	idx, _, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if idx.Complete() {
+		t.Fatalf("Complete() = true, want false: the canonical store is absent")
+	}
+}
+
+func TestMissingTrackedRepoRootMakesScanIncomplete(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "moved-repo")
+	p := indexHome(t, []string{missing}, nil)
+	writeIndexSkill(t, p.SkillsStore(), "alpha", "alpha")
+
+	idx, _, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if idx.Complete() {
+		t.Fatalf("Complete() = true, want false: tracked repo root %q is missing", missing)
+	}
+}
+
+func TestPerHomeScanErrorMakesScanIncomplete(t *testing.T) {
+	p := indexHome(t, nil, []string{"team"})
+	writeIndexSkill(t, p.SkillsStore(), "alpha", "alpha")
+	blocker := filepath.Join(p.FleetReposDir(), "team", "skills")
+	if err := os.WriteFile(blocker, []byte("not a dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	idx, _, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if idx.Complete() {
+		t.Fatalf("Complete() = true, want false: a home failed to scan")
+	}
+}
+
+func TestInstalledNamesSpanEveryHome(t *testing.T) {
+	explicitRoot := filepath.Join(t.TempDir(), "explicit-repo")
+	p := indexHome(t, []string{explicitRoot}, []string{"team"})
+	explicit := filepath.Join(explicitRoot, "skills")
+	team := filepath.Join(p.FleetReposDir(), "team", "skills")
+	writeIndexSkill(t, p.SkillsStore(), "store-dir", "store-name")
+	writeIndexSkill(t, explicit, "explicit-dir", "explicit-name")
+	writeIndexSkill(t, team, "repo-dir", "repo-name")
+	writeIndexSkill(t, p.FleetHomeSkills(), "fb-dir", "fb-name")
+
+	idx, _, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !idx.Complete() {
+		t.Fatalf("Complete() = false, want true: every home is present and scans")
+	}
+	for _, name := range []string{
+		"store-dir", "store-name",
+		"explicit-dir", "explicit-name",
+		"repo-dir", "repo-name",
+		"fb-dir", "fb-name",
+	} {
+		if !idx.IsInstalled(name) {
+			t.Errorf("IsInstalled(%q) = false, want true", name)
+		}
+	}
+	if idx.IsInstalled("absent") {
+		t.Errorf("IsInstalled(absent) = true, want false")
+	}
+	want := []string{
+		"explicit-dir", "explicit-name",
+		"fb-dir", "fb-name",
+		"repo-dir", "repo-name",
+		"store-dir", "store-name",
+	}
+	if !equalStrings(idx.InstalledNames(), want) {
+		t.Errorf("InstalledNames() = %q, want %q", idx.InstalledNames(), want)
+	}
+}
+
+func TestBlockedHomesNameMissingRootAndScanError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "moved-repo")
+	p := indexHome(t, []string{missing}, []string{"team"})
+	writeIndexSkill(t, p.SkillsStore(), "alpha", "alpha")
+	// team's collection is a regular file, not a dir: the scan fails.
+	blocker := filepath.Join(p.FleetReposDir(), "team", "skills")
+	if err := os.WriteFile(blocker, []byte("not a dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	idx, _, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if idx.Complete() {
+		t.Fatal("Complete() = true, want false")
+	}
+	want := []string{filepath.Join(missing, "skills"), blocker}
+	sort.Strings(want)
+	if !equalStrings(idx.BlockedHomes(), want) {
+		t.Fatalf("BlockedHomes() = %q, want %q", idx.BlockedHomes(), want)
+	}
+}
+
+func TestBlockedHomesEmptyWhenCompleteOrOnlyStoreMissing(t *testing.T) {
+	// A complete scan has no blocker.
+	p := indexHome(t, nil, nil)
+	writeIndexSkill(t, p.SkillsStore(), "alpha", "alpha")
+	idx, _, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(idx.BlockedHomes()) != 0 {
+		t.Fatalf("BlockedHomes() = %q, want none for a complete scan", idx.BlockedHomes())
+	}
+
+	// A missing canonical store makes the scan incomplete, but doctor
+	// reports it as a missing directory, not as a blocked home.
+	empty := indexHome(t, nil, nil)
+	idx2, _, err := Load(empty)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if idx2.Complete() {
+		t.Fatal("Complete() = true, want false for an absent store")
+	}
+	if len(idx2.BlockedHomes()) != 0 {
+		t.Fatalf("BlockedHomes() = %q, want none: the store is reported separately", idx2.BlockedHomes())
 	}
 }

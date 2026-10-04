@@ -41,6 +41,22 @@ fleet skill on tdd              # everywhere
 fleet skill on tdd --harness pi # one harness
 ```
 
+To clear every stale disable at once instead of naming each skill, `fleet skill prune` removes the config rules and state entries for skills that are installed nowhere (see [prune](cli.md#fleet-skill-prune)).
+
+## Uninstall a skill that is disabled
+
+Uninstalling a skill, whether you remove it from `~/.agents/skills` or from its custom home, does not erase its recorded disable. The state file keeps the disable as dormant intent: sync stops writing new off entries for it, so harness configs stop collecting rules for skills you removed, but reinstalling the skill comes back disabled without you setting it again.
+
+Two leftovers can remain: a fleet-owned rule some harness config still carries, and the dormant state entry itself. `fleet skill prune` clears them:
+
+```sh
+fleet skill prune                     # list what it would remove
+fleet skill prune --yes               # remove both leftovers
+fleet skill prune --config-only --yes # drop the config rule, keep the disable-on-reinstall intent
+```
+
+Doctor reports both leftovers and points at prune (see [doctor](cli.md#fleet-skill-doctor)). Pruning a state entry loses the disable-on-reinstall behavior, so reach for `--config-only` when you want a clean config but plan to reinstall.
+
 ## Reset fleet's state
 
 The state file is `~/.config/fleet/state.json` ([schema](state-file.md)). Deleting it resets fleet's memory:
@@ -66,7 +82,7 @@ Sync's rules, in the order it applies them:
 2. **Clean up legacy entries.** On the first sync after upgrading, remove the fleet-owned entries a previous release wrote: collection paths in OpenCode's and Pi's config, and fleet-shape exact-name off-entries on OpenCode, Codex, and Pi that name a current custom skill. Each removal prints as `sync: <harness>: removed legacy <collection path|disable entry> "<value>"`. Scope is strict, so config fleet did not write (a path you added yourself, a rule of another shape) is left alone, and later syncs find nothing.
 3. **Make customs visible.** Every scanned custom home — each tracked collection plus the fleet-home fallback (a configured adopt target is included when it is one of those; a standalone target stays a doctor warning) — is linked into every installed harness, one managed symlink per skill. A custom skill the state disables on a native-scanning harness (OpenCode, Codex, Pi, Cursor, Bob) is the exception: the managed link is that harness's only lever for a custom, so it is left unlinked and any existing link is removed here (reported as `unlinked`). A visible home reports nothing, so this is idempotent; it is what keeps a hand-created or already-pulled custom skill reachable in every harness without running `adopt` or `pull` again.
 4. **Remove redundant links.** In each installed harness's skills dir, a symlink counts as redundant only when it provably resolves into the canonical store _and_ that harness scans the store natively (OpenCode, Pi, Codex, Cursor, Bob — never Claude Code, whose store links are its only discovery path). Everything else in those dirs survives: real directories and files, links into any tracked collection or the fleet-home fallback (including your own and fleet's managed adopt/pull links), links pointing anywhere else, and broken links, which doctor reports instead. Sync never removes tracked-collection or fallback links.
-5. **Project the disables.** For each installed harness with a config write side (OpenCode, Pi, Codex, Claude Code), write that harness's own off-entry for every disable the state records, except a custom skill on OpenCode, Codex, or Pi, where the managed link from step 3 is the lever and no config entry is written. Claude Code writes `skillOverrides` for custom and canonical skills alike. Cursor and Bob project through the managed link in step 3 instead. Nothing else. An absent entry means on; sync never writes "on" markers, because "on" is what every harness does by default.
+5. **Project the disables.** For each installed harness with a config write side (OpenCode, Pi, Codex, Claude Code), write that harness's own off-entry for every disable the state records whose skill is installed somewhere, except a custom skill on OpenCode, Codex, or Pi, where the managed link from step 3 is the lever and no config entry is written. A disable for a skill installed nowhere is dormant: the state keeps the intent, sync writes nothing new, and a rule already in a config stays for `fleet skill prune`. Claude Code writes `skillOverrides` for custom and canonical skills alike. Cursor and Bob project through the managed link in step 3 instead. Nothing else. An absent entry means on; sync never writes "on" markers, because "on" is what every harness does by default. When the scan is incomplete, sync projects every disable anyway, because leaving an installed skill enabled is worse than a stale rule.
 6. **Flag what it doesn't recognize.** Pattern and blanket rules, glob exclusions, Codex blocks with extra keys — anything that affects enablement but isn't fleet's exact shape is printed as a flag and left untouched. Sync reports; you decide.
 7. **Never edit the state file.** Sync is one-directional on purpose: state is the source of truth, configs are outputs. (`~/.config/fleet/config.json` is the separate machine-local customs file. Sync reads the adopt target from it but never writes it — `fleet config` and `fleet skill pull` manage it.)
 

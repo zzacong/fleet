@@ -32,7 +32,7 @@ func newSkillDoctorCmd(p *paths.Paths) *cobra.Command {
 			"a skill name present in more than one source, stale lockfile entries for adopted skills, " +
 			"an adopt target outside the scanned homes, explicit repos that are not git checkouts, " +
 			"missing directories, a custom skill whose managed link on a native-scanning harness disagrees with the state, " +
-			"and manual config edits that disagree with the state file.\n\n" +
+			"manual config edits that disagree with the state file, and stale disable rules or state entries for skills installed nowhere.\n\n" +
 			"Doctor is read-only: it reports without changing anything, so you see what sync would " +
 			"do before sync does it (sync runs on every other command).\n\n" +
 			"By default everything is reported at once and nothing is asked — manual-edit conflicts " +
@@ -96,6 +96,9 @@ var findingSections = []struct {
 	{doctor.KindDrift, "state drift", "", "warn"},
 	{doctor.KindDoublePresence, "double presence", "", "warn"},
 	{doctor.KindStaleLock, "stale lockfile entries", "fleet never writes the lockfile", "warn"},
+	{doctor.KindStaleConfig, "stale config rules", "run `fleet skill prune` to remove", "warn"},
+	{doctor.KindStaleState, "stale state entries", "run `fleet skill prune` to remove; pruning loses the disable-on-reinstall behavior", "warn"},
+	{doctor.KindIncompleteScan, "incomplete scan", "stale disables not reported", "warn"},
 	{doctor.KindUnscannedAdoptTarget, "unscanned adopt target", "", "warn"},
 	{doctor.KindNonGitRepo, "non-git explicit repos", "bare pull skips them", "warn"},
 	{doctor.KindMissingDir, "missing directories", "", "warn"},
@@ -125,6 +128,12 @@ func printFindings(out io.Writer, findings []doctor.Finding, pal palette) error 
 		if len(group) == 0 {
 			continue
 		}
+		if section.kind == doctor.KindStaleConfig || section.kind == doctor.KindStaleState {
+			if err := printStaleSection(out, section.title, section.note, section.sev, group, pal); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := printSectionHeader(out, section.title, section.note, section.sev, len(group), pal); err != nil {
 			return err
 		}
@@ -144,6 +153,54 @@ func printFindings(out io.Writer, findings []doctor.Finding, pal palette) error 
 			if _, err := fmt.Fprintln(out, line); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+// maxStalePerHarness caps how many skill names one harness line lists in a
+// stale section. The overflow is summarized; `fleet skill prune` lists every
+// one it would remove.
+const maxStalePerHarness = 5
+
+// printStaleSection renders a stale config/state section grouped by harness.
+// The remediation is identical for every entry, so it lives once in the
+// section note and each line carries only a harness and its skill names.
+func printStaleSection(out io.Writer, title, note, sev string, group []doctor.Finding, pal palette) error {
+	if err := printSectionHeader(out, title, note, sev, len(group), pal); err != nil {
+		return err
+	}
+	// Group skills by harness in first-appearance order. Doctor's stale
+	// findings are not uniformly ordered — config findings are harness-major,
+	// state findings skill-major — so this preserves whatever order they
+	// arrive in instead of assuming one.
+	var harnesses []string
+	byHarness := map[string][]string{}
+	for _, f := range group {
+		if _, ok := byHarness[f.Harness]; !ok {
+			harnesses = append(harnesses, f.Harness)
+		}
+		byHarness[f.Harness] = append(byHarness[f.Harness], f.Skill)
+	}
+	width := 0
+	for _, h := range harnesses {
+		if n := len([]rune(h)); n > width {
+			width = n
+		}
+	}
+	for _, h := range harnesses {
+		skills := byHarness[h]
+		overflow := 0
+		if len(skills) > maxStalePerHarness {
+			overflow = len(skills) - maxStalePerHarness
+			skills = skills[:maxStalePerHarness]
+		}
+		line := strings.Join(skills, ", ")
+		if overflow > 0 {
+			line += fmt.Sprintf(", … (+%d more)", overflow)
+		}
+		if _, err := fmt.Fprintf(out, "  %s  %s\n", pal.info(padRight(h, width)), line); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -539,6 +596,12 @@ func findingLabel(kind doctor.Kind, n int) string {
 		return pluralized("non-git explicit repo", n)
 	case doctor.KindStaleLock:
 		return pluralized("stale lockfile entry", n)
+	case doctor.KindStaleConfig:
+		return pluralized("stale config rule", n)
+	case doctor.KindStaleState:
+		return pluralized("stale state entry", n)
+	case doctor.KindIncompleteScan:
+		return "incomplete scan"
 	case doctor.KindMissingDir:
 		if n == 1 {
 			return "missing directory"

@@ -1186,3 +1186,210 @@ func readFileT(t *testing.T, path string) string {
 	}
 	return string(body)
 }
+
+func TestAnalyzeFlagsStaleConfigForUninstalledSkill(t *testing.T) {
+	p := fakeHome(t, "opencode")
+	storeSkill(t, p, "tdd") // the store exists and scans: the scan is complete
+	writeFile(t, p.OpenCodeConfig(), `{"permission": {"skill": {"ghost": "deny"}}}`)
+	// The dormant state disable is what makes the leftover rule fleet's:
+	// prune's config axis only covers names the state disables.
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.SetDisabled("ghost", "opencode")
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+	before := readFileT(t, p.OpenCodeConfig())
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if len(rep.Conflicts) != 0 {
+		t.Errorf("conflicts = %+v, want none for an uninstalled skill", rep.Conflicts)
+	}
+	var found *Finding
+	for i := range rep.Findings {
+		if rep.Findings[i].Kind == KindStaleConfig {
+			found = &rep.Findings[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("findings = %+v, want a stale-config finding", rep.Findings)
+	}
+	if found.Harness != "opencode" || found.Skill != "ghost" {
+		t.Errorf("finding = %+v, want opencode/ghost", *found)
+	}
+	if !strings.Contains(found.Message, "fleet skill prune") {
+		t.Errorf("message must point at prune: %q", found.Message)
+	}
+	if got := readFileT(t, p.OpenCodeConfig()); got != before {
+		t.Errorf("Analyze modified the config:\n%s", got)
+	}
+}
+
+func TestAnalyzeUntrackedConfigRuleForUninstalledSkillIsConflict(t *testing.T) {
+	// A config rule for a skill the state does not track stays a manual
+	// edit even when the skill is installed nowhere: prune's config axis
+	// only covers state-disabled names, so doctor must not point at it.
+	p := fakeHome(t, "opencode")
+	storeSkill(t, p, "tdd") // complete scan
+	writeFile(t, p.OpenCodeConfig(), `{"permission": {"skill": {"ghost": "deny"}}}`)
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if len(rep.Conflicts) != 1 || rep.Conflicts[0].Skill != "ghost" || !rep.Conflicts[0].ConfigDisables {
+		t.Fatalf("conflicts = %+v, want ghost/config-disables", rep.Conflicts)
+	}
+	for _, f := range rep.Findings {
+		if f.Kind == KindStaleConfig {
+			t.Errorf("untracked config rule flagged stale: %+v", f)
+		}
+	}
+}
+
+func TestAnalyzeStaleConfigOnlyForFleetOwnedShapes(t *testing.T) {
+	// A codex path selector disables an uninstalled, state-disabled skill,
+	// but it is not fleet's shape: prune can't remove it, so doctor must
+	// not report it as a stale config rule. The dormant state entry is
+	// still stale and still points at prune.
+	p := fakeHome(t, "codex")
+	storeSkill(t, p, "tdd") // complete scan
+	writeFile(t, p.CodexConfig(), "[[skills.config]]\npath = \"/agents/skills/ghost/SKILL.md\"\nenabled = false\n")
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.SetDisabled("ghost", "codex")
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	var staleState bool
+	for _, f := range rep.Findings {
+		if f.Kind == KindStaleConfig {
+			t.Errorf("path selector flagged as a fleet-owned stale config rule: %+v", f)
+		}
+		if f.Kind == KindStaleState && f.Skill == "ghost" {
+			staleState = true
+		}
+	}
+	if !staleState {
+		t.Errorf("findings = %+v, want a stale-state finding for ghost", rep.Findings)
+	}
+}
+
+func TestAnalyzeFlagsStaleStateForUninstalledSkill(t *testing.T) {
+	p := fakeHome(t, "opencode")
+	storeSkill(t, p, "tdd")
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.SetDisabled("ghost", "opencode")
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+	before := readFileT(t, p.FleetStateFile())
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	// The missing config rule is expected for a dormant disable, not drift.
+	if len(rep.Conflicts) != 0 {
+		t.Errorf("conflicts = %+v, want none", rep.Conflicts)
+	}
+	var found *Finding
+	for i := range rep.Findings {
+		if rep.Findings[i].Kind == KindStaleState {
+			found = &rep.Findings[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("findings = %+v, want a stale-state finding", rep.Findings)
+	}
+	if found.Harness != "opencode" || found.Skill != "ghost" {
+		t.Errorf("finding = %+v, want opencode/ghost", *found)
+	}
+	if !strings.Contains(found.Message, "fleet skill prune") || !strings.Contains(found.Message, "reinstall") {
+		t.Errorf("message must point at prune and warn about reinstall: %q", found.Message)
+	}
+	if got := readFileT(t, p.FleetStateFile()); got != before {
+		t.Errorf("Analyze modified the state file:\n%s", got)
+	}
+}
+
+func TestAnalyzeInstalledSkillMissingRuleStillDrifts(t *testing.T) {
+	p := fakeHome(t, "opencode")
+	storeSkill(t, p, "tdd")
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.SetDisabled("tdd", "opencode")
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if len(rep.Conflicts) != 1 || rep.Conflicts[0].Skill != "tdd" {
+		t.Fatalf("conflicts = %+v, want the existing opencode drift", rep.Conflicts)
+	}
+	for _, f := range rep.Findings {
+		if f.Kind == KindStaleConfig || f.Kind == KindStaleState {
+			t.Errorf("installed skill flagged stale: %+v", f)
+		}
+	}
+}
+
+func TestAnalyzeIncompleteScanSuppressesStaleFindings(t *testing.T) {
+	p := fakeHome(t, "opencode")
+	storeSkill(t, p, "tdd")
+	// A tracked repo root that is gone from disk: the scan can't be trusted,
+	// so a name that looks uninstalled might live in the unscanned home.
+	missing := filepath.Join(t.TempDir(), "moved-repo")
+	writeFleetConfig(t, p, []string{missing}, "")
+	writeFile(t, p.OpenCodeConfig(), `{"permission": {"skill": {"ghost": "deny"}}}`)
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.SetDisabled("ghost", "opencode")
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	for _, f := range rep.Findings {
+		if f.Kind == KindStaleConfig || f.Kind == KindStaleState {
+			t.Errorf("incomplete scan still produced a stale finding: %+v", f)
+		}
+	}
+	var blocked *Finding
+	for i := range rep.Findings {
+		if rep.Findings[i].Kind == KindIncompleteScan {
+			blocked = &rep.Findings[i]
+		}
+	}
+	if blocked == nil {
+		t.Fatalf("findings = %+v, want an incomplete-scan finding", rep.Findings)
+	}
+	if !strings.Contains(blocked.Message, filepath.Join(missing, "skills")) {
+		t.Errorf("message must name the blocking home: %q", blocked.Message)
+	}
+}

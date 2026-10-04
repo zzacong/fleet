@@ -64,6 +64,17 @@ const (
 	// the skills CLI would keep trying to update it. Fleet reads the
 	// lockfile only; it never writes it.
 	KindStaleLock Kind = "stale-lock"
+	// KindStaleConfig: a fleet-owned disable rule in a harness config for
+	// a skill installed nowhere — a leftover prune removes.
+	KindStaleConfig Kind = "stale-config"
+	// KindStaleState: a state entry for a skill installed nowhere —
+	// dormant intent prune removes, losing the disable-on-reinstall
+	// behavior.
+	KindStaleState Kind = "stale-state"
+	// KindIncompleteScan: a skill home is missing or unreadable, so the
+	// "installed nowhere" answer can't be trusted and stale findings are
+	// suppressed. Names the home that blocked the scan.
+	KindIncompleteScan Kind = "incomplete-scan"
 )
 
 // Finding is one observed problem that has no interactive resolution: it
@@ -329,25 +340,33 @@ func analyzeConfigs(p *paths.Paths, customByName map[string]bool) ([]Conflict, [
 		return nil, nil, err
 	}
 
-	skills, err := scan.ScanStore(p.SkillsStore())
+	// The single scanner answers "is this skill installed" and whether that
+	// answer can be trusted. Only a complete scan may call a skill
+	// uninstalled; otherwise a name that looks gone might live in a home
+	// that failed to scan.
+	idx, _, err := skillindex.Load(p)
 	if err != nil {
-		return nil, nil, fmt.Errorf("scan canonical store: %w", err)
+		return nil, nil, fmt.Errorf("resolve skill homes: %w", err)
 	}
+	complete := idx.Complete()
 
 	// The universe of skill names the configs can meaningfully talk about:
 	// everything installed, everything the state knows, and — added per
 	// adapter from the read itself — everything a config disables.
-	storeNames := make([]string, 0, len(skills))
-	for _, s := range skills {
-		storeNames = append(storeNames, s.Name)
-	}
 	universe := map[string]bool{}
-	for _, name := range st.Universe(storeNames) {
+	for _, name := range st.Universe(idx.InstalledNames()) {
 		universe[name] = true
 	}
 
 	var conflicts []Conflict
 	var findings []Finding
+	if blocked := idx.BlockedHomes(); len(blocked) > 0 {
+		findings = append(findings, Finding{
+			Kind: KindIncompleteScan,
+			Message: fmt.Sprintf("the skill scan is incomplete (%s), so stale disables are not reported — a skill that looks uninstalled might live in an unscanned home",
+				strings.Join(blocked, ", ")),
+		})
+	}
 	for _, a := range harness.Installed(p) {
 		if !a.CanProject() {
 			continue // no config lever: nothing to disagree with
@@ -377,8 +396,12 @@ func analyzeConfigs(p *paths.Paths, customByName map[string]bool) ([]Conflict, [
 			}
 		}
 
+		// exact is the fleet-owned removable subset, not every disable the
+		// config carries: a shape the write side can't remove (a codex path
+		// selector, an opencode V2 rule with extra keys) is a manual edit,
+		// not a leftover prune can clear.
 		exact := map[string]bool{}
-		for _, name := range read.Disables {
+		for _, name := range read.ExactDisables {
 			exact[name] = true
 		}
 		for _, name := range sortedNames(universe) {
@@ -387,6 +410,25 @@ func analyzeConfigs(p *paths.Paths, customByName map[string]bool) ([]Conflict, [
 			}
 			stateOff := st.IsDisabled(name, h)
 			cfgState := read.States[name]
+			if complete && !idx.IsInstalled(name) && stateOff {
+				// Installed nowhere with a dormant state disable: a missing
+				// config rule is expected, not drift, and a fleet-owned rule
+				// still present is the stale-config leftover prune removes.
+				// A config rule the state does not track is a manual edit,
+				// not a stale leftover — prune's config axis only covers
+				// state-disabled names — so it falls through to the existing
+				// comparison below.
+				if exact[name] && cfgState != harness.StateOn {
+					findings = append(findings, Finding{
+						Kind:    KindStaleConfig,
+						Harness: h,
+						Skill:   name,
+						Message: fmt.Sprintf("%q is disabled in the %s config, but it is installed nowhere — run `fleet skill prune` to remove the leftover rule",
+							name, h),
+					})
+				}
+				continue
+			}
 			switch {
 			case !stateOff && exact[name] && cfgState != harness.StateOn:
 				// An exact disable entry the state doesn't track: live
@@ -431,7 +473,39 @@ func analyzeConfigs(p *paths.Paths, customByName map[string]bool) ([]Conflict, [
 			}
 		}
 	}
+	findings = append(findings, staleStateFindings(p, st, idx, complete)...)
 	return conflicts, findings, nil
+}
+
+// staleStateFindings reports every harness a state-disabled skill is
+// installed nowhere for: dormant intent no config can act on. Only a
+// complete scan may assert "installed nowhere", so an incomplete scan
+// yields none. Each finding names the skill and harness and points at
+// prune, warning that removing the entry loses the disable-on-reinstall
+// behavior.
+func staleStateFindings(p *paths.Paths, st *state.File, idx *skillindex.Index, complete bool) []Finding {
+	if !complete {
+		return nil
+	}
+	var findings []Finding
+	for _, name := range st.Names() {
+		if idx.IsInstalled(name) {
+			continue
+		}
+		for _, a := range harness.All(p) {
+			if !st.IsDisabled(name, string(a.Harness())) {
+				continue
+			}
+			findings = append(findings, Finding{
+				Kind:    KindStaleState,
+				Harness: string(a.Harness()),
+				Skill:   name,
+				Message: fmt.Sprintf("%q is disabled for %s in fleet's state, but it is installed nowhere — run `fleet skill prune` to remove the state entry; pruning loses the disable-on-reinstall behavior",
+					name, a.Harness()),
+			})
+		}
+	}
+	return findings
 }
 
 // analyzeLinkToggles compares the state with the managed custom links of

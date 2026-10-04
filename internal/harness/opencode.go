@@ -104,7 +104,7 @@ func (a *OpenCodeAdapter) Read(names []string) (ReadResult, error) {
 		}
 	}
 
-	res.Disables = openCodeDisables(v1Rules, cfg.Permissions)
+	res.Disables, res.ExactDisables = openCodeDisables(v1Rules, cfg.Permissions)
 	return res, nil
 }
 
@@ -112,35 +112,48 @@ func (a *OpenCodeAdapter) Read(names []string) (ReadResult, error) {
 // map keys and V2 rules with an exact resource, sorted. In a mixed file
 // both dialects count — V2 migrates the V1 keys, so a V1 deny still
 // disables. The string shorthand, patterns, and wildcard actions are not
-// exact entries.
-func openCodeDisables(v1 []skillRule, v2 []v2Rule) []string {
+// exact entries. The second return is the subset that is exactly the shape
+// the write side removes: V1 exact entries and V2 three-key rules. A V2
+// rule with extra keys still disables, but fleet can't remove it, so it
+// stays out of the exact set.
+func openCodeDisables(v1 []skillRule, v2 []v2Rule) (all, exact []string) {
 	seen := map[string]bool{}
-	var disables []string
-	add := func(name string) {
-		if name == "" || isGlobPattern(name) || seen[name] {
+	seenExact := map[string]bool{}
+	add := func(name string, isExact bool) {
+		if name == "" || isGlobPattern(name) {
 			return
 		}
-		seen[name] = true
-		disables = append(disables, name)
+		if !seen[name] {
+			seen[name] = true
+			all = append(all, name)
+		}
+		if isExact && !seenExact[name] {
+			seenExact[name] = true
+			exact = append(exact, name)
+		}
 	}
 	for _, rule := range v1 {
 		if rule.effect == "deny" {
-			add(rule.pattern)
+			add(rule.pattern, true)
 		}
 	}
 	for _, rule := range v2 {
 		if rule.action == "skill" && rule.effect == "deny" {
-			add(rule.resource)
+			add(rule.resource, rule.exact)
 		}
 	}
-	sort.Strings(disables)
-	return disables
+	sort.Strings(all)
+	sort.Strings(exact)
+	return all, exact
 }
 
 type v2Rule struct {
 	action   string
 	resource string
 	effect   string
+	// exact is true when the rule object held exactly the three keys fleet
+	// writes (action, resource, effect); an extra key makes it unremovable.
+	exact bool
 }
 
 func (r *v2Rule) UnmarshalJSON(data []byte) error {
@@ -153,6 +166,10 @@ func (r *v2Rule) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	r.action, r.resource, r.effect = raw.Action, raw.Resource, raw.Effect
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(data, &keys); err == nil {
+		r.exact = len(keys) == 3
+	}
 	return nil
 }
 

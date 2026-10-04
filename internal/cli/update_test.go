@@ -190,12 +190,14 @@ func TestUpdateReconcilesAfterTheWrappedRun(t *testing.T) {
 	}
 }
 
-func TestUpdateReportsADisableThatOutlivedItsSkill(t *testing.T) {
+func TestUpdateTreatsDisableThatOutlivedItsSkillAsDormant(t *testing.T) {
 	// tdd was disabled for pi, then the skill was uninstalled by hand.
-	// The state entry and pi's exclusion remain, sync keeps them, and the
-	// report counts the disable as held — not as lost.
+	// The state entry and pi's exclusion remain as dormant intent, and
+	// sync leaves the exclusion byte-for-byte. The report no longer counts
+	// the disable as held: there is no installed skill to verify.
 	p := updateHome(t)
 	runToggle(t, p, "off", "tdd", "--harness", "pi")
+	piBefore := readFile(t, p.PiSettings())
 	if err := os.RemoveAll(filepath.Join(p.SkillsStore(), "tdd")); err != nil {
 		t.Fatal(err)
 	}
@@ -205,17 +207,50 @@ func TestUpdateReportsADisableThatOutlivedItsSkill(t *testing.T) {
 
 	out := runUpdate(t, p)
 
-	if !strings.Contains(out, `verified disabled: "tdd" for pi`) {
-		t.Errorf("output missing the stale-but-held disable:\n%s", out)
+	if strings.Contains(out, `verified disabled: "tdd"`) {
+		t.Errorf("a dormant disable was counted as held:\n%s", out)
 	}
 	if strings.Contains(out, "did not stay disabled") {
-		t.Errorf("a disable sync keeps was reported as lost:\n%s", out)
+		t.Errorf("a dormant disable was reported as lost:\n%s", out)
 	}
-	if body := readFile(t, p.PiSettings()); !strings.Contains(body, "-skills/tdd/SKILL.md") {
-		t.Errorf("pi exclusion not re-applied:\n%s", body)
+	if got := readFile(t, p.PiSettings()); got != piBefore {
+		t.Errorf("pi exclusion changed for a dormant disable:\n%s\nwas\n%s", got, piBefore)
 	}
 	if !strings.Contains(out, "0 skills in "+p.SkillsStore()+" (0 installed, 0 custom)") {
 		t.Errorf("output missing the emptied-store summary:\n%s", out)
+	}
+}
+
+func TestUpdateDoesNotReportDormantDisableAsLost(t *testing.T) {
+	// A state disable whose skill is uninstalled and whose config holds no
+	// rule is dormant. Sync writes nothing, and the report must not call
+	// the absent marker a lost disable.
+	p := updateHome(t)
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.SetDisabled("tdd", "pi")
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(p.SkillsStore(), "tdd")); err != nil {
+		t.Fatal(err)
+	}
+	swapRunner(t, skillscli.RunnerFunc(func(skillscli.Invocation) (skillscli.Result, error) {
+		return skillscli.Result{}, nil
+	}))
+
+	out := runUpdate(t, p)
+
+	if strings.Contains(out, "did not stay disabled") {
+		t.Errorf("a dormant disable was reported as lost:\n%s", out)
+	}
+	if strings.Contains(out, `verified disabled: "tdd"`) {
+		t.Errorf("a dormant disable was counted as held:\n%s", out)
+	}
+	if body, err := os.ReadFile(p.PiSettings()); err == nil && strings.Contains(string(body), "-skills/tdd/SKILL.md") {
+		t.Errorf("pi exclusion written for a dormant disable:\n%s", body)
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 // present, returning the Paths and the harness names installed.
 func fakeHome(t *testing.T, harnesses ...string) *paths.Paths {
 	t.Helper()
+	t.Setenv("FLEET_REPO", "")
 	p := paths.New(filepath.Join(t.TempDir(), "home"))
 	dirs := map[string]string{
 		"opencode": p.OpenCodeDir(),
@@ -508,5 +509,210 @@ func TestRunLinkCleanupIsIdempotent(t *testing.T) {
 		if len(r.Removed) != 0 {
 			t.Errorf("%s removed %v on the second run, want nothing", r.Harness, r.Removed)
 		}
+	}
+}
+
+// scanComplete creates the canonical store so the skill index reports a
+// complete scan: an empty store scans cleanly, and the absent fleet-home
+// fallback is optional. Without it, "installed nowhere" cannot be trusted.
+func scanComplete(t *testing.T, p *paths.Paths) {
+	t.Helper()
+	if err := os.MkdirAll(p.SkillsStore(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunLeavesDormantDisableUnprojected(t *testing.T) {
+	// A state disable whose skill is installed nowhere is dormant: the
+	// state keeps the intent, but sync creates no new off entry in any
+	// config lever. The store exists, so the scan is complete and the
+	// "installed nowhere" answer is trusted.
+	p := fakeHome(t, "opencode", "pi", "codex", "claude")
+	scanComplete(t, p)
+	writeFile(t, p.OpenCodeConfig(), "{\n  \"model\": \"gpt-5\"\n}\n")
+	writeFile(t, p.PiSettings(), "{}\n")
+	writeFile(t, p.CodexConfig(), "# codex\n")
+	// Claude can only disable a skill it discovers, so give it a directory
+	// for ghost. Without dormancy it would write a skillOverrides entry.
+	if err := os.MkdirAll(filepath.Join(p.ClaudeSkills(), "ghost"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	before := map[string]string{
+		p.OpenCodeConfig(): readFile(t, p.OpenCodeConfig()),
+		p.PiSettings():     readFile(t, p.PiSettings()),
+		p.CodexConfig():    readFile(t, p.CodexConfig()),
+	}
+
+	st, _ := state.Load(p.FleetStateFile())
+	for _, h := range []string{"opencode", "pi", "codex", "claude"} {
+		st.SetDisabled("ghost", h)
+	}
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+	stateBefore := readFile(t, p.FleetStateFile())
+
+	reports, err := Run(p)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(reports) != 0 {
+		t.Errorf("reports = %+v, want none for a dormant disable", reports)
+	}
+	for path, want := range before {
+		if got := readFile(t, path); got != want {
+			t.Errorf("%s changed:\n%s\nwas\n%s", path, got, want)
+		}
+	}
+	if _, err := os.Stat(p.ClaudeSettings()); !os.IsNotExist(err) {
+		t.Errorf("claude settings created for a dormant disable: %v", err)
+	}
+	if got := readFile(t, p.FleetStateFile()); got != stateBefore {
+		t.Errorf("state file changed:\n%s\nwas\n%s", got, stateBefore)
+	}
+}
+
+func TestRunLeavesDormantDisableUnprojectedInOpenCodeV2(t *testing.T) {
+	// The same dormancy in opencode's V2 dialect: the permissions array
+	// gains no deny rule.
+	p := fakeHome(t, "opencode")
+	scanComplete(t, p)
+	writeFile(t, p.OpenCodeConfig(), "{\n  \"permissions\": []\n}\n")
+	before := readFile(t, p.OpenCodeConfig())
+
+	st, _ := state.Load(p.FleetStateFile())
+	st.SetDisabled("ghost", "opencode")
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+
+	reports, err := Run(p)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(reports) != 0 {
+		t.Errorf("reports = %+v, want none for a dormant disable", reports)
+	}
+	if got := readFile(t, p.OpenCodeConfig()); got != before {
+		t.Errorf("opencode v2 config changed:\n%s\nwas\n%s", got, before)
+	}
+}
+
+func TestRunLeavesExistingDisableForUninstalledSkillAlone(t *testing.T) {
+	// The state still owns the name, so a rule already written into a
+	// config is left byte-for-byte and not flagged as untracked.
+	p := fakeHome(t, "opencode", "pi", "codex", "claude")
+	scanComplete(t, p)
+	writeFile(t, p.OpenCodeConfig(), `{"permission": {"skill": {"ghost": "deny"}}}`)
+	writeFile(t, p.PiSettings(), `{"skills": ["-skills/ghost/SKILL.md"]}`)
+	writeFile(t, p.CodexConfig(), "[[skills.config]]\nname = \"ghost\"\nenabled = false\n")
+	writeFile(t, p.ClaudeSettings(), `{"skillOverrides": {"ghost": "off"}}`)
+
+	before := map[string]string{
+		p.OpenCodeConfig(): readFile(t, p.OpenCodeConfig()),
+		p.PiSettings():     readFile(t, p.PiSettings()),
+		p.CodexConfig():    readFile(t, p.CodexConfig()),
+		p.ClaudeSettings(): readFile(t, p.ClaudeSettings()),
+	}
+
+	st, _ := state.Load(p.FleetStateFile())
+	for _, h := range []string{"opencode", "pi", "codex", "claude"} {
+		st.SetDisabled("ghost", h)
+	}
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+
+	reports, err := Run(p)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(reports) != 0 {
+		t.Errorf("reports = %+v, want none: an existing rule the state owns stays put", reports)
+	}
+	for path, want := range before {
+		if got := readFile(t, path); got != want {
+			t.Errorf("%s changed:\n%s\nwas\n%s", path, got, want)
+		}
+	}
+}
+
+func TestRunStillFlagsUntrackedDisableAlongsideDormant(t *testing.T) {
+	// A dormant disable must not silence a rule the state does not track:
+	// only the state-owned name is exempt from the sweep.
+	p := fakeHome(t, "pi")
+	scanComplete(t, p)
+	writeFile(t, p.PiSettings(), `{"skills": ["-skills/ghost/SKILL.md", "-skills/manual/SKILL.md"]}`)
+	before := readFile(t, p.PiSettings())
+
+	st, _ := state.Load(p.FleetStateFile())
+	st.SetDisabled("ghost", "pi")
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+
+	reports, err := Run(p)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	var flagged []string
+	for _, r := range reports {
+		if len(r.Changed) != 0 {
+			t.Errorf("%s changed %v, want none", r.Harness, r.Changed)
+		}
+		for _, f := range r.Flags {
+			flagged = append(flagged, f.Skill)
+		}
+	}
+	if !reflect.DeepEqual(flagged, []string{"manual"}) {
+		t.Errorf("flagged = %v, want only the untracked manual disable", flagged)
+	}
+	if got := readFile(t, p.PiSettings()); got != before {
+		t.Errorf("pi settings changed:\n%s\nwas\n%s", got, before)
+	}
+}
+
+func TestRunProjectsDisableWhenScanIncomplete(t *testing.T) {
+	// The store is absent, so the scan is incomplete and "installed
+	// nowhere" cannot be trusted: sync projects every disable rather than
+	// risk leaving an installed skill enabled.
+	p := fakeHome(t, "pi")
+	writeFile(t, p.PiSettings(), "{}\n")
+	// no canonical store
+
+	st, _ := state.Load(p.FleetStateFile())
+	st.SetDisabled("ghost", "pi")
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Run(p); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got := readFile(t, p.PiSettings()); !strings.Contains(got, "-skills/ghost/SKILL.md") {
+		t.Errorf("pi settings missing the fallback projection:\n%s", got)
+	}
+}
+
+func TestRunProjectsDisableWhenTrackedRepoIsMissing(t *testing.T) {
+	// A tracked repo root recorded in config but missing from disk makes
+	// the scan incomplete even though the store exists.
+	p := fakeHome(t, "pi")
+	scanComplete(t, p)
+	writeFile(t, p.FleetConfigFile(), `{"skillsRepos": ["`+filepath.Join(p.Home, "gone")+`"]}`)
+	writeFile(t, p.PiSettings(), "{}\n")
+
+	st, _ := state.Load(p.FleetStateFile())
+	st.SetDisabled("ghost", "pi")
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Run(p); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got := readFile(t, p.PiSettings()); !strings.Contains(got, "-skills/ghost/SKILL.md") {
+		t.Errorf("pi settings missing the fallback projection:\n%s", got)
 	}
 }

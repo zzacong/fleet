@@ -86,6 +86,19 @@ func writeIfChanged(path, before, after string) error {
 	return os.WriteFile(path, []byte(after), mode)
 }
 
+// allPreview reports whether every write in the batch is a preview
+// (SkillWrite.DryRun), so the adapter computes its report but leaves the
+// config file untouched. An empty batch is not a preview: the adapter
+// still runs its unmanaged sweep and its no-op write.
+func allPreview(writes []SkillWrite) bool {
+	for _, w := range writes {
+		if !w.DryRun {
+			return false
+		}
+	}
+	return len(writes) > 0
+}
+
 // writeNames extracts just the skill names from a write batch.
 func writeNames(writes []SkillWrite) []string {
 	names := make([]string, len(writes))

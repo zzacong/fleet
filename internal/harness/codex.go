@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/zzacong/fleet/internal/paths"
@@ -62,7 +63,31 @@ func (a *CodexAdapter) Read(names []string) (ReadResult, error) {
 		}
 	}
 	sort.Strings(res.Disables)
+	res.ExactDisables = codexExactDisables(body)
 	return res, nil
+}
+
+// codexExactDisables returns the skill names disabled by exactly the simple
+// name block the write side removes. A path selector or a block with extra
+// keys disables the skill too, but fleet can't remove it, so it stays out
+// of the exact set. The last matching block wins, mirroring codex.
+func codexExactDisables(body []byte) []string {
+	blocks := codexParseBlocks(strings.Split(string(body), "\n"))
+	seen := map[string]bool{}
+	var out []string
+	for _, b := range blocks {
+		if !b.simple || b.name == "" || b.enabled != "false" || seen[b.name] {
+			continue
+		}
+		winner, found := codexWinner(blocks, b.name)
+		if !found || !winner.simple || winner.name != b.name || winner.enabled != "false" {
+			continue
+		}
+		seen[b.name] = true
+		out = append(out, b.name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // codexConfig mirrors the subset of ~/.codex/config.toml fleet models.

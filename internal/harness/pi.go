@@ -68,11 +68,14 @@ func (a *PiAdapter) Read(names []string) (ReadResult, error) {
 	}
 
 	// Only the exact -skills/<name>/SKILL.md form is an entry fleet could
-	// own; !glob exclusions are not.
+	// own; !glob exclusions are not. That form is also exactly what the
+	// write side removes, so it is the whole exact set.
 	for name := range exact {
 		res.Disables = append(res.Disables, name)
+		res.ExactDisables = append(res.ExactDisables, name)
 	}
 	sort.Strings(res.Disables)
+	sort.Strings(res.ExactDisables)
 	return res, nil
 }
 

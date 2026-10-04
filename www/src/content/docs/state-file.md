@@ -42,6 +42,7 @@ Fleet's state file is the single source of truth for per-harness skill enablemen
 Design rules:
 
 - **Sparse, disable-only.** An entry exists only to record a disable. A skill with no entry is on everywhere, and once a skill's last disable is removed the whole entry disappears. There are no "on" records.
+- **A disable outlives its skill.** If you uninstall a skill while it is disabled, its entry stays as dormant intent: a reinstall comes back disabled, but sync writes no new config entry for a skill installed nowhere. The entry remains until `fleet skill prune` removes it, which loses the disable-on-reinstall behavior.
 - **Keyed by skill name** (the frontmatter name, falling back to the directory name), not by directory, because harness rules target the name. Harness keys are fleet's harness IDs: `opencode`, `pi`, `codex`, `claude`, `cursor`, `bob`.
 
 ## Forward compatibility
