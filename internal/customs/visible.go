@@ -32,8 +32,8 @@ type Withdrawal struct {
 
 // MakeVisible links every skill collectionDir holds for every installed
 // harness, so customs are discoverable immediately. A skill the state
-// disables on a link-toggleable harness (Bob, Cursor) is left unlinked: for
-// those the link is the only disable lever, so its absence is the disable.
+// disables on a link-toggleable harness is left unlinked: for those the
+// link is the only disable lever, so its absence is the disable.
 // It fails fast on the first harness error, matching the tails it replaces.
 func MakeVisible(p *paths.Paths, collectionDir string) (*Visibility, error) {
 	st, err := state.Load(p.FleetStateFile())

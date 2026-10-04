@@ -31,7 +31,7 @@ func newSkillDoctorCmd(p *paths.Paths) *cobra.Command {
 			"redundant per-agent links, broken symlinks, unknown entries in skills dirs, " +
 			"a skill name present in more than one source, stale lockfile entries for adopted skills, " +
 			"an adopt target outside the scanned homes, explicit repos that are not git checkouts, " +
-			"missing directories, a custom skill whose managed link on Cursor or Bob disagrees with the state, " +
+			"missing directories, a custom skill whose managed link on a native-scanning harness disagrees with the state, " +
 			"and manual config edits that disagree with the state file.\n\n" +
 			"Doctor is read-only: it reports without changing anything, so you see what sync would " +
 			"do before sync does it (sync runs on every other command).\n\n" +

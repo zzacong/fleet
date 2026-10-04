@@ -435,7 +435,7 @@ func analyzeConfigs(p *paths.Paths, customByName map[string]bool) ([]Conflict, [
 }
 
 // analyzeLinkToggles compares the state with the managed custom links of
-// the link-toggleable harnesses (Bob, Cursor). For a custom skill the link
+// the link-toggleable harnesses. For a custom skill the link
 // is that harness's only path to it and therefore its enablement: a missing
 // link for a skill the state leaves enabled (sync links it), or a managed
 // link for a skill the state disables (sync removes it), is drift. Stored

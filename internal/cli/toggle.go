@@ -249,7 +249,7 @@ func toggledFlagHarnesses(name string, targets []string, projected []toggle.Proj
 // toggledFlips reports whether any targeted harness actually moved for the
 // skill: the direct "on" writes report their own flips, sync's reports
 // carry the "off" projections and the link toggles (a custom link created
-// for Bob/Cursor on "on", removed on "off").
+// for a native-scanning linker on "on", removed on "off").
 func toggledFlips(name string, targets []string, projected []toggle.Projected, reports []fleetsync.Report) bool {
 	for _, pr := range projected {
 		for _, c := range pr.Report.Changed {

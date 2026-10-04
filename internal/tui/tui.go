@@ -78,8 +78,8 @@ type model struct {
 	harnesses []string
 	writable  map[string]bool
 	// linkToggle names the harnesses whose only lever over a custom skill
-	// is its managed link (Bob, Cursor): those cells are toggleable for
-	// customs even though they have no config write side.
+	// is its managed link: those cells are toggleable for customs even
+	// though they have no config write side.
 	linkToggle map[string]bool
 
 	rows   []snapshot.SkillRow
@@ -578,8 +578,9 @@ func (m model) cellState(skill, harnessName string) harness.State {
 // stage flips the selected cell's staged intent. Cells that cannot be
 // toggled — harnesses with no config write side and no custom-link lever,
 // skills a harness cannot discover — say so instead of staging a silent
-// no-op. A custom skill on Bob/Cursor is toggleable through its managed
-// link even when the link is currently absent (that absence is the "off").
+// no-op. A custom skill on a link-toggleable harness is toggleable through
+// its managed link even when the link is currently absent (that absence is
+// the "off").
 func (m *model) stage() {
 	name := m.selectedName()
 	if name == "" || len(m.harnesses) == 0 {
