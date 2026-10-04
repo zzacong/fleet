@@ -4,9 +4,9 @@
 
 **Blocked by:** 03.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] CONTEXT.md gains a "Managed custom link" term, retires the config-path-versus-link-based exposure split, and rewrites Sync, Enable/Disable, and Custom-skill around exposure-by-link plus the custom-versus-canonical lever rule.
-- [ ] The per-harness reference, CLI reference, and undo guide describe uniform linking and the new toggle rule; no wiring narrative remains.
-- [ ] A new ADR records the decision and its trade-off; existing ADRs are left as history.
-- [ ] Docs reflect that an unversioned canonical-store skill shown as "custom" stays config-disabled, not link-toggled.
+- [x] CONTEXT.md gains a "Managed custom link" term, retires the config-path-versus-link-based exposure split, and rewrites Sync, Enable/Disable, and Custom-skill around exposure-by-link plus the custom-versus-canonical lever rule.
+- [x] The per-harness reference, CLI reference, and undo guide describe uniform linking and the new toggle rule; no wiring narrative remains.
+- [x] A new ADR records the decision and its trade-off; existing ADRs are left as history.
+- [x] Docs reflect that an unversioned canonical-store skill shown as "custom" stays config-disabled, not link-toggled.

@@ -52,7 +52,7 @@ rm ~/.config/fleet/state.json
 After this, fleet treats every skill as enabled and stops writing disables. Note what does _not_ happen: the disable entries already written into harness configs stay there. Sync only writes disables the state records; it does not hunt down entries the state no longer mentions. Two clean ways to clear the leftovers:
 
 - Run `fleet skill doctor -i`. Each leftover is a conflict prompt — `restore` strips the entry from the config, `keep` records it in the (now empty) state file.
-- Edit the harness configs by hand. Fleet's entries are plain values in each harness's own format (a `deny` rule, a `"-skills/<name>/SKILL.md"` array entry, an `enabled = false` block, a `"skillOverrides"` key); removing them changes nothing else.
+- Edit the harness configs by hand. Fleet's entries are plain values in each harness's own format (a `deny` rule, a `"-skills/<name>/SKILL.md"` array entry, an `enabled = false` block, a `"skillOverrides"` key); removing them changes nothing else. A disabled custom skill's managed link is removed with `fleet skill on` or by deleting the symlink by hand.
 
 The same applies to hand-edits generally: doctor surfaces them, sync never silently overwrites them. Manual edits you _keep_ become the state's new intent.
 
@@ -63,11 +63,12 @@ The same applies to hand-edits generally: doctor surfaces them, sync never silen
 Sync's rules, in the order it applies them:
 
 1. **Load the state file fresh**, so commands that just wrote it sync their own change.
-2. **Make customs visible.** Every scanned custom home — each tracked collection plus the fleet-home fallback (a configured adopt target is included when it is one of those; a standalone target stays a doctor warning) — is wired into the config-path harnesses (OpenCode, Pi) and linked for the link-based ones (Codex, Claude Code, Cursor, Bob), one symlink per skill. A custom skill the state disables on Cursor or Bob is the exception: their managed link is the only path to a custom, so it is left unlinked and any existing link is removed here (reported as `unlinked`). A visible home reports nothing, so this is idempotent; it is what keeps a hand-created or already-pulled custom skill reachable in every harness without running `adopt` or `pull` again.
-3. **Remove redundant links.** In each installed harness's skills dir, a symlink counts as redundant only when it provably resolves into the canonical store _and_ that harness scans the store natively (OpenCode, Pi, Codex, Cursor, Bob — never Claude Code, whose store links are its only discovery path). Everything else in those dirs survives: real directories and files, links into any tracked collection or the fleet-home fallback (including your own and fleet's managed adopt/pull links), links pointing anywhere else, and broken links, which doctor reports instead. Sync never removes tracked-collection or fallback links.
-4. **Project the disables.** For each installed harness with a config write side (OpenCode, Pi, Codex, Claude Code), write that harness's own off-entry for every disable the state records. Cursor and Bob project through the managed link in step 2 instead. Nothing else. An absent entry means on; sync never writes "on" markers, because "on" is what every harness does by default.
-5. **Flag what it doesn't recognize.** Pattern and blanket rules, glob exclusions, Codex blocks with extra keys — anything that affects enablement but isn't fleet's exact shape is printed as a flag and left untouched. Sync reports; you decide.
-6. **Never edit the state file.** Sync is one-directional on purpose: state is the source of truth, configs are outputs. (`~/.config/fleet/config.json` is the separate machine-local customs file. Sync reads the adopt target from it but never writes it — `fleet config` and `fleet skill pull` manage it.)
+2. **Clean up legacy entries.** On the first sync after upgrading, remove the fleet-owned entries a previous release wrote: collection paths in OpenCode's and Pi's config, and fleet-shape exact-name off-entries on OpenCode, Codex, and Pi that name a current custom skill. Each removal prints as `sync: <harness>: removed legacy <collection path|disable entry> "<value>"`. Scope is strict, so config fleet did not write (a path you added yourself, a rule of another shape) is left alone, and later syncs find nothing.
+3. **Make customs visible.** Every scanned custom home — each tracked collection plus the fleet-home fallback (a configured adopt target is included when it is one of those; a standalone target stays a doctor warning) — is linked into every installed harness, one managed symlink per skill. A custom skill the state disables on a native-scanning harness (OpenCode, Codex, Pi, Cursor, Bob) is the exception: the managed link is that harness's only lever for a custom, so it is left unlinked and any existing link is removed here (reported as `unlinked`). A visible home reports nothing, so this is idempotent; it is what keeps a hand-created or already-pulled custom skill reachable in every harness without running `adopt` or `pull` again.
+4. **Remove redundant links.** In each installed harness's skills dir, a symlink counts as redundant only when it provably resolves into the canonical store _and_ that harness scans the store natively (OpenCode, Pi, Codex, Cursor, Bob — never Claude Code, whose store links are its only discovery path). Everything else in those dirs survives: real directories and files, links into any tracked collection or the fleet-home fallback (including your own and fleet's managed adopt/pull links), links pointing anywhere else, and broken links, which doctor reports instead. Sync never removes tracked-collection or fallback links.
+5. **Project the disables.** For each installed harness with a config write side (OpenCode, Pi, Codex, Claude Code), write that harness's own off-entry for every disable the state records, except a custom skill on OpenCode, Codex, or Pi, where the managed link from step 3 is the lever and no config entry is written. Claude Code writes `skillOverrides` for custom and canonical skills alike. Cursor and Bob project through the managed link in step 3 instead. Nothing else. An absent entry means on; sync never writes "on" markers, because "on" is what every harness does by default.
+6. **Flag what it doesn't recognize.** Pattern and blanket rules, glob exclusions, Codex blocks with extra keys — anything that affects enablement but isn't fleet's exact shape is printed as a flag and left untouched. Sync reports; you decide.
+7. **Never edit the state file.** Sync is one-directional on purpose: state is the source of truth, configs are outputs. (`~/.config/fleet/config.json` is the separate machine-local customs file. Sync reads the adopt target from it but never writes it — `fleet config` and `fleet skill pull` manage it.)
 
 `fleet skill doctor` runs the same inspection read-only, so you can see all of it before any of it happens.
 
@@ -77,22 +78,22 @@ Fleet is one static binary plus a config dir. Remove the binary, then optionally
 
 - harness configs keep fleet's entries, which are their own native format — every harness works without fleet knowing about it
 - installed skills stay in the canonical store, updating through the skills CLI as always
-- custom skills stay in their collections (a tracked repo's `skills/` or `~/.config/fleet/skills`), still linked or wired wherever adopt wired them (remove those entries or links by hand if you want them gone; doctor would flag the leftovers as unknown entries, but nothing breaks)
+- custom skills stay in their collections (a tracked repo's `skills/` or `~/.config/fleet/skills`), still linked wherever adopt or sync linked them (remove those links by hand if you want them gone; doctor would flag the leftovers as unknown entries, but nothing breaks)
 
 ## Undo an adoption
 
-Adoption moves a skill directory into the adopt destination (a tracked collection or `~/.config/fleet/skills`) and wires it in. Reversing it is manual by design — the skill is yours now, and fleet never moves files back on its own:
+Adoption moves a skill directory into the adopt destination (a tracked collection or `~/.config/fleet/skills`) and links it into every installed harness. Reversing it is manual by design — the skill is yours now, and fleet never moves files back on its own:
 
 1. Move the directory back into the canonical store (or `git mv` it, if it lived in a customs repo):
    ```sh
    mv ~/.config/fleet/repos/my-customs/skills/my-skill ~/.agents/skills/my-skill
    mv ~/.config/fleet/skills/my-skill ~/.agents/skills/my-skill  # when the fallback was the destination
    ```
-2. Remove the wiring and links if you want them gone: the destination's path entry in OpenCode's and Pi's configs, and the per-harness symlinks named after the skill in `~/.codex/skills`, `~/.claude/skills`, `~/.cursor/skills`, `~/.bob/skills`.
+2. Remove the links if you want them gone: the per-harness symlinks named after the skill in `~/.config/opencode/skills`, `~/.pi/agent/skills`, `~/.codex/skills`, `~/.claude/skills`, `~/.cursor/skills`, and `~/.bob/skills`.
 
 Doctor reports any leftovers as unknown entries and never deletes them. It also flags the two things an adoption leaves behind that nothing else reports:
 
 - The skills CLI lockfile still carries the skill's install entry while the skill lives in a custom home, so the CLI keeps trying to update a skill that moved. Remove the entry from `~/.agents/.skill-lock.json` by hand; fleet reads the lockfile and never writes it.
-- If the store copy comes back while a custom-home copy remains — a half-finished move in either direction — or a name exists in two scanned sources, OpenCode and Pi would see the skill twice. Doctor flags the double presence; remove one of the copies by hand.
+- If the store copy comes back while a custom-home copy remains — a half-finished move in either direction — or a name exists in two scanned sources, a native-scanning harness would see the skill twice. Doctor flags the double presence; remove one of the copies by hand.
 
 Once the skill is back in the store, the skills CLI and fleet treat it like any other installed (or custom, if it has no lock entry) skill.

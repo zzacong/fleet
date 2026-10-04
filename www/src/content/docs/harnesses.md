@@ -9,14 +9,14 @@ Fleet targets six harnesses. Each section states exactly which files fleet touch
 
 ## Overview
 
-| Harness     | Detected by          | Config fleet writes                 | Disable mechanism                                    | Custom skills reach it via         |
-| ----------- | -------------------- | ----------------------------------- | ---------------------------------------------------- | ---------------------------------- |
-| OpenCode    | `~/.config/opencode` | `~/.config/opencode/opencode.jsonc` | deny rule (`permission.skill` V1 / `permissions` V2) | skills path in the same config     |
-| Pi          | `~/.pi`              | `~/.pi/agent/settings.json`         | force-exclude entry in the `skills` array            | plain path entry in the same array |
-| Codex       | `~/.codex`           | `~/.codex/config.toml`              | `[[skills.config]]` with `enabled = false`           | symlink into `~/.codex/skills`     |
-| Claude Code | `~/.claude`          | `~/.claude/settings.json`           | `skillOverrides: {"<name>": "off"}`                  | symlink into `~/.claude/skills`    |
-| Cursor      | `~/.cursor`          | none                                | custom skills: remove the managed link               | symlink into `~/.cursor/skills`    |
-| IBM Bob     | `~/.bob`             | none                                | custom skills: remove the managed link               | symlink into `~/.bob/skills`       |
+| Harness     | Detected by          | Config fleet writes                 | Canonical-store disable mechanism                    | Custom skills reach it via                    | Custom toggle    |
+| ----------- | -------------------- | ----------------------------------- | ---------------------------------------------------- | --------------------------------------------- | ---------------- |
+| OpenCode    | `~/.config/opencode` | `~/.config/opencode/opencode.jsonc` | deny rule (`permission.skill` V1 / `permissions` V2) | managed link into `~/.config/opencode/skills` | managed link     |
+| Pi          | `~/.pi`              | `~/.pi/agent/settings.json`         | force-exclude entry in the `skills` array            | managed link into `~/.pi/agent/skills`        | managed link     |
+| Codex       | `~/.codex`           | `~/.codex/config.toml`              | `[[skills.config]]` with `enabled = false`           | managed link into `~/.codex/skills`           | managed link     |
+| Claude Code | `~/.claude`          | `~/.claude/settings.json`           | `skillOverrides: {"<name>": "off"}`                  | managed link into `~/.claude/skills`          | `skillOverrides` |
+| Cursor      | `~/.cursor`          | none                                | none (no-op)                                         | managed link into `~/.cursor/skills`          | managed link     |
+| IBM Bob     | `~/.bob`             | none                                | none (no-op)                                         | managed link into `~/.bob/skills`             | managed link     |
 
 A harness counts as installed when its config directory exists — the same probe the `skills` CLI uses. Commands only act on installed harnesses. `fleet harness ls` shows all six with their installed state, config directory, and whether fleet can write a per-skill off switch into their config.
 
@@ -27,7 +27,9 @@ What fleet never touches, for every harness:
 - skill frontmatter: no `disable-model-invocation` or similar cross-harness levers, ever
 - config content fleet doesn't own: comments, unknown keys, formatting, and rules fleet didn't write are preserved or flagged, never silently changed
 
-Per-harness skills directories (`~/.config/opencode/skills`, `~/.pi/agent/skills`, `~/.codex/skills`, `~/.claude/skills`, `~/.cursor/skills`, `~/.bob/skills`) get two kinds of traffic: managed symlinks for custom skills (always pointing inside the adopt destination `ls` scans) where the harness discovers through links, and removal of redundant links where it doesn't. Sync never removes tracked-collection or fallback links. Details below.
+Every harness reaches custom skills through one managed link per skill in its own skills directory, pointing at the skill directory in its custom home. Those directories also get redundant-link removal on harnesses that scan the canonical store natively. Sync never removes tracked-collection or fallback links. Details below.
+
+The custom toggle column is the source-aware rule. On OpenCode, Codex, Pi, Cursor, and Bob, which link skills and scan the canonical store natively, a custom skill's managed link is its enable/disable lever. A canonical-store skill has no link there and keeps that harness's own config lever. Claude Code is the exception: it links skills but does not scan the canonical store, so it toggles every skill through `skillOverrides`.
 
 ## OpenCode
 
@@ -40,7 +42,7 @@ One file, two config dialects:
 
 Semantics are identical: the last matching rule wins, and `deny` hides the skill from the catalog and rejects the tool call (`ask` and `allow` leave it on).
 
-**What a disable writes.** Fleet detects the dialect already present in the file and writes that one:
+**What a canonical-store disable writes.** Fleet detects the dialect already present in the file and writes that one:
 
 ```jsonc
 // V1: exact-name deny appended last, so "last matching rule wins" resolves to it
@@ -58,9 +60,9 @@ A string shorthand is converted to a map that keeps its meaning; a missing `perm
 
 **Enable** removes only fleet's own entries: exact-name keys in V1, and in V2 only rules that exactly match fleet's three-key shape. Pattern rules and blanket denies that still disable the skill are flagged and left alone.
 
-**Custom skills** are wired as an extra skill source in the matching dialect — the adopt destination joins `skills.paths` (V1) or the flat `skills` array (V2), not per skill.
+**Custom skills** get a managed link in `~/.config/opencode/skills` pointing inside the adopt destination. OpenCode links skills and scans the canonical store natively, so that link is the custom's toggle: `off` removes it and `on` recreates it, and no deny rule is written for a custom. A canonical-store skill has no link and keeps the deny-rule lever above.
 
-**Never touched:** comments, unknown keys, formatting, and deny rules fleet didn't write (they surface as flags in sync's output). The `~/.config/opencode/skills` directory is never written to — links there into the canonical store are redundant (OpenCode scans the store natively) and sync removes them, but tracked-collection or fallback links are never removed.
+**Never touched:** comments, unknown keys, formatting, and deny rules fleet didn't write (they surface as flags in sync's output). In `~/.config/opencode/skills`, only fleet's managed custom links and redundant store links are handled: links into the canonical store are redundant (OpenCode scans the store natively) and sync removes them, real directories and foreign links stay, and tracked-collection or fallback links are never removed.
 
 **Limitation:** OpenCode has no live reload. Toggles take effect on the next session; the TUI says so after every apply. The V2 beta moves fast — config discovery and skill-ID resolution are still in flux upstream, so the adapter is re-probed on each beta bump. Skill directory names equal frontmatter names so one rule targets the skill under both ID schemes.
 
@@ -68,7 +70,7 @@ A string shorthand is converted to a map that keeps its meaning; a missing `perm
 
 **File:** `~/.pi/agent/settings.json` (strict JSON — no comments).
 
-**What a disable writes.** A force-exclude entry appended to the `skills` array, in the exact form `pi config` itself produces — a path relative to `~/.agents`:
+**What a canonical-store disable writes.** A force-exclude entry appended to the `skills` array, in the exact form `pi config` itself produces — a path relative to `~/.agents`:
 
 ```json
 {
@@ -79,9 +81,9 @@ A string shorthand is converted to a map that keeps its meaning; a missing `perm
 
 **Enable** removes fleet's exact entries. The bare `!<glob>` exclusion form is recognized when reading (it does disable skills) but fleet never writes it, and a glob that still excludes a skill is flagged, not touched. Plain path entries in the array only add discovery sources; they never disable anything.
 
-**Custom skills** are wired as a plain path entry in the same `skills` array — the adopt destination joins it once, not per skill.
+**Custom skills** get a managed link in `~/.pi/agent/skills` pointing inside the adopt destination. Pi links skills and scans the canonical store natively, so that link is the custom's toggle: `off` removes it and `on` recreates it. No path entry and no force-exclude is written for a custom, which is what fixes the old bug where a custom skill sat outside the roots Pi's force-exclude matches.
 
-**Never touched:** unknown keys and formatting (the read-modify-write parses strictly and preserves both), glob exclusions, and the `~/.pi/agent/skills` directory's own contents beyond redundant-link removal (tracked-collection / fallback links never removed).
+**Never touched:** unknown keys and formatting (the read-modify-write parses strictly and preserves both), glob exclusions, and the `~/.pi/agent/skills` directory's own contents beyond managed custom links and redundant-link removal (tracked-collection / fallback links never removed).
 
 **Limitations:** the global file only — Pi's project settings cannot reach user-scope skills. The exclusion mechanism is code-verified against Pi (earendil-works/pi v0.84.4), not execution-tested; Pi releases near-daily, and sync fixes any drift the next time it runs.
 
@@ -89,7 +91,7 @@ A string shorthand is converted to a map that keeps its meaning; a missing `perm
 
 **File:** `~/.codex/config.toml` (TOML — comments and unknown keys allowed).
 
-**What a disable writes.** A `[[skills.config]]` table appended to the file:
+**What a canonical-store disable writes.** A `[[skills.config]]` table appended to the file:
 
 ```toml
 [[skills.config]]
@@ -101,7 +103,7 @@ An existing fleet-shape block is flipped in place (`enabled = true` becomes `fal
 
 **Enable** removes fleet's blocks (simple `name`-selected tables). Blocks fleet doesn't recognize — `path` selectors, extra keys, multi-line values — are flagged and left exactly as they are. Codex ignores unknown keys at runtime, so nothing fleet leaves behind changes behavior.
 
-**Custom skills** get a symlink in `~/.codex/skills` pointing inside the adopt destination. Codex scans the canonical store natively, so links there into the store are redundant and sync removes them, but tracked-collection / fallback links are never removed.
+**Custom skills** get a managed link in `~/.codex/skills` pointing inside the adopt destination. Codex links skills and scans the canonical store natively, so that link is the custom's toggle: `off` removes it and `on` recreates it, and no `[[skills.config]]` block is written for a custom. A canonical-store skill has no link and keeps the config lever above. Links there into the store are redundant and sync removes them, but tracked-collection / fallback links are never removed.
 
 **Never touched:** every line outside fleet's own `[[skills.config]]` blocks passes through byte for byte — TOML has no comment-preserving encoder, so fleet edits at the line level instead of re-encoding the file.
 
@@ -119,17 +121,17 @@ An existing fleet-shape block is flipped in place (`enabled = true` becomes `fal
 
 The object is created when missing and dropped when the last entry leaves. **Enable** removes the `"off"` entry. Other values (Claude Code's own, like `"user-invocable-only"`) are not disables and stay untouched.
 
-**Discovery is link-based.** Claude is not a native canonical-store reader: a skill reaches it only through a symlink (or directory) named after the skill in `~/.claude/skills`. Without one the skill's state is `absent` — the `ls` column shows `-`, and disabling is a no-op because there is nothing for Claude Code to load. Doctor reports a recorded disable whose link is missing as state drift.
+**Discovery goes through links.** Claude is not a native canonical-store reader: a skill reaches it only through a symlink (or directory) named after the skill in `~/.claude/skills`. Without one the skill's state is `absent`, the `ls` column shows `-`, and there is nothing for Claude Code to load.
 
 The skills CLI's own store links in `~/.claude/skills` are load-bearing (they are Claude Code's only path to installed skills), so they are never treated as redundant — only a link whose target is missing is reported, as a broken symlink.
 
-**Custom skills** get a managed symlink pointing inside the adopt destination — the same link mechanism, wherever the destination is.
+**Custom skills** get a managed link pointing inside the adopt destination, the same mechanism every harness uses. Claude Code is the exception to the link-toggle rule: it links skills but does not scan the canonical store, so its link is discovery only and both custom and canonical skills toggle through `skillOverrides`.
 
 ## Cursor
 
 **Config written:** none. Cursor reads `~/.agents/skills` natively (documented) and has no config-level per-skill disable. The only documented lever, the `disable-model-invocation` frontmatter flag, would cross-talk with Pi and Claude Code, so per-skill disable for Cursor is out of scope. A stored skill therefore reads as `on` and toggles for it are explicit no-ops; the TUI marks the column `cursor!`.
 
-**Custom skills** get a symlink in `~/.cursor/skills` pointing inside the adopt destination (symlinks supported since IDE 2.5 / CLI 2026.02.27). That link is Cursor's only path to a custom, so it is also the toggle: `fleet skill off <custom>` removes it (Cursor then reports the custom `absent`), `fleet skill on <custom>` restores it, and sync never recreates a hidden link.
+**Custom skills** get a managed link in `~/.cursor/skills` pointing inside the adopt destination (symlinks supported since IDE 2.5 / CLI 2026.02.27). That link is Cursor's only path to a custom, so it is also the toggle: `fleet skill off <custom>` removes it (Cursor then reports the custom `absent`), `fleet skill on <custom>` restores it, and sync never recreates a hidden link.
 
 **Never touched:** any Cursor config file, ever. Redundant store links in `~/.cursor/skills` are removed by sync, since Cursor scans the canonical store natively.
 
@@ -137,7 +139,7 @@ The skills CLI's own store links in `~/.claude/skills` are load-bearing (they ar
 
 **Config written:** none. Bob reads `~/.agents/skills` natively — verified empirically on this machine; the docs only mention `~/.bob/skills` (and have an open bug about global skills, #288). No per-skill disable mechanism is documented or verified, so a stored skill reads as `on`, toggles for it are explicit no-ops, and the column is marked `bob!`. Doctor surfaces the discovery picture if Bob's global-skill behavior ever changes.
 
-**Custom skills** get a symlink in `~/.bob/skills` pointing inside the adopt destination — customs live outside what Bob scans, so the link is Bob's only path to them. As with Cursor, that link is the toggle: `fleet skill off <custom>` removes it and `fleet skill on <custom>` restores it.
+**Custom skills** get a managed link in `~/.bob/skills` pointing inside the adopt destination — customs live outside what Bob scans, so the link is Bob's only path to them. As with Cursor, that link is the toggle: `fleet skill off <custom>` removes it and `fleet skill on <custom>` restores it.
 
 **Redundant links here are a judgment call:** the `skills` CLI auto-creates store links in `~/.bob/skills`, which double-cover skills Bob already sees through the canonical store. Sync removes those (a user decision, locked in the spec) while managed custom-home links for custom skills stay — they point outside the store, so they are never classified as redundant. A disabled custom's link is removed by sync instead.
 
@@ -147,6 +149,6 @@ The skills CLI's own store links in `~/.claude/skills` are load-bearing (they ar
 
 - `on` — the harness discovers the skill and nothing disables it
 - `off` — the harness discovers the skill but its config disables it
-- `absent` — the harness cannot discover the skill at all (Claude Code with no link; Cursor and Bob for a custom skill whose managed link was removed); the table shows `-`
+- `absent` — the harness cannot discover the skill at all (Claude Code with no link; a native-scanning harness, OpenCode, Codex, Pi, Cursor, or Bob, for a custom skill whose managed link was removed); the table shows `-`
 
-Cursor and Bob never report `off`: a stored skill is visible natively and always `on`, and hiding a custom removes its only link, so it reads `absent`. That absence is only correct when the state records the disable — `fleet skill doctor` reports it as drift when a custom is enabled (or disabled) in the state but its managed link disagrees, and the next sync resolves it.
+On a native-scanning harness a custom skill never reports `off`: its managed link is the only path, so it reads `on` when linked and `absent` when removed. A canonical-store skill there can still read `off` from the harness's own config. Claude Code reports `on`/`off` from `skillOverrides` for every skill. The `absent` reading is only correct when the state records the disable — `fleet skill doctor` reports drift when a custom is enabled (or disabled) in the state but its managed link disagrees, and the next sync resolves it.
