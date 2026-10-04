@@ -186,3 +186,12 @@ was reviewed and already accurate.
 If the sweep stopped, report the unresolved tickets, failure reasons, and
 retained worktrees or branches. Never report completion while any ticket or
 required verification is unresolved.
+
+End the report with a project-specific `Next step`. For a runnable tool or CLI,
+give an exact command the user can run, based on the project's docs or scripts.
+For an app or service, give its URL if the sweep started it; otherwise give the
+start command and expected URL when known. If the next step is a PR, say whether
+the branch is ready for the user to open one. For other work, state the concrete
+action the user should take. If the sweep stopped, give the first action that
+would unblock it. Do not invent commands or URLs, or imply that a server or PR
+was started or created when it was not. If no action remains, say so.
