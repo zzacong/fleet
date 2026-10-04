@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zzacong/fleet/internal/config"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/state"
 )
@@ -50,6 +51,20 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(body)
+}
+
+// writeExplicitRepos records the explicit repo-root list in the fake home's
+// config file, in precedence order.
+func writeExplicitRepos(t *testing.T, p *paths.Paths, roots ...string) {
+	t.Helper()
+	f, err := config.Load(p.FleetConfigFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.SetSkillsRepos(roots)
+	if err := config.Save(p.FleetConfigFile(), f); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRunProjectsDisabledSkillsIntoInstalledHarnesses(t *testing.T) {
@@ -433,6 +448,47 @@ func TestRunMakesCustomHomesVisible(t *testing.T) {
 	}
 	if len(reports) != 0 {
 		t.Errorf("second run reported %+v, want nothing", reports)
+	}
+}
+
+func TestRunFirstTrackedHomeWinsCustomLinkCollision(t *testing.T) {
+	// The same skill name in two explicit tracked homes: every harness's
+	// managed link points at the first home — the listing's winner — not
+	// the later, lower-precedence one, and a second sync has nothing left
+	// to say.
+	p := fakeHome(t, "opencode", "pi", "codex", "claude", "cursor", "bob")
+	first, second := t.TempDir(), t.TempDir()
+	writeExplicitRepos(t, p, first, second)
+	writeFile(t, filepath.Join(first, "skills", "dup", "SKILL.md"), "---\nname: dup\ndescription: first\n---\n")
+	writeFile(t, filepath.Join(second, "skills", "dup", "SKILL.md"), "---\nname: dup\ndescription: second\n---\n")
+
+	reports, err := Run(p)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	want := filepath.Join(first, "skills", "dup")
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.ClaudeSkills(), p.CursorSkills(), p.BobSkills()} {
+		if got, err := os.Readlink(filepath.Join(dir, "dup")); err != nil || got != want {
+			t.Errorf("link in %s = %q, %v; want the first tracked home %q", dir, got, err, want)
+		}
+	}
+	for _, r := range reports {
+		for _, l := range r.Linked {
+			if l.Name == "dup" && l.Target != want {
+				t.Errorf("%s reported dup target %q, want %q", r.Harness, l.Target, want)
+			}
+		}
+	}
+
+	// Idempotent: a second sync reports no link changes.
+	reports, err = Run(p)
+	if err != nil {
+		t.Fatalf("second Run() error = %v", err)
+	}
+	for _, r := range reports {
+		if len(r.Linked) != 0 {
+			t.Errorf("second sync linked %v, want none", r.Linked)
+		}
 	}
 }
 

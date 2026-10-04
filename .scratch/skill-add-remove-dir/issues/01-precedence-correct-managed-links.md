@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A name present in two custom homes appears once in the listing, from the first tracked home.
-- [ ] The managed link for that name in every installed harness points at the first tracked home.
-- [ ] Removing the winning home makes the next home's link take over on the next sync.
-- [ ] A second sync reports no link changes (idempotent).
+- [x] A name present in two custom homes appears once in the listing, from the first tracked home.
+- [x] The managed link for that name in every installed harness points at the first tracked home.
+- [x] Removing the winning home makes the next home's link take over on the next sync.
+- [x] A second sync reports no link changes (idempotent).
