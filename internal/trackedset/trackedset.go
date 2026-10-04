@@ -15,8 +15,9 @@
 //
 // Add is the same domain seam for the path-tracked model: it owns the
 // explicit skillsDirs collection-dir list, appending one validated
-// directory at a time with every add rule in one place. Ticket 04 adds the
-// matching remove side and ticket 05 collapses List onto the same list.
+// directory at a time with every add rule in one place. Remove is the
+// matching unlist side, preserving the order of the rest. Ticket 05
+// collapses List onto the same list.
 package trackedset
 
 import (
@@ -40,6 +41,62 @@ type AddResult struct {
 	Added bool
 }
 
+// RemoveResult reports one Remove: Dir is the cleaned absolute collection
+// dir that was unlisted.
+type RemoveResult struct {
+	Dir string
+}
+
+// Remove unlists a collection dir from the explicit skillsDirs list,
+// preserving the order of the rest: the inverse of Add, never of adopt. It
+// resolves a leading ~ and a relative path against the working directory
+// exactly like Add, and it never stats the target, so a tracked dir missing
+// from disk still unlists cleanly. The disk is never touched. An untracked
+// path errors listing the tracked dirs.
+func Remove(p *paths.Paths, arg string) (*RemoveResult, error) {
+	clean, err := resolveDirArg(arg)
+	if err != nil {
+		return nil, err
+	}
+	f, err := config.Load(p.FleetConfigFile())
+	if err != nil {
+		return nil, err
+	}
+	existing := f.SkillsDirs()
+	kept := make([]string, 0, len(existing))
+	removed := false
+	for _, dir := range existing {
+		if filepath.Clean(dir) == clean {
+			removed = true
+			continue
+		}
+		kept = append(kept, dir)
+	}
+	if !removed {
+		return nil, untrackedDirError(clean, existing)
+	}
+	f.SetSkillsDirs(kept)
+	if err := config.Save(p.FleetConfigFile(), f); err != nil {
+		return nil, err
+	}
+	return &RemoveResult{Dir: clean}, nil
+}
+
+// untrackedDirError reports a remove-dir path that is not in the explicit
+// list, listing every tracked dir so the typo is obvious.
+func untrackedDirError(clean string, tracked []string) error {
+	if len(tracked) == 0 {
+		return fmt.Errorf("remove-dir: %q is not tracked: no dirs are tracked", clean)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "remove-dir: %q is not tracked: tracked dirs:", clean)
+	for _, dir := range tracked {
+		b.WriteString("\n- ")
+		b.WriteString(filepath.Clean(dir))
+	}
+	return errors.New(b.String())
+}
+
 // Add registers an existing collection dir in the explicit skillsDirs list,
 // appending it without reordering. It resolves a leading ~ and a relative
 // path against the working directory, then applies every add rule, reporting
@@ -53,7 +110,7 @@ type AddResult struct {
 // store is allowed — custom outranks canonical and doctor reports the
 // shadow.
 func Add(p *paths.Paths, arg string) (*AddResult, error) {
-	clean, err := resolveAddArg(arg)
+	clean, err := resolveDirArg(arg)
 	if err != nil {
 		return nil, err
 	}
@@ -122,9 +179,10 @@ func Add(p *paths.Paths, arg string) (*AddResult, error) {
 	return &AddResult{Dir: clean, Added: true}, nil
 }
 
-// resolveAddArg expands a leading ~ and absolutizes a relative path against
-// the working directory, matching the config path rule, then cleans it.
-func resolveAddArg(arg string) (string, error) {
+// resolveDirArg expands a leading ~ and absolutizes a relative path against
+// the working directory, matching the config path rule, then cleans it. Add
+// and Remove share it so both verbs address a directory the same way.
+func resolveDirArg(arg string) (string, error) {
 	expanded := config.ExpandPath(arg)
 	if !filepath.IsAbs(expanded) {
 		abs, err := filepath.Abs(expanded)
