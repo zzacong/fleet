@@ -75,7 +75,7 @@ func writeSkill(t *testing.T, store, name string) {
 	}
 }
 
-func TestAdoptMovesTheSkillIntoTheRepoAndWiresEveryHarness(t *testing.T) {
+func TestAdoptMovesTheSkillIntoTheRepoAndLinksEveryHarness(t *testing.T) {
 	p, collection := adoptHome(t, []string{"my-notes"}, nil)
 	storeDir := filepath.Join(p.SkillsStore(), "my-notes")
 	repoDir := filepath.Join(collection, "my-notes")
@@ -100,21 +100,11 @@ func TestAdoptMovesTheSkillIntoTheRepoAndWiresEveryHarness(t *testing.T) {
 		t.Errorf("report move = %+v, want %s → %s", rep, storeDir, repoDir)
 	}
 
-	// The repo path is wired into the two config-path harnesses.
-	if len(rep.Wired) != 2 {
-		t.Fatalf("wired = %v, want opencode and pi", rep.Wired)
+	// Every harness reaches the skill at the repo through a managed link.
+	if len(rep.Linked) != 6 {
+		t.Fatalf("linked = %v, want one per harness", rep.Linked)
 	}
-	for _, w := range rep.Wired {
-		if !w.Changed || w.Where == "" {
-			t.Errorf("wiring result not actionable: %+v", w)
-		}
-	}
-
-	// Every link-based harness reaches the skill at the repo.
-	if len(rep.Linked) != 4 {
-		t.Fatalf("linked = %v, want one per codex/claude/cursor/bob", rep.Linked)
-	}
-	for _, dir := range []string{p.CodexSkills(), p.ClaudeSkills(), p.CursorSkills(), p.BobSkills()} {
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.ClaudeSkills(), p.CursorSkills(), p.BobSkills()} {
 		if got, err := os.Readlink(filepath.Join(dir, "my-notes")); err != nil || got != repoDir {
 			t.Errorf("link in %s = %q, %v; want %q", dir, got, err, repoDir)
 		}
@@ -139,14 +129,8 @@ func TestAdoptMovesTheSkillIntoFleetHomeWhenNoRepoSet(t *testing.T) {
 	if !rep.Moved || rep.From != storeDir || rep.To != fleetDir {
 		t.Errorf("report move = %+v, want %s → %s", rep, storeDir, fleetDir)
 	}
-	// Wiring should contain fleet-home, not repo (which is empty)
-	for _, w := range rep.Wired {
-		if !w.Changed {
-			t.Errorf("wiring not changed: %+v", w)
-		}
-	}
-	// Links must point into fleet-home, not canonical store
-	for _, dir := range []string{p.CodexSkills(), p.ClaudeSkills(), p.CursorSkills(), p.BobSkills()} {
+	// Links must point into fleet-home, not the canonical store.
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.ClaudeSkills(), p.CursorSkills(), p.BobSkills()} {
 		got, err := os.Readlink(filepath.Join(dir, "my-notes"))
 		if err != nil || got != fleetDir {
 			t.Errorf("link in %s = %q, %v; want %q", dir, got, err, fleetDir)
@@ -209,10 +193,10 @@ func TestAdoptIsIdempotentWhenTheSkillIsAlreadyInTheRepo(t *testing.T) {
 		t.Error("nothing should move for an already-adopted skill")
 	}
 
-	// The wiring and links are still ensured: a partial earlier run may
-	// have left them undone.
-	if len(rep.Wired) != 2 || len(rep.Linked) != 4 {
-		t.Errorf("wired = %v, linked = %v", rep.Wired, rep.Linked)
+	// The links are still ensured: a partial earlier run may have left
+	// them undone.
+	if len(rep.Linked) != 6 {
+		t.Errorf("linked = %v", rep.Linked)
 	}
 	if got, err := os.Readlink(filepath.Join(p.BobSkills(), "my-notes")); err != nil || got != repoDir {
 		t.Errorf("bob link = %q, %v; want %q", got, err, repoDir)
@@ -223,8 +207,8 @@ func TestAdoptIsIdempotentWhenTheSkillIsAlreadyInTheRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rep.Wired) != 0 || len(rep.Linked) != 0 {
-		t.Errorf("third run reported wired=%v linked=%v, want none", rep.Wired, rep.Linked)
+	if len(rep.Linked) != 0 {
+		t.Errorf("third run reported linked=%v, want none", rep.Linked)
 	}
 }
 
@@ -242,8 +226,8 @@ func TestAdoptIsIdempotentWhenAlreadyInFleetHome(t *testing.T) {
 	if rep.To != fleetDir {
 		t.Errorf("rep.To = %q, want %q", rep.To, fleetDir)
 	}
-	if len(rep.Wired) != 2 || len(rep.Linked) != 4 {
-		t.Errorf("wired = %v, linked = %v", rep.Wired, rep.Linked)
+	if len(rep.Linked) != 6 {
+		t.Errorf("linked = %v", rep.Linked)
 	}
 	if got, err := os.Readlink(filepath.Join(p.BobSkills(), "my-notes")); err != nil || got != fleetDir {
 		t.Errorf("bob link = %q, %v; want %q", got, err, fleetDir)
@@ -253,23 +237,21 @@ func TestAdoptIsIdempotentWhenAlreadyInFleetHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rep.Wired) != 0 || len(rep.Linked) != 0 {
-		t.Errorf("second run reported wired=%v linked=%v, want none", rep.Wired, rep.Linked)
+	if len(rep.Linked) != 0 {
+		t.Errorf("second run reported linked=%v, want none", rep.Linked)
 	}
 }
 
-func TestAdoptReEnsuresWiringAndLinksAfterPartialFailure(t *testing.T) {
-	// Simulate partially failed earlier run: skill already moved to repo but wiring/links missing
+func TestAdoptReEnsuresLinksAfterPartialFailure(t *testing.T) {
+	// Simulate partially failed earlier run: skill already moved to repo but links missing
 	t.Run("repo target", func(t *testing.T) {
 		p, collection := adoptHome(t, nil, []string{"my-notes"})
-		// Remove wiring/links that AdoptTo would have created — but AdoptTo with repo target will recreate them.
-		// Initially no wiring, so first AdoptTo should wire.
 		rep, err := AdoptTo(p, "my-notes", collection)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(rep.Wired) == 0 || len(rep.Linked) == 0 {
-			t.Fatalf("first adopt should wire/link, got wired=%v linked=%v", rep.Wired, rep.Linked)
+		if len(rep.Linked) == 0 {
+			t.Fatalf("first adopt should link, got linked=%v", rep.Linked)
 		}
 		// Now manually remove a link to simulate partial failure
 		if err := os.Remove(filepath.Join(p.CodexSkills(), "my-notes")); err != nil {
@@ -296,8 +278,8 @@ func TestAdoptReEnsuresWiringAndLinksAfterPartialFailure(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(rep.Wired) == 0 || len(rep.Linked) == 0 {
-			t.Fatalf("first adopt should wire/link")
+		if len(rep.Linked) == 0 {
+			t.Fatalf("first adopt should link")
 		}
 		_ = os.Remove(filepath.Join(p.ClaudeSkills(), "my-notes"))
 		rep2, err := AdoptTo(p, "my-notes", p.FleetHomeSkills())
@@ -449,7 +431,7 @@ func TestAdoptDoesNotPointLinksIntoCanonicalStore(t *testing.T) {
 				}
 			}
 			// Also check on disk
-			for _, dir := range []string{p.CodexSkills(), p.ClaudeSkills(), p.CursorSkills(), p.BobSkills()} {
+			for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.ClaudeSkills(), p.CursorSkills(), p.BobSkills()} {
 				got, err := os.Readlink(filepath.Join(dir, "my-notes"))
 				if err != nil {
 					t.Fatalf("readlink: %v", err)
@@ -502,7 +484,7 @@ func TestAdoptCollisionFrontmatterName(t *testing.T) {
 	}
 }
 
-func TestAdoptWithTrackedTargetButSkillInFleetHomeRewiresToFleetHome(t *testing.T) {
+func TestAdoptWithTrackedTargetButSkillInFleetHomeLinksToFleetHome(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
 	p := paths.New(home)
 	for _, dir := range []string{p.OpenCodeDir(), p.PiDir(), p.CodexDir(), p.ClaudeDir(), p.CursorDir(), p.BobDir()} {
@@ -541,7 +523,7 @@ func TestAdoptWithTrackedTargetButSkillInFleetHomeRewiresToFleetHome(t *testing.
 	if rep.Skill != "my-notes" {
 		t.Errorf("rep.Skill = %q, want my-notes", rep.Skill)
 	}
-	// Wiring/linking must point at fleet-home, not the tracked collection.
+	// Links must point at fleet-home, not the tracked collection.
 	for _, l := range rep.Linked {
 		if l.Target != fleetDir {
 			t.Errorf("linked target = %q, want fleet-home %q", l.Target, fleetDir)
@@ -550,7 +532,7 @@ func TestAdoptWithTrackedTargetButSkillInFleetHomeRewiresToFleetHome(t *testing.
 			t.Errorf("linked target incorrectly points at tracked %q", trackedDir)
 		}
 	}
-	for _, dir := range []string{p.CodexSkills(), p.ClaudeSkills(), p.CursorSkills(), p.BobSkills()} {
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.ClaudeSkills(), p.CursorSkills(), p.BobSkills()} {
 		got, err := os.Readlink(filepath.Join(dir, "my-notes"))
 		if err != nil {
 			t.Fatalf("readlink %s: %v", filepath.Join(dir, "my-notes"), err)
@@ -560,12 +542,6 @@ func TestAdoptWithTrackedTargetButSkillInFleetHomeRewiresToFleetHome(t *testing.
 		}
 		if got == trackedDir {
 			t.Errorf("link in %s incorrectly points at tracked collection", dir)
-		}
-	}
-	// The wiring results must be changed.
-	for _, w := range rep.Wired {
-		if !w.Changed {
-			t.Errorf("wired result not changed: %+v", w)
 		}
 	}
 	// Verify the skill was not copied to the tracked collection.

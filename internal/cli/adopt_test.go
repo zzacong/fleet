@@ -47,10 +47,10 @@ func runAdopt(t *testing.T, p *paths.Paths, args ...string) (string, error) {
 	return out.String(), err
 }
 
-func TestAdoptMovesWiresAndLinksEveryHarness(t *testing.T) {
+func TestAdoptMovesAndLinksEveryHarness(t *testing.T) {
 	// The ticket's integration scenario: fake home + tracked collection; adopt;
-	// verify every harness's config/link state; verify the moved skill
-	// still parses as a skill.
+	// verify every harness's link state; verify the moved skill still parses
+	// as a skill.
 	p, collection := adoptHome(t, "my-notes", "tdd")
 	repoSkills := collection
 
@@ -75,23 +75,20 @@ func TestAdoptMovesWiresAndLinksEveryHarness(t *testing.T) {
 		t.Errorf("a skill that was not adopted must not move: %v", err)
 	}
 
-	// opencode: the collection path wired as a V1 skill source (the fresh config
-	// has no dialect markers, so V1 is the safe default).
-	oc := readFile(t, p.OpenCodeConfig())
-	if !strings.Contains(oc, `"skills"`) || !strings.Contains(oc, `"`+repoSkills+`"`) {
-		t.Errorf("opencode config missing the wired collection path:\n%s", oc)
+	// No collection path is written into opencode/pi config; every harness
+	// gets a managed link to the tracked collection instead.
+	for _, cfg := range []string{p.OpenCodeConfig(), p.PiSettings()} {
+		if body, err := os.ReadFile(cfg); err == nil && strings.Contains(string(body), repoSkills) {
+			t.Errorf("%s gained a collection path:\n%s", cfg, body)
+		}
 	}
-	// pi: a plain path entry in the skills array.
-	pi := readFile(t, p.PiSettings())
-	if !strings.Contains(pi, `"`+repoSkills+`"`) {
-		t.Errorf("pi settings missing the wired collection path:\n%s", pi)
-	}
-	// Managed links in every link-based harness, pointing at the tracked collection.
 	for name, dir := range map[string]string{
-		"codex":  p.CodexSkills(),
-		"claude": p.ClaudeSkills(),
-		"cursor": p.CursorSkills(),
-		"bob":    p.BobSkills(),
+		"opencode": p.OpenCodeSkills(),
+		"pi":       p.PiSkills(),
+		"codex":    p.CodexSkills(),
+		"claude":   p.ClaudeSkills(),
+		"cursor":   p.CursorSkills(),
+		"bob":      p.BobSkills(),
 	} {
 		got, err := os.Readlink(filepath.Join(dir, "my-notes"))
 		if err != nil || got != filepath.Join(repoSkills, "my-notes") {
@@ -108,14 +105,17 @@ func TestAdoptMovesWiresAndLinksEveryHarness(t *testing.T) {
 		t.Errorf("output missing adopted headline:\n%s", out)
 	}
 	for _, want := range []string{
-		`opencode: wired "` + repoSkills,
-		`pi: wired "` + repoSkills,
+		`opencode: linked "my-notes"`,
+		`pi: linked "my-notes"`,
 		`codex: linked "my-notes"`,
 		`bob: linked "my-notes"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "wired") {
+		t.Errorf("output should carry no wiring vocabulary:\n%s", out)
 	}
 	if strings.Contains(out, "moved "+filepath.Join(p.SkillsStore(), "my-notes")) {
 		t.Errorf("output should not contain moved line:\n%s", out)
@@ -169,9 +169,20 @@ func TestAdoptIsIdempotent(t *testing.T) {
 	if _, err := runAdopt(t, p, "my-notes"); err != nil {
 		t.Fatal(err)
 	}
-	before := map[string]string{
-		"opencode": readFile(t, p.OpenCodeConfig()),
-		"pi":       readFile(t, p.PiSettings()),
+	before := map[string]string{}
+	for name, dir := range map[string]string{
+		"opencode": p.OpenCodeSkills(),
+		"pi":       p.PiSkills(),
+		"codex":    p.CodexSkills(),
+		"claude":   p.ClaudeSkills(),
+		"cursor":   p.CursorSkills(),
+		"bob":      p.BobSkills(),
+	} {
+		target, err := os.Readlink(filepath.Join(dir, "my-notes"))
+		if err != nil {
+			t.Fatalf("link in %s missing after first adopt: %v", name, err)
+		}
+		before[name] = target
 	}
 
 	out, err := runAdopt(t, p, "my-notes")
@@ -185,11 +196,16 @@ func TestAdoptIsIdempotent(t *testing.T) {
 		t.Errorf("a no-op adopt reported work it did not do:\n%s", out)
 	}
 	for name, want := range before {
-		if got := readFile(t, map[string]string{
-			"opencode": p.OpenCodeConfig(),
-			"pi":       p.PiSettings(),
-		}[name]); got != want {
-			t.Errorf("%s config changed on a no-op adopt:\n%s\nwas\n%s", name, got, want)
+		dir := map[string]string{
+			"opencode": p.OpenCodeSkills(),
+			"pi":       p.PiSkills(),
+			"codex":    p.CodexSkills(),
+			"claude":   p.ClaudeSkills(),
+			"cursor":   p.CursorSkills(),
+			"bob":      p.BobSkills(),
+		}[name]
+		if got, err := os.Readlink(filepath.Join(dir, "my-notes")); err != nil || got != want {
+			t.Errorf("%s link changed on a no-op adopt: %q, %v; want %q", name, got, err, want)
 		}
 	}
 }
@@ -284,8 +300,10 @@ func TestAdoptOnlyTouchesInstalledHarnesses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if body := readFile(t, p.OpenCodeConfig()); !strings.Contains(body, collection) {
-		t.Errorf("opencode was not wired:\n%s", body)
+	if got, err := os.Readlink(filepath.Join(p.OpenCodeSkills(), "my-notes")); err != nil {
+		t.Errorf("opencode link missing: %v", err)
+	} else if got != filepath.Join(collection, "my-notes") {
+		t.Errorf("opencode link = %q", got)
 	}
 	if got, err := os.Readlink(filepath.Join(p.CodexSkills(), "my-notes")); err != nil {
 		t.Errorf("codex link missing: %v", err)
@@ -364,9 +382,8 @@ func TestAdoptWithoutTrackedReposAdoptsIntoFleetHome(t *testing.T) {
 			t.Errorf("output missing adopted headline: %s", out)
 		}
 	}
-	oc := readFile(t, p.OpenCodeConfig())
-	if !strings.Contains(oc, p.FleetHomeSkills()) {
-		t.Errorf("opencode not wired to fleet-home: %s", oc)
+	if got, err := os.Readlink(filepath.Join(p.OpenCodeSkills(), "my-notes")); err != nil || got != fleetDir {
+		t.Errorf("opencode link = %q, %v; want %q", got, err, fleetDir)
 	}
 	if got, err := os.Readlink(filepath.Join(p.CodexSkills(), "my-notes")); err != nil || got != fleetDir {
 		t.Errorf("codex link = %q, %v; want %q", got, err, fleetDir)

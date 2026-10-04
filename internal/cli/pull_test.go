@@ -141,9 +141,9 @@ func TestPullFreshNoPathClonesIntoFleetHomeSlotWithNoConfigWrite(t *testing.T) {
 	if len(stub.clones) != 1 {
 		t.Errorf("clones = %v, want one", stub.clones)
 	}
-	// Wired for immediate discovery.
-	if body, _ := os.ReadFile(p.OpenCodeConfig()); !strings.Contains(string(body), filepath.Join(wantRepo, "skills")) {
-		t.Errorf("opencode not wired:\n%s", body)
+	// An empty collection links nothing and writes no config-path entry.
+	if _, err := os.Stat(p.OpenCodeConfig()); !os.IsNotExist(err) {
+		t.Errorf("opencode config should not exist for an empty collection, err = %v", err)
 	}
 }
 
@@ -301,7 +301,7 @@ func TestBarePullSkipsNonGitWithWarningAndReportsPerRepo(t *testing.T) {
 	}
 }
 
-func TestBarePullRunsSyncAfterWiring(t *testing.T) {
+func TestBarePullRunsSyncAfterLinking(t *testing.T) {
 	p := pullHome(t)
 	swapPullRunner(t, &stubPullRunner{})
 	url := "https://example.com/team.git"

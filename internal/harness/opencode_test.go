@@ -173,49 +173,6 @@ func TestOpenCodeDialectDetection(t *testing.T) {
 	}
 }
 
-func TestOpenCodeReadsSkillSourcesInBothDialects(t *testing.T) {
-	t.Run("v1 object form", func(t *testing.T) {
-		home := filepath.Join(t.TempDir(), "home")
-		writeOpenCodeConfig(t, home, `{"skills": {"paths": ["./team-skills", "~/shared"], "urls": ["https://example.com/skills/"]}}`)
-
-		res, err := NewOpenCode(paths.New(home)).Read([]string{"tdd"})
-		if err != nil {
-			t.Fatalf("Read() error = %v", err)
-		}
-		want := []string{"./team-skills", "~/shared", "https://example.com/skills/"}
-		if !reflect.DeepEqual(res.SkillSources, want) {
-			t.Errorf("SkillSources = %v, want %v", res.SkillSources, want)
-		}
-	})
-
-	t.Run("v2 flat array form", func(t *testing.T) {
-		home := filepath.Join(t.TempDir(), "home")
-		writeOpenCodeConfig(t, home, `{"skills": ["./team-skills", "https://example.com/skills/"]}`)
-
-		res, err := NewOpenCode(paths.New(home)).Read([]string{"tdd"})
-		if err != nil {
-			t.Fatalf("Read() error = %v", err)
-		}
-		want := []string{"./team-skills", "https://example.com/skills/"}
-		if !reflect.DeepEqual(res.SkillSources, want) {
-			t.Errorf("SkillSources = %v, want %v", res.SkillSources, want)
-		}
-	})
-
-	t.Run("no skills key", func(t *testing.T) {
-		home := filepath.Join(t.TempDir(), "home")
-		writeOpenCodeConfig(t, home, `{}`)
-
-		res, err := NewOpenCode(paths.New(home)).Read([]string{"tdd"})
-		if err != nil {
-			t.Fatalf("Read() error = %v", err)
-		}
-		if res.SkillSources != nil {
-			t.Errorf("SkillSources = %v, want nil", res.SkillSources)
-		}
-	})
-}
-
 func TestOpenCodeMalformedConfigIsAnError(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
 	writeOpenCodeConfig(t, home, `{"permission": {`)

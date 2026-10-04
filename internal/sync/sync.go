@@ -1,8 +1,8 @@
 // Package sync makes each installed harness's config match the state
 // file. It runs on every fleet command: read each config, diff against
 // the state, repair what fleet owns, and flag what it doesn't recognize
-// instead of touching it. It makes every custom home visible (wiring the
-// config-path harnesses and linking the link-based ones) so customs stay
+// instead of touching it. It makes every custom home visible (linking every
+// skill it holds into every installed harness) so customs stay
 // discoverable without an adopt or pull run. It also removes redundant
 // per-agent links — symlinks into the canonical store in harnesses that
 // scan the store natively — so the skills CLI's link spam stops
@@ -25,9 +25,6 @@ type Report struct {
 	Harness string
 	Changed []harness.Change
 	Flags   []harness.Flag
-	// Wired lists the config-path harnesses a custom home was wired into
-	// this run so its skills stay discoverable.
-	Wired []harness.WireResult
 	// Linked lists the managed custom-skill links created or repointed
 	// this run, one entry per harness per custom skill.
 	Linked []harness.LinkResult
@@ -43,7 +40,7 @@ type Report struct {
 // Empty reports whether the report has nothing to tell the user.
 func (r Report) Empty() bool {
 	return len(r.Changed) == 0 && len(r.Flags) == 0 &&
-		len(r.Wired) == 0 && len(r.Linked) == 0 && len(r.Unlinked) == 0 &&
+		len(r.Linked) == 0 && len(r.Unlinked) == 0 &&
 		len(r.Removed) == 0
 }
 
@@ -96,17 +93,12 @@ func Run(p *paths.Paths) ([]Report, error) {
 	}
 
 	// Custom visibility: every scanned custom home — each tracked
-	// collection plus the fleet-home fallback — is wired into the
-	// config-path harnesses and linked for the link-based ones, so customs
-	// stay discoverable without an adopt or pull run. Idempotent: a home
-	// that is already visible reports nothing.
+	// collection plus the fleet-home fallback — is linked into every
+	// installed harness, so customs stay discoverable without an adopt or
+	// pull run. Idempotent: a home that is already visible reports nothing.
 	vis, err := customs.EnsureVisible(p)
 	if err != nil {
 		return nil, fmt.Errorf("make customs visible: %w", err)
-	}
-	for _, w := range vis.Wired {
-		r := reportFor(w.Harness)
-		r.Wired = append(r.Wired, w)
 	}
 	for _, l := range vis.Linked {
 		r := reportFor(l.Harness)

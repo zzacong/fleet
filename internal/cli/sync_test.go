@@ -159,7 +159,7 @@ func TestSyncRepairsWhatAHandRunSkillsCLIDisturbs(t *testing.T) {
 
 func TestSyncLinksCustomSkillsAndReportsThem(t *testing.T) {
 	// A custom skill in a tracked collection with no adopt or pull run:
-	// sync links it for the link-based harnesses and prints each action.
+	// sync links it into every harness and prints each action.
 	p, collection := adoptHome(t)
 	writeSkillDir(t, collection, "my-notes", "Personal notes.")
 
@@ -167,12 +167,20 @@ func TestSyncLinksCustomSkillsAndReportsThem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fleet skill sync: %v", err)
 	}
-	want := `sync: bob: linked "my-notes" → ` + filepath.Join(collection, "my-notes")
-	if !strings.Contains(out, want) {
-		t.Errorf("output missing %q:\n%s", want, out)
+	target := filepath.Join(collection, "my-notes")
+	for _, h := range []string{"opencode", "pi", "codex", "claude", "cursor", "bob"} {
+		want := `sync: ` + h + `: linked "my-notes" → ` + target
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
 	}
-	if target, err := os.Readlink(filepath.Join(p.BobSkills(), "my-notes")); err != nil || target != filepath.Join(collection, "my-notes") {
-		t.Errorf("bob link = %q (err %v), want the collection", target, err)
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.ClaudeSkills(), p.CursorSkills(), p.BobSkills()} {
+		if got, err := os.Readlink(filepath.Join(dir, "my-notes")); err != nil || got != target {
+			t.Errorf("link in %s = %q (err %v), want the collection", dir, got, err)
+		}
+	}
+	if strings.Contains(out, "wired") {
+		t.Errorf("output should carry no wiring vocabulary:\n%s", out)
 	}
 
 	// Idempotent: a visible home prints nothing next time.

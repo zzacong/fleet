@@ -1,9 +1,7 @@
 // The adopt command: migrate a custom skill from the canonical store into
-// the resolved adopt destination, wire that home into the config-path
-// harnesses (opencode, pi), and manage the link-based harnesses' symlinks
-// (codex, claude code, Cursor, Bob). The state file is untouched — custom is
-// defined by living in a tracked collection or the fleet-home fallback — and
-// sync runs after, as on every command.
+// the resolved adopt destination and link it into every harness. The state
+// file is untouched — custom is defined by living in a tracked collection
+// or the fleet-home fallback — and sync runs after, as on every command.
 
 package cli
 
@@ -12,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -34,8 +31,8 @@ func newSkillAdoptCmd(p *paths.Paths) *cobra.Command {
 		Long: "Move a custom skill from the canonical store (~/.agents/skills) into the resolved adopt destination, where it stays versioned.\n\n" +
 			"The destination resolves as: --into <skills-dir> for this run, else the configured adopt target (`fleet config set adopt-target <skills-dir>`), else a numbered choice over the tracked collections plus the fleet-home fallback (~/.config/fleet/skills). With no tracked collections the fallback wins with no prompt.\n\n" +
 			"The --into directory is a collection dir (not a repo root): it is created on demand and never saved. A choice from the prompt offers a yes/no follow-up (default No) to save it as the adopt target. Without a terminal an ambiguous adopt fails listing the candidates and the --into hint instead of blocking.\n\n" +
-			"The resolved home is wired into OpenCode's and Pi's skill-path config, and every link-based harness (Codex, Claude Code, Cursor, Bob) gets a managed symlink to the skill. Managed links point into the resolved home, never into the canonical store — a link into ~/.agents/skills would make OpenCode and Pi see the skill twice, so custom skills get none.\n\n" +
-			"Adoption is reversible by hand: move the directory back into ~/.agents/skills and fleet keeps working (doctor reports the leftovers). Adopting an already-adopted skill moves nothing but re-ensures the wiring and links.",
+			"Every installed harness (OpenCode, Pi, Codex, Claude Code, Cursor, Bob) gets one managed symlink to the skill in its own skills directory. Managed links point into the resolved home, never into the canonical store — a link into ~/.agents/skills would make the native scanners see the skill twice, so custom skills get none.\n\n" +
+			"Adoption is reversible by hand: move the directory back into ~/.agents/skills and fleet keeps working (doctor reports the leftovers). Adopting an already-adopted skill moves nothing but re-ensures the links.",
 		Example: "  fleet skill adopt my-notes\n  fleet skill adopt my-notes --into ~/Developer/customs/skills",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -65,14 +62,6 @@ func newSkillAdoptCmd(p *paths.Paths) *cobra.Command {
 					return err
 				}
 				if _, err := fmt.Fprintf(out, "  %s %s\n", pal.dim("→"), rep.To); err != nil {
-					return err
-				}
-			}
-			// Report the home that was actually wired: the resolved
-			// target for a move, the skill's actual home for a re-ensure.
-			wired := filepath.Dir(rep.To)
-			for _, w := range rep.Wired {
-				if _, err := fmt.Fprintln(out, pal.dim("adopt: ")+formatWired(string(w.Harness), wired, w.Where, pal)); err != nil {
 					return err
 				}
 			}
@@ -225,16 +214,6 @@ func formatLink(harnessName string, l harness.LinkResult) string {
 	default:
 		return fmt.Sprintf("%s: linked %q → %s", harnessName, l.Name, l.Target)
 	}
-}
-
-func formatWired(harness, dir, where string, pal palette) string {
-	return fmt.Sprintf("%s: %s %q as a skill source %s", pal.info(harness), pal.good("wired"), dir, pal.dim("("+where+")"))
-}
-
-// formatWiredPlain renders one wiring as plain sync text, which
-// styleSyncLine then dims and scopes.
-func formatWiredPlain(w harness.WireResult) string {
-	return fmt.Sprintf("sync: %s: wired %q as a skill source (%s)", w.Harness, w.Dir, w.Where)
 }
 
 func formatLinkStyled(harnessName string, l harness.LinkResult, pal palette) string {

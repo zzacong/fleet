@@ -23,7 +23,7 @@ func TestCursorDerivedStateIsAlwaysOn(t *testing.T) {
 	if res.States["tdd"] != StateOn || res.States["git-helper"] != StateOn {
 		t.Errorf("states = %v, want every skill on", res.States)
 	}
-	if res.Dialect != "" || res.SkillSources != nil || res.Linked != nil {
+	if res.Dialect != "" || res.Linked != nil {
 		t.Errorf("unexpected read result extras: %+v", res)
 	}
 }

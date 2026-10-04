@@ -3,8 +3,8 @@
 // bare pull. Git runs behind the injected pull.Runner seam (real shells
 // out with inherited stdio so SSH agent and credential helpers just work;
 // tests inject a stub). After clone or pull the collection dir is ensured
-// (created with a warning on the empty-repo first run), the home is
-// wired/linked, sync runs, and a per-repo report prints.
+// (created with a warning on the empty-repo first run), the home is linked
+// into every installed harness, sync runs, and a per-repo report prints.
 package cli
 
 import (
@@ -32,7 +32,7 @@ func newSkillPullCmd(p *paths.Paths) *cobra.Command {
 		Long: "Clone a customs repo with `fleet skill pull <git-url> [path]` and fast-forward every tracked repo with bare `fleet skill pull`.\n\n" +
 			"With no path, the checkout lands in the auto-tracked fleet-home slot derived from the URL (final path or colon segment, trailing slashes and .git stripped) with no config write. An explicit path inside fleet home stays auto-tracked with no config write; an explicit path outside fleet home is appended once to the tracked list (no duplicates, no reordering). Re-pulling an existing checkout never reorders the list.\n\n" +
 			"An existing checkout with the same remote fast-forwards only (`git pull --ff-only`): dirty or diverged trees fail with their state surfaced — fleet never stashes, merges, rebases, or resets. A checkout pointing at a different remote fails unless --force is given. A missing git binary fails cleanly. Bare pull skips non-git entries with a warning instead of failing the run.\n\n" +
-			"After clone or pull the collection dir (<repo>/skills) is ensured (created with a warning on the empty-repo first run), the home is wired into the config-path harnesses and linked for the link-based harnesses, and sync runs. Auth inherits your stdio; fleet adds no credential flags.",
+			"After clone or pull the collection dir (<repo>/skills) is ensured (created with a warning on the empty-repo first run), its skills are linked into every installed harness, and sync runs. Auth inherits your stdio; fleet adds no credential flags.",
 		Example: "  fleet skill pull git@github.com:me/my-customs.git\n" +
 			"  fleet skill pull https://github.com/me/team.git ~/Developer/team-customs\n" +
 			"  fleet skill pull\n" +

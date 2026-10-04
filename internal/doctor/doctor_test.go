@@ -852,11 +852,11 @@ func TestAnalyzeFlagsStaleLockForBothCustomHomes(t *testing.T) {
 }
 
 func TestAnalyzeSuppressesManagedFleetHomeLinks(t *testing.T) {
-	p := fakeHome(t, "claude", "codex", "cursor", "bob")
+	p := fakeHome(t, "opencode", "pi", "claude", "codex", "cursor", "bob")
 	storeSkill(t, p, "tdd")
 	fleetSkill(t, p, "fleet-helper")
 	// Managed links into fleet-home must not be reported as unknown.
-	for _, dir := range []string{p.ClaudeSkills(), p.CodexSkills(), p.CursorSkills(), p.BobSkills()} {
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.ClaudeSkills(), p.CodexSkills(), p.CursorSkills(), p.BobSkills()} {
 		symlink(t, filepath.Join(p.FleetHomeSkills(), "fleet-helper"), filepath.Join(dir, "fleet-helper"))
 	}
 
@@ -878,11 +878,11 @@ func TestAnalyzeSuppressesManagedFleetHomeLinks(t *testing.T) {
 }
 
 func TestAnalyzeSuppressesManagedExplicitLinks(t *testing.T) {
-	p := fakeHome(t, "claude", "codex", "cursor", "bob")
+	p := fakeHome(t, "opencode", "pi", "claude", "codex", "cursor", "bob")
 	repo := fakeRepo(t, p)
 	storeSkill(t, p, "tdd")
 	repoSkill(t, p, "repo-helper")
-	for _, dir := range []string{p.ClaudeSkills(), p.CodexSkills(), p.CursorSkills(), p.BobSkills()} {
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.ClaudeSkills(), p.CodexSkills(), p.CursorSkills(), p.BobSkills()} {
 		symlink(t, filepath.Join(repo, "skills", "repo-helper"), filepath.Join(dir, "repo-helper"))
 	}
 
@@ -1049,14 +1049,14 @@ func TestAnalyzeWarnsOnNonGitExplicitEntries(t *testing.T) {
 }
 
 func TestAnalyzeSuppressesManagedTrackedLinks(t *testing.T) {
-	p := fakeHome(t, "claude", "codex")
+	p := fakeHome(t, "opencode", "pi", "claude", "codex")
 	t.Setenv("FLEET_REPO", "")
 	explicit := filepath.Join(t.TempDir(), "explicit")
 	writeFleetConfig(t, p, []string{explicit}, "")
 	collectionSkill(t, filepath.Join(explicit, "skills"), "tracked-helper")
 	collectionSkill(t, checkoutCollection(p, "alpha"), "checkout-helper")
 	storeSkill(t, p, "tdd")
-	for _, dir := range []string{p.ClaudeSkills(), p.CodexSkills()} {
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.ClaudeSkills(), p.CodexSkills()} {
 		symlink(t, filepath.Join(explicit, "skills", "tracked-helper"), filepath.Join(dir, "tracked-helper"))
 		symlink(t, filepath.Join(checkoutCollection(p, "alpha"), "checkout-helper"), filepath.Join(dir, "checkout-helper"))
 	}

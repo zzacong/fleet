@@ -494,8 +494,8 @@ func analyzeLinkToggles(p *paths.Paths, customByDir map[string]string, present, 
 // then auto-tracked fleet-home checkouts alphabetically, env override
 // first), the unversioned fleet-home fallback — plus the skills CLI lockfile
 // and the machine-local config. A name present in more than one home is
-// double visibility — opencode and pi read the canonical store and the wired
-// custom homes, so they would see the skill twice. A lock entry for a custom
+// double visibility — opencode and pi read the canonical store and the
+// linked custom homes, so they would see the skill twice. A lock entry for a custom
 // skill is stale provenance from before its adoption: the skills CLI keys
 // updates by it and would keep touching a skill that moved. An adopt target
 // outside the scanned homes and an explicit entry without a git checkout are

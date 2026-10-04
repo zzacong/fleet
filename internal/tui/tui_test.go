@@ -291,8 +291,7 @@ func TestStageThenApplyWritesStateAndHarnessConfigs(t *testing.T) {
 	}
 
 	// Each harness got its own native off marker; the others were untouched.
-	// Wiring the tracked collection makes opencode resolve to its V2 rule
-	// shape, so the deny may appear as a V1 key or a V2 rule.
+	// Opencode resolves the deny to whichever rule shape its config uses.
 	if body := readFile(t, p.OpenCodeConfig()); !opencodeDenies(body, "tdd") {
 		t.Errorf("opencode config:\n%s", body)
 	}
@@ -550,8 +549,8 @@ func TestPrepareSyncsBeforeTheFirstFrame(t *testing.T) {
 	}
 
 	// Sync converged the config with the state file and cleaned the link
-	// before the matrix rendered anything. Once the tracked collection is
-	// wired, opencode resolves to its V2 rule shape for the deny.
+	// before the matrix rendered anything. Opencode resolves the deny to
+	// whichever rule shape its config uses.
 	if body := readFile(t, p.OpenCodeConfig()); !opencodeDenies(body, "tdd") {
 		t.Errorf("opencode config after launch sync:\n%s", body)
 	}
@@ -565,22 +564,21 @@ func TestPrepareSyncsBeforeTheFirstFrame(t *testing.T) {
 	}
 }
 
-func TestSyncNoticeCountsCustomWiringAndLinks(t *testing.T) {
+func TestSyncNoticeCountsCustomLinks(t *testing.T) {
 	// The launch notice must report the custom-visibility work sync does,
 	// not just removals and enablement flips.
 	reports := []fleetsync.Report{
-		{
-			Harness: "opencode",
-			Wired:   []harness.WireResult{{Harness: harness.OpenCode, Dir: "/repo/skills", Where: "skills"}},
-		},
 		{
 			Harness: "bob",
 			Linked:  []harness.LinkResult{{Harness: harness.Bob, Name: "my-notes", Target: "/repo/skills/my-notes"}},
 		},
 	}
 	got := syncNotice(reports)
-	if !strings.Contains(got, "1 custom source wired") || !strings.Contains(got, "1 custom link added") {
-		t.Errorf("syncNotice = %q, want the wiring and link counts", got)
+	if !strings.Contains(got, "1 custom link added") {
+		t.Errorf("syncNotice = %q, want the link count", got)
+	}
+	if strings.Contains(got, "wired") {
+		t.Errorf("syncNotice = %q, should carry no wiring vocabulary", got)
 	}
 }
 

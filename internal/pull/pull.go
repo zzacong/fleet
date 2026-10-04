@@ -237,9 +237,8 @@ func IsGitRepo(path string) bool {
 }
 
 // CloneNew fresh-clones url into dest (which must not exist), registers
-// outside-home checkouts, ensures the collection, and wires the home. It
-// returns a Cloned result; CollectionCreated warns on the empty-repo
-// first run.
+// outside-home checkouts, and ensures the collection. It returns a Cloned
+// result; CollectionCreated warns on the empty-repo first run.
 func CloneNew(p *paths.Paths, runner Runner, url, dest string) (*Result, error) {
 	clean := filepath.Clean(dest)
 	if _, err := os.Stat(clean); err == nil {

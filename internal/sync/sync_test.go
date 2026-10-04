@@ -288,8 +288,8 @@ func TestRunRemovesRedundantLinksAndLeavesTheRest(t *testing.T) {
 
 func TestRunMakesCustomHomesVisible(t *testing.T) {
 	// A convention-tracked checkout and the fleet-home fallback each hold a
-	// custom skill. Sync wires both homes into opencode/pi and links each
-	// skill for the link-based harnesses, with no adopt or pull run.
+	// custom skill. Sync links both skills into every installed harness,
+	// with no adopt or pull run.
 	p := fakeHome(t, "opencode", "pi", "codex", "claude", "cursor", "bob")
 	collection := filepath.Join(p.FleetReposDir(), "team", "skills")
 	writeFile(t, filepath.Join(collection, "my-notes", "SKILL.md"), "---\nname: my-notes\ndescription: notes\n---\n")
@@ -300,27 +300,13 @@ func TestRunMakesCustomHomesVisible(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	wired := map[string]bool{}
 	linked := map[string]string{}
 	for _, r := range reports {
-		for _, w := range r.Wired {
-			wired[r.Harness+" = "+w.Dir] = true
-		}
 		for _, l := range r.Linked {
 			linked[r.Harness+"/"+l.Name] = l.Target
 		}
 	}
-	for _, want := range []string{
-		"opencode = " + collection,
-		"pi = " + collection,
-		"opencode = " + p.FleetHomeSkills(),
-		"pi = " + p.FleetHomeSkills(),
-	} {
-		if !wired[want] {
-			t.Errorf("missing wiring %q; got %v", want, wired)
-		}
-	}
-	for _, h := range []string{"codex", "claude", "cursor", "bob"} {
+	for _, h := range []string{"opencode", "pi", "codex", "claude", "cursor", "bob"} {
 		if got := linked[h+"/my-notes"]; got != filepath.Join(collection, "my-notes") {
 			t.Errorf("%s my-notes target = %q, want the checkout", h, got)
 		}
@@ -329,6 +315,9 @@ func TestRunMakesCustomHomesVisible(t *testing.T) {
 		}
 	}
 	// The links are on disk, not just in the report.
+	if target, err := os.Readlink(filepath.Join(p.OpenCodeSkills(), "my-notes")); err != nil || target != filepath.Join(collection, "my-notes") {
+		t.Errorf("opencode link = %q (err %v), want the checkout", target, err)
+	}
 	if target, err := os.Readlink(filepath.Join(p.BobSkills(), "my-notes")); err != nil || target != filepath.Join(collection, "my-notes") {
 		t.Errorf("bob link = %q (err %v), want the checkout", target, err)
 	}
@@ -340,6 +329,34 @@ func TestRunMakesCustomHomesVisible(t *testing.T) {
 	}
 	if len(reports) != 0 {
 		t.Errorf("second run reported %+v, want nothing", reports)
+	}
+}
+
+func TestRunLeavesUserSkillSourceEntriesAlone(t *testing.T) {
+	// A user's own discovery-source entries are not fleet's to touch: no
+	// collection path is ever written, and a hand-added entry survives a
+	// sync byte for byte while the custom home is linked.
+	p := fakeHome(t, "opencode", "pi", "codex")
+	ocBefore := `{"skills": {"paths": ["~/.claude/skills"]}}`
+	piBefore := `{"skills": ["~/.claude/skills"]}`
+	writeFile(t, p.OpenCodeConfig(), ocBefore)
+	writeFile(t, p.PiSettings(), piBefore)
+	writeFile(t, filepath.Join(p.FleetHomeSkills(), "scratch", "SKILL.md"), "---\nname: scratch\ndescription: scratch\n---\n")
+
+	if _, err := Run(p); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if got := readFile(t, p.OpenCodeConfig()); got != ocBefore {
+		t.Errorf("opencode config changed:\n%s\nwas\n%s", got, ocBefore)
+	}
+	if got := readFile(t, p.PiSettings()); got != piBefore {
+		t.Errorf("pi settings changed:\n%s\nwas\n%s", got, piBefore)
+	}
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills()} {
+		if got, err := os.Readlink(filepath.Join(dir, "scratch")); err != nil || got != filepath.Join(p.FleetHomeSkills(), "scratch") {
+			t.Errorf("link in %s = %q, %v; want the fallback skill", dir, got, err)
+		}
 	}
 }
 

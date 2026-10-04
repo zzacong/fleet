@@ -2,7 +2,7 @@
 // `<path-or-name>` target against the tracked set, then either unlisting an
 // explicit repo (config rewrite only, disk untouched) or deleting a
 // fleet-home checkout from disk. The dirty-tree guard runs behind pull's
-// Runner seam so tests never shell out to real git. Harness unwire/unlink
+// Runner seam so tests never shell out to real git. Harness unlink
 // and sync happen at the CLI layer, not here.
 package drop
 

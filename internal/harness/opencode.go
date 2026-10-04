@@ -59,7 +59,6 @@ func (a *OpenCodeAdapter) Read(names []string) (ReadResult, error) {
 	}
 
 	res.Dialect = detectDialect(cfg.Permission, cfg.Permissions != nil, cfg.Skills)
-	res.SkillSources = parseSkillSources(cfg.Skills)
 
 	// V1 baseline: permission.skill, evaluated per dialect semantics. The
 	// rules are parsed once: the state loop evaluates them per name, and
@@ -245,28 +244,6 @@ func detectDialect(permission json.RawMessage, hasPermissions bool, skills json.
 	default:
 		return ""
 	}
-}
-
-// parseSkillSources reads the `skills` config in either dialect: the V1
-// object {paths, urls} or the V2 flat array of paths and URLs.
-func parseSkillSources(raw json.RawMessage) []string {
-	if len(raw) == 0 {
-		return nil
-	}
-
-	var flat []string
-	if err := json.Unmarshal(raw, &flat); err == nil {
-		return flat
-	}
-
-	var obj struct {
-		Paths []string `json:"paths"`
-		Urls  []string `json:"urls"`
-	}
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		return nil
-	}
-	return append(obj.Paths, obj.Urls...)
 }
 
 // matchPattern reports whether a glob pattern (as used by opencode

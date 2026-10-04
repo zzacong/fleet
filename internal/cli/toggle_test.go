@@ -130,6 +130,22 @@ func TestOffWorksForACustomSkill(t *testing.T) {
 		t.Errorf("output missing the custom-skill outcome:\n%s", out)
 	}
 
+	// Disabling a custom still uses the config lever for now: the managed
+	// link stays present on the harnesses with a config lever, and ls keeps
+	// rendering off for them.
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.ClaudeSkills()} {
+		got, err := os.Readlink(filepath.Join(dir, "my-notes"))
+		if err != nil || got != filepath.Join(collection, "my-notes") {
+			t.Errorf("link in %s = %q, %v; want the managed link present", dir, got, err)
+		}
+	}
+	jsonOut := runLs(t, p, "--json")
+	for _, want := range []string{`"opencode": "off"`, `"pi": "off"`, `"codex": "off"`} {
+		if !strings.Contains(jsonOut, want) {
+			t.Errorf("ls missing %s after disabling the custom:\n%s", want, jsonOut)
+		}
+	}
+
 	// A name in no home (neither store nor custom) is still rejected.
 	if err := runToggleErr(t, p, "off", "no-such-skill"); err == nil {
 		t.Error("off with an unknown skill should still fail")

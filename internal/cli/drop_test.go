@@ -14,10 +14,9 @@ import (
 )
 
 // dropExplicitHome builds a fake home with every harness installed, one
-// explicit tracked repo holding a "my-notes" custom skill, the collection
-// wired into opencode/pi and linked for the link-based harnesses, plus a
-// redundant canonical-store link for sync to clean. It returns the paths,
-// the repo root, and the collection dir.
+// explicit tracked repo holding a "my-notes" custom skill, the skill linked
+// into every harness, plus a redundant canonical-store link for sync to
+// clean. It returns the paths, the repo root, and the collection dir.
 func dropExplicitHome(t *testing.T) (*paths.Paths, string, string) {
 	t.Helper()
 	p := pullHome(t)
@@ -34,9 +33,6 @@ func dropExplicitHome(t *testing.T) (*paths.Paths, string, string) {
 	}
 	f.SetSkillsRepos([]string{repo})
 	if err := config.Save(p.FleetConfigFile(), f); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := harness.WireSkillSource(p, collection); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := harness.LinkCustomSkill(p, "my-notes", filepath.Join(collection, "my-notes"), nil); err != nil {
@@ -66,7 +62,7 @@ func runDrop(t *testing.T, p *paths.Paths, args ...string) (string, string, erro
 	return out.String(), errOut.String(), err
 }
 
-func TestDropExplicitUnlistsKeepsDiskUnwiresUnlinksAndSyncs(t *testing.T) {
+func TestDropExplicitUnlistsKeepsDiskUnlinksAndSyncs(t *testing.T) {
 	p, repo, collection := dropExplicitHome(t)
 	swapPullRunner(t, &stubPullRunner{})
 
@@ -74,12 +70,15 @@ func TestDropExplicitUnlistsKeepsDiskUnwiresUnlinksAndSyncs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("drop: %v\nout=%s", err, out)
 	}
-	// The headline plus the unwired/unlinked lines in palette style.
+	// The headline plus the unlinked lines in palette style.
 	for _, want := range []string{
 		`drop: removed "` + repo + `"`,
-		`opencode: unwired "` + collection + `"`,
-		`pi: unwired "` + collection + `"`,
+		`opencode: unlinked "my-notes"`,
+		`pi: unlinked "my-notes"`,
 		`codex: unlinked "my-notes"`,
+		`claude: unlinked "my-notes"`,
+		`cursor: unlinked "my-notes"`,
+		`bob: unlinked "my-notes"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
@@ -96,15 +95,17 @@ func TestDropExplicitUnlistsKeepsDiskUnwiresUnlinksAndSyncs(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(collection, "my-notes", "SKILL.md")); err != nil {
 		t.Errorf("explicit drop touched the disk: %v", err)
 	}
-	// Unwired and unlinked.
-	if body := readFile(t, p.OpenCodeConfig()); strings.Contains(body, collection) {
-		t.Errorf("opencode still wired:\n%s", body)
+	// No collection path was ever written into opencode/pi configs.
+	for _, cfg := range []string{p.OpenCodeConfig(), p.PiSettings()} {
+		if body, err := os.ReadFile(cfg); err == nil && strings.Contains(string(body), collection) {
+			t.Errorf("%s gained a collection path:\n%s", cfg, body)
+		}
 	}
-	if body := readFile(t, p.PiSettings()); strings.Contains(body, collection) {
-		t.Errorf("pi still wired:\n%s", body)
-	}
-	if _, err := os.Lstat(filepath.Join(p.CodexSkills(), "my-notes")); !os.IsNotExist(err) {
-		t.Errorf("codex link still present: %v", err)
+	// The managed links are gone.
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.ClaudeSkills(), p.CursorSkills(), p.BobSkills()} {
+		if _, err := os.Lstat(filepath.Join(dir, "my-notes")); !os.IsNotExist(err) {
+			t.Errorf("link in %s still present: %v", dir, err)
+		}
 	}
 	// Sync ran too: the redundant link is gone and reported.
 	if _, err := os.Lstat(filepath.Join(p.OpenCodeSkills(), "tdd")); !os.IsNotExist(err) {
