@@ -24,6 +24,15 @@ func disablesFor(t *testing.T, p *paths.Paths, a Adapter) []string {
 	return res.Disables
 }
 
+func exactDisablesFor(t *testing.T, p *paths.Paths, a Adapter) []string {
+	t.Helper()
+	res, err := a.Read(nil)
+	if err != nil {
+		t.Fatalf("%s Read() error = %v", a.Harness(), err)
+	}
+	return res.ExactDisables
+}
+
 // emptyHome builds a home with every config dir present and nothing else.
 func emptyHome(t *testing.T) *paths.Paths {
 	t.Helper()
@@ -114,5 +123,63 @@ func TestDisablesEmptyWithoutConfigLever(t *testing.T) {
 		if got := disablesFor(t, p, a); got != nil {
 			t.Errorf("%s Disables with no config = %v, want none", a.Harness(), got)
 		}
+	}
+}
+
+// ExactDisables is the removable subset: shapes the write side can't remove
+// (a codex path selector or extra-key block, an opencode V2 rule with extra
+// keys) still appear in Disables so doctor sees them, but not here.
+func TestExactDisablesCodexSimpleBlocksOnly(t *testing.T) {
+	p := emptyHome(t)
+	writeConfig(t, p.CodexConfig(), `
+[[skills.config]]
+name = "simple-off"
+enabled = false
+
+[[skills.config]]
+path = "/agents/skills/off-path/SKILL.md"
+enabled = false
+
+[[skills.config]]
+name = "extra-key"
+enabled = false
+note = "not fleet's shape"
+`)
+
+	if got, want := disablesFor(t, p, NewCodex(p)), []string{"extra-key", "off-path", "simple-off"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Disables = %v, want %v", got, want)
+	}
+	if got, want := exactDisablesFor(t, p, NewCodex(p)), []string{"simple-off"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("ExactDisables = %v, want %v", got, want)
+	}
+}
+
+func TestExactDisablesOpenCodeThreeKeyRulesOnly(t *testing.T) {
+	p := emptyHome(t)
+	writeConfig(t, p.OpenCodeConfig(), `{
+		"permissions": [
+			{ "action": "skill", "resource": "three-key", "effect": "deny" },
+			{ "action": "skill", "resource": "extra-key", "effect": "deny", "note": "x" }
+		]
+	}`)
+
+	if got, want := disablesFor(t, p, NewOpenCode(p)), []string{"extra-key", "three-key"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Disables = %v, want %v", got, want)
+	}
+	if got, want := exactDisablesFor(t, p, NewOpenCode(p)), []string{"three-key"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("ExactDisables = %v, want %v", got, want)
+	}
+}
+
+func TestExactDisablesMatchDisablesWhenShapeIsFleetOwned(t *testing.T) {
+	p := emptyHome(t)
+	writeConfig(t, p.PiSettings(), `{"skills": ["-skills/exact/SKILL.md"]}`)
+	writeConfig(t, p.ClaudeSettings(), `{"skillOverrides": {"off-one": "off"}}`)
+
+	if got := exactDisablesFor(t, p, NewPi(p)); !reflect.DeepEqual(got, []string{"exact"}) {
+		t.Errorf("pi ExactDisables = %v, want [exact]", got)
+	}
+	if got := exactDisablesFor(t, p, NewClaude(p)); !reflect.DeepEqual(got, []string{"off-one"}) {
+		t.Errorf("claude ExactDisables = %v, want [off-one]", got)
 	}
 }

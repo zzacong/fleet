@@ -1252,6 +1252,41 @@ func TestAnalyzeUntrackedConfigRuleForUninstalledSkillIsConflict(t *testing.T) {
 	}
 }
 
+func TestAnalyzeStaleConfigOnlyForFleetOwnedShapes(t *testing.T) {
+	// A codex path selector disables an uninstalled, state-disabled skill,
+	// but it is not fleet's shape: prune can't remove it, so doctor must
+	// not report it as a stale config rule. The dormant state entry is
+	// still stale and still points at prune.
+	p := fakeHome(t, "codex")
+	storeSkill(t, p, "tdd") // complete scan
+	writeFile(t, p.CodexConfig(), "[[skills.config]]\npath = \"/agents/skills/ghost/SKILL.md\"\nenabled = false\n")
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.SetDisabled("ghost", "codex")
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	var staleState bool
+	for _, f := range rep.Findings {
+		if f.Kind == KindStaleConfig {
+			t.Errorf("path selector flagged as a fleet-owned stale config rule: %+v", f)
+		}
+		if f.Kind == KindStaleState && f.Skill == "ghost" {
+			staleState = true
+		}
+	}
+	if !staleState {
+		t.Errorf("findings = %+v, want a stale-state finding for ghost", rep.Findings)
+	}
+}
+
 func TestAnalyzeFlagsStaleStateForUninstalledSkill(t *testing.T) {
 	p := fakeHome(t, "opencode")
 	storeSkill(t, p, "tdd")

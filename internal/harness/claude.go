@@ -68,12 +68,15 @@ func (a *ClaudeAdapter) Read(names []string) (ReadResult, error) {
 
 	// The exact "off" entries, independent of link presence: an override
 	// for an unlinked skill is stale, but it is still a disable entry in
-	// the config that doctor must see.
+	// the config that doctor must see. "off" is also exactly what the write
+	// side removes, so it is the whole exact set.
 	for name, value := range overrides {
 		if value == "off" {
 			res.Disables = append(res.Disables, name)
+			res.ExactDisables = append(res.ExactDisables, name)
 		}
 	}
 	sort.Strings(res.Disables)
+	sort.Strings(res.ExactDisables)
 	return res, nil
 }

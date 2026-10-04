@@ -396,8 +396,12 @@ func analyzeConfigs(p *paths.Paths, customByName map[string]bool) ([]Conflict, [
 			}
 		}
 
+		// exact is the fleet-owned removable subset, not every disable the
+		// config carries: a shape the write side can't remove (a codex path
+		// selector, an opencode V2 rule with extra keys) is a manual edit,
+		// not a leftover prune can clear.
 		exact := map[string]bool{}
-		for _, name := range read.Disables {
+		for _, name := range read.ExactDisables {
 			exact[name] = true
 		}
 		for _, name := range sortedNames(universe) {
