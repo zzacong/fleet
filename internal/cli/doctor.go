@@ -96,7 +96,7 @@ var findingSections = []struct {
 	{doctor.KindManualEdit, "manual edits fleet can't manage", "", "warn"},
 	{doctor.KindDrift, "state drift", "", "warn"},
 	{doctor.KindDoublePresence, "double presence", "", "warn"},
-	{doctor.KindStaleLock, "stale lockfile entries", "fleet never writes the lockfile", "warn"},
+	{doctor.KindStaleLock, "stale lockfile entries", "fleet never writes the lockfile — remove each entry by hand; the skills CLI keeps updating these moved skills", "warn"},
 	{doctor.KindStaleConfig, "stale config rules", "run `fleet skill prune` to remove", "warn"},
 	{doctor.KindStaleState, "stale state entries", "run `fleet skill prune` to remove; pruning loses the disable-on-reinstall behavior", "warn"},
 	{doctor.KindIncompleteScan, "incomplete scan", "stale disables not reported", "warn"},
@@ -143,6 +143,19 @@ func printFindings(out io.Writer, findings []doctor.Finding, home string, pal pa
 		}
 		if section.kind == doctor.KindDoublePresence {
 			if err := printDoublePresenceSection(out, section.title, section.note, section.sev, group, home, pal); err != nil {
+				return err
+			}
+			continue
+		}
+		if section.kind == doctor.KindStaleLock {
+			if err := printStaleLockSection(out, section.title, section.note, section.sev, group, home, pal); err != nil {
+				return err
+			}
+			continue
+		}
+		if section.kind == doctor.KindRedundantLink || section.kind == doctor.KindBrokenLink ||
+			section.kind == doctor.KindUnknownEntry || section.kind == doctor.KindManualEdit {
+			if err := printCauseGroupedSection(out, section.title, section.note, section.sev, group, pal); err != nil {
 				return err
 			}
 			continue
@@ -280,6 +293,82 @@ func printDoublePresenceSection(out io.Writer, title, note, sev string, group []
 		}
 		// The names hang under the label, past the harness column.
 		if _, err := fmt.Fprintf(out, "  %s  %s\n", strings.Repeat(" ", width), strings.Join(names, ", ")); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// printCauseGroupedSection renders a section whose findings share an
+// explanation and differ only in the skill name: one line per harness and
+// cause, then every skill name under it. The redundant-link, broken-link,
+// unknown-entry, and manual-edit sections use this shape; each finding in them
+// names a harness.
+func printCauseGroupedSection(out io.Writer, title, note, sev string, group []doctor.Finding, pal palette) error {
+	if err := printSectionHeader(out, title, note, sev, len(group), pal); err != nil {
+		return err
+	}
+	type groupKey struct {
+		harness string
+		cause   string
+	}
+	order, byGroup := groupInOrder(group, func(f doctor.Finding) groupKey {
+		return groupKey{f.Harness, f.Cause}
+	})
+	harnesses := make([]string, len(order))
+	for i, k := range order {
+		harnesses[i] = k.harness
+	}
+	width := maxRuneLen(harnesses)
+	for _, k := range order {
+		members := byGroup[k]
+		names := make([]string, len(members))
+		for i, f := range members {
+			names[i] = f.Skill
+		}
+		if _, err := fmt.Fprintf(out, "  %s  %s\n", pal.info(padRight(k.harness, width)), k.cause); err != nil {
+			return err
+		}
+		// The names hang under the label, past the harness column.
+		if _, err := fmt.Fprintf(out, "  %s  %s\n", strings.Repeat(" ", width), strings.Join(names, ", ")); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// printStaleLockSection renders stale lockfile entries grouped by custom home.
+// The remediation is shared and lives once in the section note; each line
+// names the home (the path shortened to ~) and hangs its skill names under it.
+func printStaleLockSection(out io.Writer, title, note, sev string, group []doctor.Finding, home string, pal palette) error {
+	if err := printSectionHeader(out, title, note, sev, len(group), pal); err != nil {
+		return err
+	}
+	type groupKey struct {
+		label string
+		dir   string
+	}
+	order, byGroup := groupInOrder(group, func(f doctor.Finding) groupKey {
+		return groupKey{f.HomeLabel, f.Home}
+	})
+	labels := make([]string, len(order))
+	for i, k := range order {
+		labels[i] = k.label
+	}
+	labelWidth := maxRuneLen(labels)
+	for _, k := range order {
+		members := byGroup[k]
+		names := make([]string, len(members))
+		for i, f := range members {
+			names[i] = f.Skill
+		}
+		if _, err := fmt.Fprintf(out, "  %s  %s\n",
+			pal.info(padRight(k.label, labelWidth)), pal.dim(shortenHome(home, k.dir))); err != nil {
+			return err
+		}
+		// The names hang under the home path, past the label column.
+		if _, err := fmt.Fprintf(out, "  %s  %s\n",
+			strings.Repeat(" ", labelWidth), strings.Join(names, ", ")); err != nil {
 			return err
 		}
 	}
@@ -782,7 +871,10 @@ func findingLabel(kind doctor.Kind, n int) string {
 	case doctor.KindNonGitRepo:
 		return pluralized("non-git explicit repo", n)
 	case doctor.KindStaleLock:
-		return pluralized("stale lockfile entry", n)
+		if n == 1 {
+			return "stale lockfile entry"
+		}
+		return "stale lockfile entries"
 	case doctor.KindStaleConfig:
 		return pluralized("stale config rule", n)
 	case doctor.KindStaleState:

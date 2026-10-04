@@ -405,8 +405,12 @@ type Entry struct {
 	// Target is the final path the symlink chain resolves to, or "" when
 	// the entry is not a symlink (or its chain loops).
 	Target string
-	// Reason explains the classification in one line.
+	// Reason explains the classification in one line, naming the harness.
 	Reason string
+	// Cause is the same explanation without the harness or the entry name,
+	// so a grouped report can print it once per group and list the entry
+	// names under it. Empty when there is nothing to group.
+	Cause string
 }
 
 // maxLinkHops caps symlink-chain resolution; past it the chain loops.
@@ -465,6 +469,7 @@ func classifyEntry(d SkillDir, path, store string) (Entry, error) {
 		} else {
 			e.Reason = "a plain file, not a symlink — left alone"
 		}
+		e.Cause = e.Reason
 		return e, nil
 	}
 
@@ -472,6 +477,7 @@ func classifyEntry(d SkillDir, path, store string) (Entry, error) {
 	if err != nil {
 		e.Class = EntryBroken
 		e.Reason = "symlink loop — left alone"
+		e.Cause = e.Reason
 		return e, nil
 	}
 	e.Target = final
@@ -480,10 +486,11 @@ func classifyEntry(d SkillDir, path, store string) (Entry, error) {
 	case pathInside(final, store):
 		if d.NativeScan {
 			e.Class = EntryRedundant
-			e.Reason = fmt.Sprintf("%s scans the canonical store natively — this link double-covers the skill", d.Harness)
+			e.Cause = "scans the canonical store natively — this link double-covers the skill"
 			if !pathExists(final) {
-				e.Reason += " (and its target is missing)"
+				e.Cause += " (and its target is missing)"
 			}
+			e.Reason = fmt.Sprintf("%s %s", d.Harness, e.Cause)
 			return e, nil
 		}
 		if pathExists(final) {
@@ -491,7 +498,8 @@ func classifyEntry(d SkillDir, path, store string) (Entry, error) {
 			return e, nil
 		}
 		e.Class = EntryBroken
-		e.Reason = fmt.Sprintf("%s discovers skills only through links, but this one's target is missing", d.Harness)
+		e.Cause = "discovers skills only through links, but this link's target is missing"
+		e.Reason = fmt.Sprintf("%s %s", d.Harness, e.Cause)
 		return e, nil
 
 	case pathExists(final):
@@ -501,11 +509,13 @@ func classifyEntry(d SkillDir, path, store string) (Entry, error) {
 		} else {
 			e.Reason = "the symlink points outside the canonical store — fleet doesn't manage it"
 		}
+		e.Cause = e.Reason
 		return e, nil
 
 	default:
 		e.Class = EntryBroken
 		e.Reason = "the symlink target is missing"
+		e.Cause = e.Reason
 		return e, nil
 	}
 }
