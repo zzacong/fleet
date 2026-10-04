@@ -12,6 +12,11 @@
 // This is the only writer of the explicit list (Remember/Forget) and the
 // only reader of the ordering (List/CollectionDirs/Resolve). The skill
 // index, pull, and drop call in instead of re-deriving it.
+//
+// Add is the same domain seam for the path-tracked model: it owns the
+// explicit skillsDirs collection-dir list, appending one validated
+// directory at a time with every add rule in one place. Ticket 04 adds the
+// matching remove side and ticket 05 collapses List onto the same list.
 package trackedset
 
 import (
@@ -24,7 +29,173 @@ import (
 
 	"github.com/zzacong/fleet/internal/config"
 	"github.com/zzacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/scan"
 )
+
+// AddResult reports one Add: Dir is the cleaned absolute collection dir.
+// Added is false when the cleaned path was already listed, a safe no-op
+// rather than a duplicate append.
+type AddResult struct {
+	Dir   string
+	Added bool
+}
+
+// Add registers an existing collection dir in the explicit skillsDirs list,
+// appending it without reordering. It resolves a leading ~ and a relative
+// path against the working directory, then applies every add rule, reporting
+// the specific refusal: the path must exist, be a directory, hold at least
+// one skill, and scan. It refuses the canonical store, the fleet-home
+// fallback, any path inside fleet home, a path already tracked by the
+// transitional legacy repo list, a path nested inside or containing a
+// tracked dir, and a skill name that collides with another tracked home (an
+// explicit dir, a legacy collection, or the fallback). Re-adding a path
+// already in the explicit list is a no-op. A collision with the canonical
+// store is allowed — custom outranks canonical and doctor reports the
+// shadow.
+func Add(p *paths.Paths, arg string) (*AddResult, error) {
+	clean, err := resolveAddArg(arg)
+	if err != nil {
+		return nil, err
+	}
+	f, err := config.Load(p.FleetConfigFile())
+	if err != nil {
+		return nil, err
+	}
+	existing := f.SkillsDirs()
+
+	info, err := os.Stat(clean)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("add-dir: %q does not exist", clean)
+		}
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("add-dir: %q is not a directory", clean)
+	}
+	if clean == filepath.Clean(p.SkillsStore()) {
+		return nil, fmt.Errorf("add-dir: %q is the canonical store — installed skills are not custom", clean)
+	}
+	if clean == filepath.Clean(p.FleetHomeSkills()) {
+		return nil, fmt.Errorf("add-dir: %q is the fleet-home fallback — it is always tracked", clean)
+	}
+	if p.InsideFleetHome(clean) {
+		return nil, fmt.Errorf("add-dir: %q is inside fleet home — fleet's config dir cannot be a collection", clean)
+	}
+	for _, dir := range existing {
+		if filepath.Clean(dir) == clean {
+			return &AddResult{Dir: clean, Added: false}, nil
+		}
+	}
+	// The transitional legacy repo list is a custom home too: a legacy repo's
+	// collection, or a dir nesting with one, is already tracked and would
+	// double-scan. Ticket 05 retires that list.
+	legacy, err := CollectionDirs(p)
+	if err != nil {
+		return nil, err
+	}
+	for _, dir := range legacy {
+		if filepath.Clean(dir) == clean {
+			return nil, fmt.Errorf("add-dir: %q is already tracked as a legacy repo's collection", clean)
+		}
+	}
+	tracked := append(append([]string(nil), existing...), legacy...)
+	if err := checkNested(clean, tracked); err != nil {
+		return nil, err
+	}
+
+	skills, err := scan.ScanStore(clean)
+	if err != nil {
+		return nil, fmt.Errorf("add-dir: cannot scan %q: %w", clean, err)
+	}
+	if len(skills) == 0 {
+		return nil, fmt.Errorf("add-dir: %q holds no skills — a collection dir's immediate children must each hold a SKILL.md", clean)
+	}
+	if err := checkNameCollisions(p, clean, skills, tracked); err != nil {
+		return nil, err
+	}
+
+	f.SetSkillsDirs(append(existing, clean))
+	if err := config.Save(p.FleetConfigFile(), f); err != nil {
+		return nil, err
+	}
+	return &AddResult{Dir: clean, Added: true}, nil
+}
+
+// resolveAddArg expands a leading ~ and absolutizes a relative path against
+// the working directory, matching the config path rule, then cleans it.
+func resolveAddArg(arg string) (string, error) {
+	expanded := config.ExpandPath(arg)
+	if !filepath.IsAbs(expanded) {
+		abs, err := filepath.Abs(expanded)
+		if err != nil {
+			return "", err
+		}
+		expanded = abs
+	}
+	return filepath.Clean(expanded), nil
+}
+
+// checkNested refuses a collection dir that sits inside a tracked dir or
+// contains one, so precedence between overlapping collections is never
+// ambiguous.
+func checkNested(clean string, existing []string) error {
+	for _, dir := range existing {
+		d := filepath.Clean(dir)
+		if isInside(clean, d) {
+			return fmt.Errorf("add-dir: %q is inside tracked dir %q", clean, d)
+		}
+		if isInside(d, clean) {
+			return fmt.Errorf("add-dir: %q contains tracked dir %q", clean, d)
+		}
+	}
+	return nil
+}
+
+// checkNameCollisions refuses a skill name the incoming collection shares
+// with another tracked home (an explicit dir or a transitional legacy
+// collection) or the fallback, listing every collision and the home already
+// holding it. A canonical-store collision is deliberately not checked:
+// custom outranks canonical, and doctor reports the shadow.
+func checkNameCollisions(p *paths.Paths, clean string, incoming []scan.Skill, existing []string) error {
+	homes := append(append([]string(nil), existing...), p.FleetHomeSkills())
+	owner := map[string]string{}
+	for _, home := range homes {
+		h := filepath.Clean(home)
+		if h == clean {
+			continue
+		}
+		skills, err := scan.ScanStore(h)
+		if err != nil {
+			return fmt.Errorf("add-dir: cannot scan tracked dir %q: %w", h, err)
+		}
+		for _, s := range skills {
+			if _, ok := owner[s.Name]; !ok {
+				owner[s.Name] = h
+			}
+		}
+	}
+	var collisions []string
+	for _, s := range incoming {
+		if home, ok := owner[s.Name]; ok {
+			collisions = append(collisions, fmt.Sprintf("%s (in %s)", s.Name, home))
+		}
+	}
+	if len(collisions) == 0 {
+		return nil
+	}
+	return fmt.Errorf("add-dir: %q collides with already tracked skills: %s", clean, strings.Join(collisions, ", "))
+}
+
+// isInside reports whether path is a strict descendant of dir, lexically on
+// cleaned paths.
+func isInside(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
 
 // List resolves the ordered tracked set of versioned custom-skill homes
 // (repo roots). A missing checkout parent means no auto-tracked slots,
