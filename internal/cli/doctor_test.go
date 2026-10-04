@@ -211,8 +211,14 @@ func TestDoctorReportsRedundantLinks(t *testing.T) {
 	makeLink(t, filepath.Join(p.SkillsStore(), "tdd"), filepath.Join(p.OpenCodeSkills(), "tdd"))
 
 	out := runDoctor(t, p, "")
-	if !strings.Contains(out, "redundant links") || !strings.Contains(out, `"tdd"`) {
-		t.Errorf("output missing the redundant link:\n%s", out)
+	if !strings.Contains(out, "redundant links") || !strings.Contains(out, "opencode  scans the canonical store natively — this link double-covers the skill\n") {
+		t.Errorf("output missing the grouped redundant link:\n%s", out)
+	}
+	if !strings.Contains(out, "tdd\n") {
+		t.Errorf("output missing the skill name:\n%s", out)
+	}
+	if strings.Contains(out, `link "tdd"`) {
+		t.Errorf("per-finding redundant prose still present:\n%s", out)
 	}
 	// Read-only: the link is still there for sync to remove.
 	if _, err := os.Lstat(filepath.Join(p.OpenCodeSkills(), "tdd")); err != nil {
@@ -658,6 +664,127 @@ func TestDoctorDoublePresenceGroupsByHarnessAndHomes(t *testing.T) {
 	}
 	if strings.Contains(out, "exists in both") || strings.Contains(out, "would see it twice") {
 		t.Errorf("per-finding double-presence prose still present:\n%s", out)
+	}
+	if strings.Contains(out, p.Home) {
+		t.Errorf("absolute home path still shown:\n%s", out)
+	}
+}
+
+// TestDoctorGroupsLinkAndManualSections checks that the sections which
+// otherwise print a full sentence per finding collapse to one line per
+// harness and cause, with the skill names under it: redundant links, broken
+// symlinks, unknown entries, and manual edits.
+func TestDoctorGroupsLinkAndManualSections(t *testing.T) {
+	p := doctorHome(t)
+	for _, name := range []string{"alpha", "bravo", "trace"} {
+		writeSkillDir(t, p.SkillsStore(), name, "Does "+name+".")
+	}
+	// Redundant links into the store on two native scanners.
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills()} {
+		for _, name := range []string{"alpha", "bravo"} {
+			makeLink(t, filepath.Join(p.SkillsStore(), name), filepath.Join(dir, name))
+		}
+	}
+	// Two broken symlinks on opencode: one group, two names.
+	for _, name := range []string{"gone-a", "gone-b"} {
+		makeLink(t, filepath.Join(p.Home, "missing", name), filepath.Join(p.OpenCodeSkills(), name))
+	}
+	// Two real directories, reported and never touched.
+	for _, name := range []string{"notes-a", "notes-b"} {
+		if err := os.MkdirAll(filepath.Join(p.OpenCodeSkills(), name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A pattern rule disables tdd and trace: one manual-edit group.
+	if err := os.MkdirAll(filepath.Dir(p.OpenCodeConfig()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.OpenCodeConfig(), []byte(`{"permission": {"skill": {"t*": "deny"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runDoctor(t, p, "")
+
+	redundant := "scans the canonical store natively — this link double-covers the skill"
+	if got := strings.Count(out, redundant); got != 2 {
+		t.Errorf("redundant cause appears %d times, want 2 (opencode, pi):\n%s", got, out)
+	}
+	if got := strings.Count(out, "alpha, bravo\n"); got != 2 {
+		t.Errorf("redundant names appear %d times, want 2:\n%s", got, out)
+	}
+	if got := strings.Count(out, "the symlink target is missing"); got != 1 {
+		t.Errorf("broken cause appears %d times, want 1:\n%s", got, out)
+	}
+	if !strings.Contains(out, "gone-a, gone-b\n") {
+		t.Errorf("broken names not grouped:\n%s", out)
+	}
+	if got := strings.Count(out, "a real directory, not a symlink — left alone"); got != 1 {
+		t.Errorf("unknown cause appears %d times, want 1:\n%s", got, out)
+	}
+	if !strings.Contains(out, "notes-a, notes-b\n") {
+		t.Errorf("unknown names not grouped:\n%s", out)
+	}
+	if !strings.Contains(out, "disabled by an entry fleet doesn't manage (a pattern or blanket rule) — edit the config by hand if that's wrong") {
+		t.Errorf("manual-edit cause missing:\n%s", out)
+	}
+	if !strings.Contains(out, "tdd, trace\n") {
+		t.Errorf("manual-edit names not grouped:\n%s", out)
+	}
+	// The old per-finding sentences are gone.
+	for _, prose := range []string{`link "alpha"`, `"notes-a" —`, `"tdd" is disabled`} {
+		if strings.Contains(out, prose) {
+			t.Errorf("per-finding prose %q still present:\n%s", prose, out)
+		}
+	}
+}
+
+// TestDoctorGroupsStaleLockByHome checks that stale lockfile entries collapse
+// to one line per custom home (with the home path shortened) and the skill
+// names under it, instead of one long sentence each.
+func TestDoctorGroupsStaleLockByHome(t *testing.T) {
+	p := doctorHome(t)
+	tracked := filepath.Join(p.Home, "repos")
+	if err := os.MkdirAll(filepath.Join(tracked, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"]}`)
+	names := []string{"lock-a", "lock-b", "lock-c"}
+	for _, name := range names {
+		writeSkillDir(t, filepath.Join(tracked, "skills"), name, "Does "+name+".")
+	}
+	writeSkillDir(t, p.FleetHomeSkills(), "lock-d", "Does lock-d.")
+	lock := `{"skills": {`
+	for i, name := range append(append([]string{}, names...), "lock-d") {
+		if i > 0 {
+			lock += ","
+		}
+		lock += fmt.Sprintf("%q: {\"source\": \"mattpocock/skills\", \"sourceType\": \"github\", \"skillFolderHash\": \"abc123\"}", name)
+	}
+	lock += `}}`
+	if err := os.WriteFile(p.SkillLock(), []byte(lock), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runDoctor(t, p, "")
+
+	if !strings.Contains(out, "stale lockfile entries (4) · fleet never writes the lockfile") {
+		t.Errorf("stale-lock header missing:\n%s", out)
+	}
+	// One line per home, shortened to ~, names hanging under it.
+	if !strings.Contains(out, "the explicit repo  "+shortenHome(p.Home, filepath.Join(tracked, "skills"))) {
+		t.Errorf("tracked home line missing:\n%s", out)
+	}
+	if !strings.Contains(out, "lock-a, lock-b, lock-c\n") {
+		t.Errorf("tracked names not grouped:\n%s", out)
+	}
+	if !strings.Contains(out, "the fleet home") || !strings.Contains(out, shortenHome(p.Home, p.FleetHomeSkills())) {
+		t.Errorf("fallback home line missing:\n%s", out)
+	}
+	if !strings.Contains(out, "lock-d\n") {
+		t.Errorf("fallback name missing:\n%s", out)
+	}
+	if strings.Contains(out, "still carries its install entry") {
+		t.Errorf("per-finding stale-lock prose still present:\n%s", out)
 	}
 	if strings.Contains(out, p.Home) {
 		t.Errorf("absolute home path still shown:\n%s", out)

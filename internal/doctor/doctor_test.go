@@ -235,6 +235,9 @@ func TestAnalyzeReportsRedundantLinksWithWhatAndWhy(t *testing.T) {
 	if !strings.Contains(f.Message, "tdd") || !strings.Contains(f.Message, "natively") || !strings.Contains(f.Message, "sync removes it") {
 		t.Errorf("message must say what and why: %q", f.Message)
 	}
+	if f.Cause != "scans the canonical store natively — this link double-covers the skill" {
+		t.Errorf("cause = %q, want the harness-free explanation", f.Cause)
+	}
 }
 
 func TestAnalyzeReportsBrokenSymlinks(t *testing.T) {
@@ -253,6 +256,9 @@ func TestAnalyzeReportsBrokenSymlinks(t *testing.T) {
 	f := rep.Findings[0]
 	if f.Kind != KindBrokenLink || f.Harness != "claude" || f.Skill != "gone" {
 		t.Errorf("finding = %+v", f)
+	}
+	if f.Cause != "discovers skills only through links, but this link's target is missing" {
+		t.Errorf("cause = %q, want the harness-free explanation", f.Cause)
 	}
 }
 
@@ -277,9 +283,16 @@ func TestAnalyzeReportsUnknownEntries(t *testing.T) {
 	if got := kinds(rep); !reflect.DeepEqual(got, []Kind{KindUnknownEntry, KindUnknownEntry}) {
 		t.Fatalf("findings = %+v, want two unknown entries", rep.Findings)
 	}
+	wantCause := map[string]string{
+		"hand-made": "a real directory, not a symlink — left alone",
+		"mine":      "the symlink points outside the canonical store — fleet doesn't manage it",
+	}
 	for _, f := range rep.Findings {
 		if f.Kind != KindUnknownEntry {
 			t.Errorf("kind = %s, want unknown-entry", f.Kind)
+		}
+		if f.Cause != wantCause[f.Skill] {
+			t.Errorf("cause for %q = %q, want %q", f.Skill, f.Cause, wantCause[f.Skill])
 		}
 	}
 }
@@ -363,6 +376,9 @@ func TestAnalyzePatternDisableIsAFindingNotAConflict(t *testing.T) {
 	}
 	if len(rep.Findings) != 1 || rep.Findings[0].Kind != KindManualEdit {
 		t.Fatalf("findings = %+v, want one manual-edit finding", rep.Findings)
+	}
+	if rep.Findings[0].Cause != "disabled by an entry fleet doesn't manage (a pattern or blanket rule) — edit the config by hand if that's wrong" {
+		t.Errorf("cause = %q, want the harness-free explanation", rep.Findings[0].Cause)
 	}
 }
 
@@ -756,6 +772,9 @@ func TestAnalyzeFlagsStaleLockEntryForAdoptedSkill(t *testing.T) {
 	f := rep.Findings[0]
 	if f.Kind != KindStaleLock || f.Skill != "git-helper" || f.Harness != "" {
 		t.Errorf("finding = %+v, want the stale lock for git-helper", f)
+	}
+	if f.Home != filepath.Join(repo, "skills") || f.HomeLabel != "the explicit repo" {
+		t.Errorf("home = %q label = %q, want the tracked collection and its label", f.Home, f.HomeLabel)
 	}
 	if !strings.Contains(f.Message, p.SkillLock()) || !strings.Contains(f.Message, filepath.Join(repo, "skills", "git-helper")) {
 		t.Errorf("message must name the lockfile and the tracked copy: %q", f.Message)

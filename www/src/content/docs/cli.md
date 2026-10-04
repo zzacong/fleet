@@ -256,12 +256,16 @@ The read-only report of what's wrong. It inspects every installed harness, the c
 - **stale lockfile entries** — the skills CLI's lockfile still carries the install entry of a skill that was adopted into a custom home, so the skills CLI keeps trying to update a skill that moved; remove the entry by hand — fleet reads the lockfile and never writes it
 - **missing directories** and **unreadable configs**
 
+Findings that share an explanation are grouped so it prints once and only the names vary: redundant links, broken symlinks, unknown entries, and manual edits print one line per harness and cause, then the skill names under it; stale lockfile entries print one line per custom home; state drift groups by harness and direction; double presence groups by harness and by the pair of homes.
+
 ```sh
 $ fleet skill doctor
-◦ unknown entries (1) · reported, never touched
-  codex  ".system" — a real directory, not a symlink — left alone
 ⚠ redundant links (1) · sync removes them
-  opencode  link "tdd" → ~/.agents/skills/tdd — opencode scans the canonical store natively — this link double-covers the skill
+  opencode  scans the canonical store natively — this link double-covers the skill
+            tdd
+◦ unknown entries (1) · reported, never touched
+  codex  a real directory, not a symlink — left alone
+         notes
 ⚠ manual edit conflicts (2) · left as is
   HARNESS  SKILL         DISAGREEMENT
   pi       git-helper    config off · state on
@@ -273,12 +277,15 @@ $ fleet skill doctor
 ⚠ double presence (1)
   opencode  duplicated in ~/.agents/skills and ~/customs/skills — remove one copy by hand
             create-plan
+⚠ stale lockfile entries (1) · fleet never writes the lockfile — remove each entry by hand; the skills CLI keeps updating these moved skills
+  the explicit repo  ~/customs/skills
+                     git-helper
 ⚠ stale config rules (1) · run `fleet skill prune` to remove
   pi  ui-ux-pro-max
 ⚠ stale state entries (1) · run `fleet skill prune` to remove; pruning loses the disable-on-reinstall behavior
   pi  ui-ux-pro-max
 
-1 redundant link, 1 drift finding, 1 double-presence finding, 1 stale config rule, 1 stale state entry, 2 manual edits to resolve, run `fleet skill doctor -i` to resolve
+1 redundant link, 1 unknown entry, 1 drift finding, 1 double-presence finding, 1 stale lockfile entry, 1 stale config rule, 1 stale state entry, 2 manual edits to resolve, run `fleet skill doctor -i` to resolve
 ```
 
 Sections are marked by severity: ✖ red for breakage (broken symlinks, unreadable configs), ⚠ yellow for anything sync or you should act on, ◦ dim cyan for informational. Color only renders on a terminal; piped output is plain.

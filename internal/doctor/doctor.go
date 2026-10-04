@@ -122,6 +122,18 @@ type Finding struct {
 	// a double-present name twice, in column order. The CLI expands a finding
 	// under each of them so the section groups by harness. Empty otherwise.
 	Harnesses []string
+	// Cause is the groupable explanation for findings whose section prints
+	// one line per distinct cause and then the skill names (redundant links,
+	// broken symlinks, unknown entries, manual edits). It never repeats the
+	// harness (the column carries it) or the skill name (the name list
+	// carries it). Empty otherwise.
+	Cause string
+	// Home is the scanned custom home (collection dir) a stale-lock finding
+	// concerns, for grouping the section by home. Empty otherwise.
+	Home string
+	// HomeLabel describes that home in prose (e.g. "the explicit repo") in
+	// the stale-lock section. Empty otherwise.
+	HomeLabel string
 }
 
 // Conflict is a manual edit that disagrees with the state file, offered to
@@ -231,7 +243,7 @@ func Analyze(p *paths.Paths) (Report, error) {
 // that are exactly as they should be (claude's live store links) produce
 // none.
 func linkFinding(e harness.Entry) (Finding, bool) {
-	f := Finding{Harness: string(e.Harness), Skill: e.Name, Path: e.Path}
+	f := Finding{Harness: string(e.Harness), Skill: e.Name, Path: e.Path, Cause: e.Cause}
 	target := ""
 	if e.Target != "" {
 		target = fmt.Sprintf(" → %s", e.Target)
@@ -481,6 +493,7 @@ func analyzeConfigs(p *paths.Paths, customByName map[string]bool) ([]Conflict, [
 					Kind:    KindManualEdit,
 					Harness: h,
 					Skill:   name,
+					Cause:   "disabled by an entry fleet doesn't manage (a pattern or blanket rule) — edit the config by hand if that's wrong",
 					Message: fmt.Sprintf("%q is disabled by an entry fleet doesn't manage (a pattern or blanket rule) — edit the %s config by hand if that's wrong",
 						name, h),
 				})
@@ -795,6 +808,7 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 	type customCopy struct {
 		name     string
 		label    string
+		home     string
 		copyPath string
 	}
 	customByDir := map[string]customCopy{}
@@ -807,6 +821,7 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 				customByDir[s.Dir] = customCopy{
 					name:     s.Name,
 					label:    labels[src.key],
+					home:     src.skillsDir,
 					copyPath: filepath.Join(src.skillsDir, s.Dir),
 				}
 			}
@@ -822,8 +837,10 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 	for _, dir := range staleDirs {
 		c := customByDir[dir]
 		findings = append(findings, Finding{
-			Kind:  KindStaleLock,
-			Skill: c.name,
+			Kind:      KindStaleLock,
+			Skill:     c.name,
+			Home:      c.home,
+			HomeLabel: c.label,
 			Message: fmt.Sprintf("%q lives in %s (%s), but the skills lockfile (%s) still carries its install entry — the entry's source and hash describe a skill that moved out of the canonical store, so the skills CLI will keep trying to update it — remove the entry by hand; fleet never writes the lockfile",
 				c.name, c.label, c.copyPath, p.SkillLock()),
 		})
