@@ -406,11 +406,14 @@ func analyzeConfigs(p *paths.Paths, customByName map[string]bool) ([]Conflict, [
 			}
 			stateOff := st.IsDisabled(name, h)
 			cfgState := read.States[name]
-			if complete && !idx.IsInstalled(name) {
-				// Installed nowhere: a missing config rule is expected, not
-				// drift (the state's disable is dormant), and a fleet-owned
-				// rule still present is the stale-config leftover prune
-				// removes.
+			if complete && !idx.IsInstalled(name) && stateOff {
+				// Installed nowhere with a dormant state disable: a missing
+				// config rule is expected, not drift, and a fleet-owned rule
+				// still present is the stale-config leftover prune removes.
+				// A config rule the state does not track is a manual edit,
+				// not a stale leftover — prune's config axis only covers
+				// state-disabled names — so it falls through to the existing
+				// comparison below.
 				if exact[name] && cfgState != harness.StateOn {
 					findings = append(findings, Finding{
 						Kind:    KindStaleConfig,

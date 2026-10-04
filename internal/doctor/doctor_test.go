@@ -1191,6 +1191,16 @@ func TestAnalyzeFlagsStaleConfigForUninstalledSkill(t *testing.T) {
 	p := fakeHome(t, "opencode")
 	storeSkill(t, p, "tdd") // the store exists and scans: the scan is complete
 	writeFile(t, p.OpenCodeConfig(), `{"permission": {"skill": {"ghost": "deny"}}}`)
+	// The dormant state disable is what makes the leftover rule fleet's:
+	// prune's config axis only covers names the state disables.
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.SetDisabled("ghost", "opencode")
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
 	before := readFileT(t, p.OpenCodeConfig())
 
 	rep, err := Analyze(p)
@@ -1217,6 +1227,28 @@ func TestAnalyzeFlagsStaleConfigForUninstalledSkill(t *testing.T) {
 	}
 	if got := readFileT(t, p.OpenCodeConfig()); got != before {
 		t.Errorf("Analyze modified the config:\n%s", got)
+	}
+}
+
+func TestAnalyzeUntrackedConfigRuleForUninstalledSkillIsConflict(t *testing.T) {
+	// A config rule for a skill the state does not track stays a manual
+	// edit even when the skill is installed nowhere: prune's config axis
+	// only covers state-disabled names, so doctor must not point at it.
+	p := fakeHome(t, "opencode")
+	storeSkill(t, p, "tdd") // complete scan
+	writeFile(t, p.OpenCodeConfig(), `{"permission": {"skill": {"ghost": "deny"}}}`)
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if len(rep.Conflicts) != 1 || rep.Conflicts[0].Skill != "ghost" || !rep.Conflicts[0].ConfigDisables {
+		t.Fatalf("conflicts = %+v, want ghost/config-disables", rep.Conflicts)
+	}
+	for _, f := range rep.Findings {
+		if f.Kind == KindStaleConfig {
+			t.Errorf("untracked config rule flagged stale: %+v", f)
+		}
 	}
 }
 
