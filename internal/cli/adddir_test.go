@@ -48,6 +48,24 @@ func skillsDirsNow(t *testing.T, p *paths.Paths) []string {
 	return f.SkillsDirs()
 }
 
+// TestAddDirNeedsNoGitBinary asserts the path-tracked verb has no git
+// dependency: with an empty PATH (so any LookPath("git") would fail), a
+// valid add-dir still succeeds and tracks the directory.
+func TestAddDirNeedsNoGitBinary(t *testing.T) {
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	writeSkillDir(t, collection, "alpha", "Alpha.")
+
+	t.Setenv("PATH", "")
+	out, _, err := runAddDir(t, p, collection)
+	if err != nil {
+		t.Fatalf("add-dir with no git on PATH: %v\nout=%s", err, out)
+	}
+	if dirs := skillsDirsNow(t, p); len(dirs) != 1 || dirs[0] != collection {
+		t.Errorf("skillsDirs = %v, want [%s]", dirs, collection)
+	}
+}
+
 func TestAddDirLinksEveryHarnessPerSkillAndSyncs(t *testing.T) {
 	p := harnessHome(t)
 	collection := filepath.Join(t.TempDir(), "customs")
