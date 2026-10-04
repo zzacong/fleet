@@ -1,6 +1,6 @@
 # Spec: Path-tracked custom skill directories
 
-Status: ready-for-agent
+Status: resolved
 
 ## Problem Statement
 
