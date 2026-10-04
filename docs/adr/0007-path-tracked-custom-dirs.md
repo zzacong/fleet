@@ -29,7 +29,7 @@ The reality is different. A user authors skills in their own repo, opens it to e
 
 4. **The config key is `skillsDirs`.** An ordered array of absolute collection directories, order significant, empty means none. `skillsRepos` is retired to a preserved unknown field, never read, with no automatic migration in code, matching how the earlier `skillsRepo` key was retired. `adoptTarget` is unchanged.
 
-5. **First tracked directory wins.** Precedence is `skillsDirs` order, then the unversioned fallback, then the canonical store. The managed harness link is fixed to point at the same winner the listing shows; previously the fan-out let the lowest-precedence home win a name collision, which disagreed with display. **Transitional precedence while the old model still lands.** Until `skillsRepos` is retired, both models resolve together, deterministically: every `skillsDirs` entry in list order (scanned directly), then every legacy repo-derived collection (the explicit repo-root list in order, then the fleet-home checkout slots alphabetically, each joined with `skills/`), then the unversioned fleet-home fallback, then the canonical store. An explicit collection dir therefore outranks every legacy source.
+5. **First tracked directory wins.** Precedence is `skillsDirs` order, then the unversioned fallback, then the canonical store. The managed harness link is fixed to point at the same winner the listing shows; previously the fan-out let the lowest-precedence home win a name collision, which disagreed with display.
 
 6. **`remove-dir` never deletes.** It unlists the path, removes the managed links resolving under it, and syncs. A tracked path missing from disk still unlists cleanly; an untracked path is an error listing the tracked directories.
 
