@@ -1,0 +1,5 @@
+interface:
+  display_name: "Babysit PR"
+  short_description: "Watch PR checks and diagnose failures"
+policy:
+  allow_implicit_invocation: true

@@ -1,5 +1,5 @@
 interface:
   display_name: "File PR"
-  short_description: "File a concise pull request"
+  short_description: "Create a PR and monitor its checks"
 policy:
   allow_implicit_invocation: true

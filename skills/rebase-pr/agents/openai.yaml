@@ -1,0 +1,5 @@
+interface:
+  display_name: "Rebase PR"
+  short_description: "Rebase an open PR onto main and watch checks"
+policy:
+  allow_implicit_invocation: true
