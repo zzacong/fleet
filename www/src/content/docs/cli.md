@@ -247,7 +247,7 @@ The read-only report of what's wrong. It inspects every installed harness, the c
 - **unknown entries** — anything else in a skills dir (excluding managed custom-skill links into a tracked collection or the fallback); reported, never touched
 - **manual edits fleet can't manage** — pattern or blanket rules that disable a skill
 - **state drift** — the state disagreeing with a harness in a way sync will resolve: a config disable the state doesn't record (or vice versa), or, for a custom skill on a native-scanning harness (OpenCode, Codex, Pi, Cursor, Bob), a missing managed link while the state leaves it enabled (sync links it), or a link that outlived the disable (sync removes it)
-- **stale config rules** — a fleet-owned disable rule in a harness config for a skill that is installed nowhere; reported one line per harness with its skill names, pointing at `fleet skill prune`, which removes them
+- **stale config rules** — a fleet-owned disable rule in a harness config for a skill that is installed nowhere; reported one line per harness with its skill names, capped with a `… (+N more)` summary when a harness has many, pointing at `fleet skill prune`, which removes them
 - **stale state entries** — a state disable for a skill installed nowhere, kept as dormant intent; reported the same way, with the warning that pruning the entry loses the disable-on-reinstall behavior
 - **incomplete scan** — a skill home is missing or unreadable, so fleet cannot trust "installed nowhere"; stale findings are suppressed and the home that blocked the scan is named
 - **double presence** — a skill name that exists in more than one scanned source (canonical store, explicit repos, fleet-home checkouts, fallback), so a native-scanning harness would see it twice and one copy's rules may shadow the other; remove one of the copies by hand
@@ -303,7 +303,7 @@ Doctor never runs ambient sync — the point is to show what sync _would_ do bef
 fleet skill prune [--yes] [--harness <harness>]... [--config-only | --state-only]
 ```
 
-Removes the leftovers for skills that are installed nowhere: a fleet-owned disable rule a harness config still carries, and a dormant state disable no config can act on. With no flags it lists what it would remove and changes nothing; `--yes` applies. Sync runs after a successful apply, so configs and the state file agree when it finishes.
+Removes the leftovers for skills that are installed nowhere: a fleet-owned disable rule a harness config still carries, and a dormant state disable no config can act on. With no flags it lists what it would remove and changes nothing; `--yes` applies. Sync runs after a successful apply, so configs and the state file agree when it finishes. Doctor's stale sections cap long harness lists and summarize the rest with `… (+N more)`; this command is where the full list lives.
 
 ```sh
 $ fleet skill prune
