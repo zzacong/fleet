@@ -206,9 +206,10 @@ func TestCloneNewIntoDefaultSlotWritesNoConfigAndWarnsOnEmptyCollection(t *testi
 	if _, err := os.Stat(filepath.Join(dest, "skills")); err != nil {
 		t.Errorf("collection not ensured: %v", err)
 	}
-	// Wired into config-path harnesses even when empty.
-	if body, _ := os.ReadFile(p.OpenCodeConfig()); !contains(body, filepath.Join(dest, "skills")) {
-		t.Errorf("opencode not wired to collection:\n%s", body)
+	// An empty collection links nothing and writes no config-path entry:
+	// opencode's config is not created.
+	if _, err := os.Stat(p.OpenCodeConfig()); !os.IsNotExist(err) {
+		t.Errorf("opencode config should not exist for an empty collection, err = %v", err)
 	}
 }
 
@@ -380,11 +381,15 @@ func TestUpdateExistingMakesCollectionVisible(t *testing.T) {
 	if _, err := UpdateExisting(p, stub, "https://example.com/team.git", repo, false); err != nil {
 		t.Fatal(err)
 	}
-	if body, _ := os.ReadFile(p.OpenCodeConfig()); !contains(body, filepath.Join(repo, "skills")) {
-		t.Errorf("opencode not wired:\n%s", body)
+	// No collection path is written into opencode's config; the skill is
+	// linked into every harness instead.
+	if body, _ := os.ReadFile(p.OpenCodeConfig()); contains(body, filepath.Join(repo, "skills")) {
+		t.Errorf("opencode config gained a collection path:\n%s", body)
 	}
-	if got, err := os.Readlink(filepath.Join(p.CodexSkills(), "my-notes")); err != nil || got != filepath.Join(repo, "skills", "my-notes") {
-		t.Errorf("codex link = %q, %v; want collection skill", got, err)
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.ClaudeSkills(), p.CursorSkills(), p.BobSkills()} {
+		if got, err := os.Readlink(filepath.Join(dir, "my-notes")); err != nil || got != filepath.Join(repo, "skills", "my-notes") {
+			t.Errorf("link in %s = %q, %v; want collection skill", dir, got, err)
+		}
 	}
 }
 

@@ -249,7 +249,7 @@ func toggledFlagHarnesses(name string, targets []string, projected []toggle.Proj
 // toggledFlips reports whether any targeted harness actually moved for the
 // skill: the direct "on" writes report their own flips, sync's reports
 // carry the "off" projections and the link toggles (a custom link created
-// for Bob/Cursor on "on", removed on "off").
+// for a native-scanning linker on "on", removed on "off").
 func toggledFlips(name string, targets []string, projected []toggle.Projected, reports []fleetsync.Report) bool {
 	for _, pr := range projected {
 		for _, c := range pr.Report.Changed {
@@ -282,12 +282,12 @@ func toggledFlips(name string, targets []string, projected []toggle.Projected, r
 }
 
 // printToggleDetail writes what the run did beyond the toggle itself, in
-// sync's own order: redundant-link removals, then drift repairs, then
-// flags. Flags about the toggled skill always print — they mean the
-// recorded state did not fully land — deduplicated, because the direct
-// "on" writes and the sync pass that follows can flag the same entry.
-// Flags about other skills are ambient config findings: `fleet skill
-// sync` and `fleet skill doctor` report them, the toggle stays quiet.
+// sync's own order: one-time legacy cleanup, redundant-link removals, then
+// drift repairs, then flags. Flags about the toggled skill always print —
+// they mean the recorded state did not fully land — deduplicated, because
+// the direct "on" writes and the sync pass that follows can flag the same
+// entry. Flags about other skills are ambient config findings: `fleet
+// skill sync` and `fleet skill doctor` report them, the toggle stays quiet.
 func printToggleDetail(out io.Writer, name string, targets []string, projected []toggle.Projected, reports []fleetsync.Report) error {
 	pal := newPalette(stdoutIsTTY())
 	targeted := map[string]bool{}
@@ -296,6 +296,11 @@ func printToggleDetail(out io.Writer, name string, targets []string, projected [
 	}
 
 	for _, r := range reports {
+		for _, c := range r.Cleaned {
+			if _, err := fmt.Fprintln(out, styleSyncLine(formatLegacy(r.Harness, c), pal)); err != nil {
+				return err
+			}
+		}
 		for _, e := range r.Removed {
 			if _, err := fmt.Fprintln(out, styleSyncLine(formatRemoved(r.Harness, e), pal)); err != nil {
 				return err
@@ -361,13 +366,13 @@ func runSyncTo(out io.Writer, p *paths.Paths) error {
 func printSyncReports(out io.Writer, reports []fleetsync.Report) error {
 	pal := newPalette(stdoutIsTTY())
 	for _, r := range reports {
-		for _, e := range r.Removed {
-			if _, err := fmt.Fprintln(out, styleSyncLine(formatRemoved(r.Harness, e), pal)); err != nil {
+		for _, c := range r.Cleaned {
+			if _, err := fmt.Fprintln(out, styleSyncLine(formatLegacy(r.Harness, c), pal)); err != nil {
 				return err
 			}
 		}
-		for _, w := range r.Wired {
-			if _, err := fmt.Fprintln(out, styleSyncLine(formatWiredPlain(w), pal)); err != nil {
+		for _, e := range r.Removed {
+			if _, err := fmt.Fprintln(out, styleSyncLine(formatRemoved(r.Harness, e), pal)); err != nil {
 				return err
 			}
 		}
@@ -488,6 +493,13 @@ func formatChange(harnessName string, c harness.Change) string {
 // store natively".
 func formatRemoved(harnessName string, e harness.Entry) string {
 	return fmt.Sprintf("sync: %s: removed redundant link %q — %s", harnessName, e.Name, e.Reason)
+}
+
+// formatLegacy renders one removed legacy config entry as plain text:
+// "sync: opencode: removed legacy collection path \"/repo/skills\"" or
+// "sync: opencode: removed legacy disable entry \"my-notes\"".
+func formatLegacy(harnessName string, r harness.LegacyRemoval) string {
+	return fmt.Sprintf("sync: %s: removed legacy %s %q", harnessName, r.Kind, r.Entry)
 }
 
 // formatFlag renders one untouched-but-flagged entry, attributed to the

@@ -38,16 +38,13 @@ type ReadResult struct {
 	// States maps every requested skill name to its state.
 	States map[string]State
 	// Linked lists skill names with a link or directory in the harness's
-	// own skills dir. Populated by the harnesses that discover through
-	// links (claude code, Bob); nil for the others.
+	// own skills dir. Populated by every link-based harness (opencode,
+	// codex, pi, claude code, Cursor, Bob); nil for a harness that reaches
+	// skills only through config.
 	Linked []string
 	// Dialect is the opencode config dialect detected in the file:
 	// "v1", "v2", or "" when no marker was found. Only opencode sets it.
 	Dialect string
-	// SkillSources lists extra skill discovery sources configured in the
-	// harness config (opencode's `skills` key, in either dialect). Only
-	// opencode sets it.
-	SkillSources []string
 	// Disables lists every skill name the harness's own config disables
 	// through an exact-name entry fleet could own — including names that
 	// aren't in the canonical store. Glob patterns, blanket rules, and

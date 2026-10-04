@@ -33,6 +33,7 @@ func (a *CodexAdapter) Dir() string { return a.home.CodexDir() }
 // Read implements Adapter.
 func (a *CodexAdapter) Read(names []string) (ReadResult, error) {
 	res := ReadResult{States: onForAll(names)}
+	res.Linked = linkedNames(a.home.CodexSkills(), names)
 
 	body, err := os.ReadFile(a.home.CodexConfig())
 	if err != nil {

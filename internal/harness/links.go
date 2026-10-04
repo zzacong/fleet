@@ -2,12 +2,12 @@
 // links (the write side of link-based discovery) and link classification
 // (what sync removes, what doctor reports, what is never touched).
 //
-// codex, claude code, Cursor, and Bob reach skills outside the canonical
-// store only through a symlink named after the skill in their own skills
-// dir, so each custom skill gets one link per harness — pointed at the
-// resolved custom home (a tracked collection or ~/.config/fleet/skills). By construction these links
+// Every harness reaches skills outside the canonical store only through a
+// symlink named after the skill in its own skills dir, so each custom skill
+// gets one link per harness — pointed at the resolved custom home (a
+// tracked collection or ~/.config/fleet/skills). By construction these links
 // never target the canonical store: a link into ~/.agents/skills would
-// make opencode and pi see the skill twice, and it would make the link
+// make the native scanners see the skill twice, and it would make the link
 // indistinguishable from the skills CLI's redundant per-agent links.
 //
 // For harnesses that scan the canonical store natively those per-agent
@@ -54,7 +54,7 @@ type LinkChange struct {
 
 // SkillLinker is the write side of link-based discovery, implemented by
 // every harness that reaches extra skills through a symlink in its own
-// skills dir (codex, claude code, Cursor, Bob).
+// skills dir (opencode, pi, codex, claude code, Cursor, Bob).
 type SkillLinker interface {
 	// LinkSkill points the harness's <name> link at target (the skill's
 	// repo dir). It creates the link when missing, repoints a symlink that
@@ -72,13 +72,12 @@ type LinkResult struct {
 	Change  LinkChange
 }
 
-// LinkCustomSkill manages every installed link-based harness's link for
-// one custom skill: <harness skills dir>/<name> → target. keep, when
-// non-nil, filters harnesses: a harness it rejects is left entirely alone
-// (no link created, nothing removed), which is how a custom link toggle's
-// "off" state keeps its link from being recreated. Harnesses that discover
-// through config paths (opencode, pi) get no links, and harnesses with
-// nothing left to change are omitted.
+// LinkCustomSkill manages every installed harness's link for one custom
+// skill: <harness skills dir>/<name> → target. keep, when non-nil, filters
+// harnesses: a harness it rejects is left entirely alone (no link created,
+// nothing removed), which is how a custom link toggle's "off" state keeps
+// its link from being recreated. Harnesses with nothing left to change are
+// omitted.
 func LinkCustomSkill(p *paths.Paths, name, target string, keep func(Harness) bool) ([]LinkResult, error) {
 	var results []LinkResult
 	for _, a := range All(p) {
@@ -100,17 +99,18 @@ func LinkCustomSkill(p *paths.Paths, name, target string, keep func(Harness) boo
 	return results, nil
 }
 
-// LinkToggleable reports whether a harness's only lever over a custom
-// skill is its managed link: the harness scans the canonical store
-// natively, so a store skill needs no link, yet it has no config-level
-// per-skill disable — leaving link presence as the only way to hide a
-// custom skill. Bob and Cursor are the two; Claude and Codex have a config
-// lever, so their links stay for discovery even when disabled.
+// LinkToggleable reports whether a custom skill's enable/disable on this
+// harness is its managed link. The predicate is a harness that both links
+// skills (SkillLinker) and scans the canonical store natively
+// (nativeScanHarnesses): a store skill needs no link there, so a link
+// exists only for customs and its presence is the lever. OpenCode, Codex,
+// Pi, Cursor, and Bob qualify. Claude is a linker but not a native scanner,
+// so it keeps its config lever (skillOverrides) for customs too.
 func LinkToggleable(a Adapter) bool {
 	if _, ok := a.(SkillLinker); !ok {
 		return false
 	}
-	return nativeScanHarnesses[a.Harness()] && !a.CanProject()
+	return nativeScanHarnesses[a.Harness()]
 }
 
 // RemoveCustomSkillLink removes name's managed link from one harness's
@@ -165,6 +165,19 @@ func RemoveCustomSkillLink(p *paths.Paths, a Adapter, name string, customHomes [
 	return UnlinkResult{Harness: a.Harness(), Name: name, Target: written}, true, nil
 }
 
+// LinkSkill implements SkillLinker: customs reach opencode through
+// ~/.config/opencode/skills (opencode scans the canonical store natively).
+func (a *OpenCodeAdapter) LinkSkill(name, target string) (LinkChange, error) {
+	return manageLink(a.home.OpenCodeSkills(), name, target)
+}
+
+// LinkSkill implements SkillLinker: customs reach pi through
+// ~/.pi/agent/skills (pi scans the canonical store natively and follows
+// directory symlinks there).
+func (a *PiAdapter) LinkSkill(name, target string) (LinkChange, error) {
+	return manageLink(a.home.PiSkills(), name, target)
+}
+
 // LinkSkill implements SkillLinker: customs reach codex through
 // ~/.codex/skills (codex scans the canonical store natively).
 func (a *CodexAdapter) LinkSkill(name, target string) (LinkChange, error) {
@@ -199,17 +212,17 @@ type UnlinkResult struct {
 	Target string
 }
 
-// RemoveCustomLinks removes every symlink in each installed link-based
-// harness's skills dir (codex, claude, Cursor, Bob) that resolves under
-// collectionDir: the managed custom-skill links of a dropped collection.
-// Only symlinks are ever removed — real directories and files are the
-// user's and stay, as do foreign links, redundant canonical-store links,
-// claude's expected store links, and dangling or looping links that point
-// anywhere else. (A dangling link whose written target sits under the
-// collection is still the collection's, so it goes.) Missing skills dirs
-// and uninstalled harnesses are no-ops. Results arrive in harness order,
-// links sorted by name within each harness (os.ReadDir returns entries
-// sorted by filename, which is what the loop below iterates).
+// RemoveCustomLinks removes every symlink in each installed harness's
+// skills dir that resolves under collectionDir: the managed custom-skill
+// links of a dropped collection. Only symlinks are ever removed — real
+// directories and files are the user's and stay, as do foreign links,
+// redundant canonical-store links, claude's expected store links, and
+// dangling or looping links that point anywhere else. (A dangling link
+// whose written target sits under the collection is still the collection's,
+// so it goes.) Missing skills dirs and uninstalled harnesses are no-ops.
+// Results arrive in harness order, links sorted by name within each harness
+// (os.ReadDir returns entries sorted by filename, which is what the loop
+// below iterates).
 func RemoveCustomLinks(p *paths.Paths, collectionDir string) ([]UnlinkResult, error) {
 	collection := filepath.Clean(collectionDir)
 	dirs := skillDirPaths(p)

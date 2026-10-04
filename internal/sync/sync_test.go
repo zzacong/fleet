@@ -113,6 +113,109 @@ func TestRunProjectsDisabledSkillsIntoInstalledHarnesses(t *testing.T) {
 	}
 }
 
+func TestRunNeverWritesCustomOffEntriesOnNativeScanners(t *testing.T) {
+	// State disables a custom skill on the native-scanning link harnesses.
+	// Their lever is the managed link, so sync removes the link and writes
+	// no config off-entry; a canonical skill disabled for the same
+	// harnesses still projects to config.
+	p := fakeHome(t, "opencode", "pi", "codex", "claude", "cursor", "bob")
+	collection := filepath.Join(p.FleetReposDir(), "team", "skills")
+	writeFile(t, filepath.Join(collection, "my-notes", "SKILL.md"), "---\nname: my-notes\ndescription: notes\n---\n")
+	writeFile(t, filepath.Join(p.SkillsStore(), "tdd", "SKILL.md"), "---\nname: tdd\ndescription: tdd\n---\n")
+
+	// The custom's managed links exist before the disable.
+	linkDirs := []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.CursorSkills(), p.BobSkills()}
+	for _, dir := range linkDirs {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(collection, "my-notes"), filepath.Join(dir, "my-notes")); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	st, _ := state.Load(p.FleetStateFile())
+	for _, h := range []string{"opencode", "pi", "codex", "cursor", "bob"} {
+		st.SetDisabled("my-notes", h)
+	}
+	for _, h := range []string{"opencode", "pi", "codex"} {
+		st.SetDisabled("tdd", h)
+	}
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Run(p); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	// No custom off-entry lands in any writable config.
+	for _, path := range []string{p.OpenCodeConfig(), p.PiSettings(), p.CodexConfig()} {
+		if body := readFile(t, path); strings.Contains(body, "my-notes") {
+			t.Errorf("%s wrote a custom off-entry:\n%s", filepath.Base(path), body)
+		}
+	}
+	// The canonical disable still projects.
+	if body := readFile(t, p.OpenCodeConfig()); !strings.Contains(body, `"tdd": "deny"`) {
+		t.Errorf("opencode config missing the canonical deny:\n%s", body)
+	}
+	if body := readFile(t, p.PiSettings()); !strings.Contains(body, "-skills/tdd/SKILL.md") {
+		t.Errorf("pi settings missing the canonical exclusion:\n%s", body)
+	}
+	if body := readFile(t, p.CodexConfig()); !strings.Contains(body, `name = "tdd"`) || !strings.Contains(body, "enabled = false") {
+		t.Errorf("codex config missing the canonical disable:\n%s", body)
+	}
+	// The custom's link is gone from every native scanner.
+	for _, dir := range linkDirs {
+		if _, err := os.Lstat(filepath.Join(dir, "my-notes")); !os.IsNotExist(err) {
+			t.Errorf("custom link in %s survived the disable", dir)
+		}
+	}
+}
+
+func TestRunRemovesLegacyCustomOffEntry(t *testing.T) {
+	// A config off-entry recorded before the unified-link model is removed
+	// by the one-time cleanup: the custom's lever is now its managed link,
+	// so sync must not leave the stale deny behind or write a new one.
+	p := fakeHome(t, "opencode")
+	before := `{"permission": {"skill": {"my-notes": "deny"}}}`
+	writeFile(t, p.OpenCodeConfig(), before)
+	collection := filepath.Join(p.FleetReposDir(), "team", "skills")
+	writeFile(t, filepath.Join(collection, "my-notes", "SKILL.md"), "---\nname: my-notes\ndescription: notes\n---\n")
+
+	st, _ := state.Load(p.FleetStateFile())
+	st.SetDisabled("my-notes", "opencode")
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+
+	reports, err := Run(p)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got := readFile(t, p.OpenCodeConfig()); strings.Contains(got, `"my-notes"`) {
+		t.Errorf("legacy custom off-entry survived:\n%s", got)
+	}
+	// The removal is reported once, and no new custom off-entry replaces it.
+	var cleaned int
+	for _, r := range reports {
+		cleaned += len(r.Cleaned)
+	}
+	if cleaned != 1 {
+		t.Errorf("cleaned = %d, want 1 (the legacy custom deny)", cleaned)
+	}
+	// Idempotent: a second run finds nothing left to remove.
+	reports, err = Run(p)
+	if err != nil {
+		t.Fatalf("second Run() error = %v", err)
+	}
+	for _, r := range reports {
+		if len(r.Cleaned) != 0 {
+			t.Errorf("%s cleaned %v on the second run, want nothing", r.Harness, r.Cleaned)
+		}
+	}
+}
+
 func TestRunFlagsManualEditsWithoutState(t *testing.T) {
 	// The manual-edit drift scenario: no state file, configs hold denies
 	// fleet didn't write. Sync leaves every byte alone and flags them.
@@ -288,8 +391,8 @@ func TestRunRemovesRedundantLinksAndLeavesTheRest(t *testing.T) {
 
 func TestRunMakesCustomHomesVisible(t *testing.T) {
 	// A convention-tracked checkout and the fleet-home fallback each hold a
-	// custom skill. Sync wires both homes into opencode/pi and links each
-	// skill for the link-based harnesses, with no adopt or pull run.
+	// custom skill. Sync links both skills into every installed harness,
+	// with no adopt or pull run.
 	p := fakeHome(t, "opencode", "pi", "codex", "claude", "cursor", "bob")
 	collection := filepath.Join(p.FleetReposDir(), "team", "skills")
 	writeFile(t, filepath.Join(collection, "my-notes", "SKILL.md"), "---\nname: my-notes\ndescription: notes\n---\n")
@@ -300,27 +403,13 @@ func TestRunMakesCustomHomesVisible(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	wired := map[string]bool{}
 	linked := map[string]string{}
 	for _, r := range reports {
-		for _, w := range r.Wired {
-			wired[r.Harness+" = "+w.Dir] = true
-		}
 		for _, l := range r.Linked {
 			linked[r.Harness+"/"+l.Name] = l.Target
 		}
 	}
-	for _, want := range []string{
-		"opencode = " + collection,
-		"pi = " + collection,
-		"opencode = " + p.FleetHomeSkills(),
-		"pi = " + p.FleetHomeSkills(),
-	} {
-		if !wired[want] {
-			t.Errorf("missing wiring %q; got %v", want, wired)
-		}
-	}
-	for _, h := range []string{"codex", "claude", "cursor", "bob"} {
+	for _, h := range []string{"opencode", "pi", "codex", "claude", "cursor", "bob"} {
 		if got := linked[h+"/my-notes"]; got != filepath.Join(collection, "my-notes") {
 			t.Errorf("%s my-notes target = %q, want the checkout", h, got)
 		}
@@ -329,6 +418,9 @@ func TestRunMakesCustomHomesVisible(t *testing.T) {
 		}
 	}
 	// The links are on disk, not just in the report.
+	if target, err := os.Readlink(filepath.Join(p.OpenCodeSkills(), "my-notes")); err != nil || target != filepath.Join(collection, "my-notes") {
+		t.Errorf("opencode link = %q (err %v), want the checkout", target, err)
+	}
 	if target, err := os.Readlink(filepath.Join(p.BobSkills(), "my-notes")); err != nil || target != filepath.Join(collection, "my-notes") {
 		t.Errorf("bob link = %q (err %v), want the checkout", target, err)
 	}
@@ -340,6 +432,34 @@ func TestRunMakesCustomHomesVisible(t *testing.T) {
 	}
 	if len(reports) != 0 {
 		t.Errorf("second run reported %+v, want nothing", reports)
+	}
+}
+
+func TestRunLeavesUserSkillSourceEntriesAlone(t *testing.T) {
+	// A user's own discovery-source entries are not fleet's to touch: no
+	// collection path is ever written, and a hand-added entry survives a
+	// sync byte for byte while the custom home is linked.
+	p := fakeHome(t, "opencode", "pi", "codex")
+	ocBefore := `{"skills": {"paths": ["~/.claude/skills"]}}`
+	piBefore := `{"skills": ["~/.claude/skills"]}`
+	writeFile(t, p.OpenCodeConfig(), ocBefore)
+	writeFile(t, p.PiSettings(), piBefore)
+	writeFile(t, filepath.Join(p.FleetHomeSkills(), "scratch", "SKILL.md"), "---\nname: scratch\ndescription: scratch\n---\n")
+
+	if _, err := Run(p); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if got := readFile(t, p.OpenCodeConfig()); got != ocBefore {
+		t.Errorf("opencode config changed:\n%s\nwas\n%s", got, ocBefore)
+	}
+	if got := readFile(t, p.PiSettings()); got != piBefore {
+		t.Errorf("pi settings changed:\n%s\nwas\n%s", got, piBefore)
+	}
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills()} {
+		if got, err := os.Readlink(filepath.Join(dir, "scratch")); err != nil || got != filepath.Join(p.FleetHomeSkills(), "scratch") {
+			t.Errorf("link in %s = %q, %v; want the fallback skill", dir, got, err)
+		}
 	}
 }
 

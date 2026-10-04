@@ -21,8 +21,12 @@ A skill with provenance (source repo, hash) in the `skills` CLI lockfile (`~/.ag
 _Avoid_: managed skill
 
 **Custom skill**:
-A skill written by the user; no lockfile entry. Lives in one of the tracked collections or the unversioned fleet-home fallback, and is discovered via wiring/links — never through the canonical store.
+A skill written by the user; no lockfile entry. Lives in one of the tracked collections or the unversioned fleet-home fallback, and reaches every harness through a managed custom link, never through the canonical store.
 _Avoid_: local skill, hand-written skill
+
+**Managed custom link**:
+The one symlink fleet creates per custom skill per harness, in that harness's own skills directory, pointing at the skill directory in its custom home. On a harness that links skills and scans the canonical store natively (OpenCode, Codex, Pi, Cursor, Bob) the link is also the custom skill's enable/disable lever. On Claude Code it is discovery only, because that harness does not scan the canonical store.
+_Avoid_: wired path, collection path
 
 **Tracked set**:
 The ordered versioned homes for custom skills: the explicit non-fleet-home repo-root list from `~/.config/fleet/config.json` (list order is precedence order), then every fleet-home checkout slot present on disk (immediate children of `~/.config/fleet/repos/`, alphabetical), tracked by convention with no config write. The single-path `FLEET_REPO` env override still prepends in code (highest precedence, included in bare pull) for sandboxes, but it is not user-documented.
@@ -69,7 +73,7 @@ The notice that the running binary is older than the latest GitHub Release. Manu
 _Avoid_: update, upgrade prompt, outdated badge
 
 **Enable / Disable**:
-A per-skill, per-harness state. Disabling writes that harness's own "off" setting (a config entry); the skill's files always stay in the canonical store.
+A per-skill, per-harness state. The lever depends on the skill's source. On a harness that links skills and scans the canonical store natively (OpenCode, Codex, Pi, Cursor, Bob), a custom skill toggles by its managed custom link: off removes the link, on recreates it, and `ls` shows `absent` while it is missing. A canonical-store skill toggles by that harness's own config off-entry where one exists (OpenCode deny rule, Codex `[[skills.config]]`, Pi force-exclude) and is a no-op on Cursor and Bob. Claude Code always toggles by its `skillOverrides` config, for custom and canonical skills alike. An unversioned skill in the canonical store has no managed link, so it keeps the config lever even though `ls` marks it custom. The skill's files always stay where they are.
 _Avoid_: uninstall, hide, mute
 
 **State file**:
@@ -77,15 +81,15 @@ Fleet's record of intended per-harness enablement. The single source of truth. H
 _Avoid_: config, lockfile
 
 **Sync**:
-Making each harness's config match the state file, plus making every custom home visible (wiring the config-path harnesses and linking the link-based ones, minus any custom the state disables on Cursor or Bob, whose managed link is the only lever). Runs on every fleet command and after every wrapped `skills` CLI call. Fixing a mismatched config is part of sync — there is no separate repair step.
+Making each harness's config match the state file, plus linking every custom home's skills into every installed harness, one managed custom link per skill. On a native-scanning harness it also removes the managed link of a custom the state disables, because there the link is the lever. On the first run after an upgrade it removes the legacy fleet-owned entries a previous release wrote, and it removes redundant store links. Runs on every fleet command and after every wrapped `skills` CLI call. Fixing a mismatched config is part of sync; there is no separate repair step.
 _Avoid_: reconcile, repair, apply
 
 **Doctor**:
-The read-only report of what's wrong: manual edits that disagree with the state file, redundant links, missing harness dirs, and a custom skill's managed link on Cursor or Bob disagreeing with the state. Doctor reports; Sync fixes.
+The read-only report of what's wrong: manual edits that disagree with the state file, redundant links, missing harness dirs, and a custom skill's managed link disagreeing with the state on any harness that toggles customs by link (OpenCode, Codex, Pi, Cursor, Bob). Doctor reports; Sync fixes.
 _Avoid_: reconcile, audit
 
 **Adopt**:
-Move an existing custom skill from the canonical store into the adopt destination — `--into <skills-dir>` for the run, else the configured adopt target, else a terminal prompt over the tracked collections plus the always-offered fleet-home fallback (the fallback alone with no prompt when nothing is tracked) — then wire/link it. A one-time migration verb, also used when promoting a forked installed skill to custom.
+Move an existing custom skill from the canonical store into the adopt destination — `--into <skills-dir>` for the run, else the configured adopt target, else a terminal prompt over the tracked collections plus the always-offered fleet-home fallback (the fallback alone with no prompt when nothing is tracked) — then link it into every installed harness. A one-time migration verb, also used when promoting a forked installed skill to custom.
 _Avoid_: import, register, take over
 
 **Drop**:

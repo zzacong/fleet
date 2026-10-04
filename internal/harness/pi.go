@@ -36,6 +36,7 @@ func (a *PiAdapter) Dir() string { return a.home.PiDir() }
 // Read implements Adapter.
 func (a *PiAdapter) Read(names []string) (ReadResult, error) {
 	res := ReadResult{States: onForAll(names)}
+	res.Linked = linkedNames(a.home.PiSkills(), names)
 
 	body, err := os.ReadFile(a.home.PiSettings())
 	if err != nil {

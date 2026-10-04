@@ -497,6 +497,112 @@ func TestAnalyzeDisabledCustomWithLinkIsDrift(t *testing.T) {
 	}
 }
 
+func TestAnalyzeCustomLinkDriftOnEveryNativeScanner(t *testing.T) {
+	// A custom skill's enablement is its managed link on every
+	// native-scanning harness: opencode, pi, codex, cursor, and bob. A
+	// missing link for an enabled custom is drift on each; a present link
+	// for a disabled custom is drift too.
+	p := fakeHome(t, "opencode", "pi", "codex", "cursor", "bob")
+	storeSkill(t, p, "tdd")
+	repo := fakeRepo(t, p)
+	repoSkill(t, p, "my-notes")
+
+	driftHarnesses := func(rep Report) map[string]bool {
+		got := map[string]bool{}
+		for _, f := range rep.Findings {
+			if f.Kind == KindDrift && f.Skill == "my-notes" {
+				got[f.Harness] = true
+			}
+		}
+		return got
+	}
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	got := driftHarnesses(rep)
+	for _, h := range []string{"opencode", "pi", "codex", "cursor", "bob"} {
+		if !got[h] {
+			t.Errorf("enabled custom: missing drift for %s: %+v", h, rep.Findings)
+		}
+	}
+
+	// Flip it: disable the custom everywhere and leave the links in place.
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	linkDirs := map[string]string{
+		"opencode": p.OpenCodeSkills(),
+		"pi":       p.PiSkills(),
+		"codex":    p.CodexSkills(),
+		"cursor":   p.CursorSkills(),
+		"bob":      p.BobSkills(),
+	}
+	for _, h := range []string{"opencode", "pi", "codex", "cursor", "bob"} {
+		st.SetDisabled("my-notes", h)
+		if err := os.MkdirAll(linkDirs[h], 0o755); err != nil {
+			t.Fatal(err)
+		}
+		symlink(t, filepath.Join(repo, "skills", "my-notes"), filepath.Join(linkDirs[h], "my-notes"))
+	}
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err = Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	got = driftHarnesses(rep)
+	for _, h := range []string{"opencode", "pi", "codex", "cursor", "bob"} {
+		if !got[h] {
+			t.Errorf("disabled custom: missing drift for %s: %+v", h, rep.Findings)
+		}
+	}
+}
+
+func TestAnalyzeCanonicalSkillIsNeverLinkDrift(t *testing.T) {
+	// A canonical-store skill has no managed link by construction; its
+	// absence on a native scanner is not drift.
+	p := fakeHome(t, "opencode", "pi", "codex", "cursor", "bob")
+	storeSkill(t, p, "tdd")
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if len(rep.Findings) != 0 || len(rep.Conflicts) != 0 {
+		t.Errorf("report = %+v, want clean for a canonical skill", rep)
+	}
+}
+
+func TestAnalyzeDanglingCustomLinkIsBrokenNotDrift(t *testing.T) {
+	// A custom skill's managed link whose target is gone surfaces through
+	// the existing broken-link diagnostic, not as link drift.
+	p := fakeHome(t, "opencode")
+	storeSkill(t, p, "tdd")
+	repo := fakeRepo(t, p)
+	repoSkill(t, p, "my-notes")
+	target := filepath.Join(repo, "skills", "my-notes")
+	symlink(t, target, filepath.Join(p.OpenCodeSkills(), "my-notes"))
+	if err := os.RemoveAll(target); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if got := kinds(rep); !reflect.DeepEqual(got, []Kind{KindBrokenLink}) {
+		t.Fatalf("findings = %+v, want one broken-link finding", rep.Findings)
+	}
+	if f := rep.Findings[0]; f.Harness != "opencode" || f.Skill != "my-notes" || f.Path == "" {
+		t.Errorf("finding = %+v, want opencode/my-notes with the link path", f)
+	}
+}
+
 func TestAnalyzeUnreadableConfigIsAFinding(t *testing.T) {
 	p := fakeHome(t, "opencode")
 	storeSkill(t, p, "tdd")
@@ -852,11 +958,11 @@ func TestAnalyzeFlagsStaleLockForBothCustomHomes(t *testing.T) {
 }
 
 func TestAnalyzeSuppressesManagedFleetHomeLinks(t *testing.T) {
-	p := fakeHome(t, "claude", "codex", "cursor", "bob")
+	p := fakeHome(t, "opencode", "pi", "claude", "codex", "cursor", "bob")
 	storeSkill(t, p, "tdd")
 	fleetSkill(t, p, "fleet-helper")
 	// Managed links into fleet-home must not be reported as unknown.
-	for _, dir := range []string{p.ClaudeSkills(), p.CodexSkills(), p.CursorSkills(), p.BobSkills()} {
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.ClaudeSkills(), p.CodexSkills(), p.CursorSkills(), p.BobSkills()} {
 		symlink(t, filepath.Join(p.FleetHomeSkills(), "fleet-helper"), filepath.Join(dir, "fleet-helper"))
 	}
 
@@ -878,11 +984,11 @@ func TestAnalyzeSuppressesManagedFleetHomeLinks(t *testing.T) {
 }
 
 func TestAnalyzeSuppressesManagedExplicitLinks(t *testing.T) {
-	p := fakeHome(t, "claude", "codex", "cursor", "bob")
+	p := fakeHome(t, "opencode", "pi", "claude", "codex", "cursor", "bob")
 	repo := fakeRepo(t, p)
 	storeSkill(t, p, "tdd")
 	repoSkill(t, p, "repo-helper")
-	for _, dir := range []string{p.ClaudeSkills(), p.CodexSkills(), p.CursorSkills(), p.BobSkills()} {
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.ClaudeSkills(), p.CodexSkills(), p.CursorSkills(), p.BobSkills()} {
 		symlink(t, filepath.Join(repo, "skills", "repo-helper"), filepath.Join(dir, "repo-helper"))
 	}
 
@@ -1049,14 +1155,14 @@ func TestAnalyzeWarnsOnNonGitExplicitEntries(t *testing.T) {
 }
 
 func TestAnalyzeSuppressesManagedTrackedLinks(t *testing.T) {
-	p := fakeHome(t, "claude", "codex")
+	p := fakeHome(t, "opencode", "pi", "claude", "codex")
 	t.Setenv("FLEET_REPO", "")
 	explicit := filepath.Join(t.TempDir(), "explicit")
 	writeFleetConfig(t, p, []string{explicit}, "")
 	collectionSkill(t, filepath.Join(explicit, "skills"), "tracked-helper")
 	collectionSkill(t, checkoutCollection(p, "alpha"), "checkout-helper")
 	storeSkill(t, p, "tdd")
-	for _, dir := range []string{p.ClaudeSkills(), p.CodexSkills()} {
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.ClaudeSkills(), p.CodexSkills()} {
 		symlink(t, filepath.Join(explicit, "skills", "tracked-helper"), filepath.Join(dir, "tracked-helper"))
 		symlink(t, filepath.Join(checkoutCollection(p, "alpha"), "checkout-helper"), filepath.Join(dir, "checkout-helper"))
 	}

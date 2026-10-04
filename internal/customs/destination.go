@@ -19,8 +19,8 @@ import (
 // AdoptTo migrates one skill into the explicit target collection dir,
 // creating it on demand. A canonical-store hit moves atomically into the
 // target; a hit in exactly one custom home moves nothing but re-ensures the
-// wiring and links for the skill's actual home. A name present in more than
-// one source is a double-presence error to resolve by hand. An unscanned
+// links for the skill's actual home. A name present in more than one
+// source is a double-presence error to resolve by hand. An unscanned
 // target still proceeds (doctor warns elsewhere). No config file is written.
 func AdoptTo(p *paths.Paths, name, target string) (*Report, error) {
 	idx, errs, err := skillindex.Load(p)
@@ -79,15 +79,15 @@ func adoptInto(p *paths.Paths, idx *skillindex.Index, name, target string) (*Rep
 	}
 
 	rep := &Report{}
-	var wireTarget string
+	var homeTarget string
 	switch {
 	case storeHit != nil:
 		rep.Skill = storeHit.Skill.Dir
 		rep.From = filepath.Join(p.SkillsStore(), storeHit.Skill.Dir)
 		rep.To = filepath.Join(target, storeHit.Skill.Dir)
-		wireTarget = target
+		homeTarget = target
 		rep.Moved = true
-		if err := os.MkdirAll(wireTarget, 0o755); err != nil {
+		if err := os.MkdirAll(homeTarget, 0o755); err != nil {
 			return nil, err
 		}
 		if err := moveDir(rep.From, rep.To); err != nil {
@@ -97,16 +97,16 @@ func adoptInto(p *paths.Paths, idx *skillindex.Index, name, target string) (*Rep
 		rep.Skill = customHits[0].Skill.Dir
 		actualHome := customHits[0].Home
 		rep.To = filepath.Join(actualHome, customHits[0].Skill.Dir)
-		wireTarget = actualHome
-		if err := os.MkdirAll(wireTarget, 0o755); err != nil {
+		homeTarget = actualHome
+		if err := os.MkdirAll(homeTarget, 0o755); err != nil {
 			return nil, err
 		}
 	}
 
-	vis, err := MakeVisible(p, wireTarget)
+	vis, err := MakeVisible(p, homeTarget)
 	if err != nil {
 		return nil, err
 	}
-	rep.Wired, rep.Linked = vis.Wired, vis.Linked
+	rep.Linked = vis.Linked
 	return rep, nil
 }

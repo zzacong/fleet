@@ -3,9 +3,8 @@
 // home) is unlisted from the `skillsRepos` config list with the disk
 // untouched; a fleet-home checkout is deleted from disk (presence is
 // tracked, so deletion is the untrack). Git runs behind the injected
-// pull.Runner seam (tests inject a stub). After the drop the collection
-// is unwired from the config-path harnesses and its links are unlinked,
-// then sync runs, as on every command.
+// pull.Runner seam (tests inject a stub). After the drop the collection's
+// managed links are unlinked, then sync runs, as on every command.
 package cli
 
 import (
@@ -29,7 +28,7 @@ func newSkillDropCmd(p *paths.Paths) *cobra.Command {
 		Long: "Remove a versioned customs home from the tracked set with `fleet skill drop <path-or-name>`, resolved against the tracked repos.\n\n" +
 			"The single arg is a repo-root path or a fleet-home slot name (no bare/prompt mode: this verb deletes). An explicit repo outside fleet home is removed from the tracked list with the disk untouched; a fleet-home checkout is deleted from disk.\n\n" +
 			"A dirty working tree fails surfacing `git status --porcelain` output — fleet never stashes — unless --force is given. A missing git binary skips the dirty check with a warning instead. An adopt target pointing inside the dropped repo always fails with a re-point hint, even with --force.\n\n" +
-			"After the drop the collection (<repo>/skills) is unwired from the config-path harnesses (OpenCode, Pi) and its managed links unlinked (Codex, Claude Code, Cursor, Bob), then sync runs.",
+			"After the drop the collection's managed links are unlinked from every installed harness, then sync runs.",
 		Example: "  fleet skill drop my-customs\n" +
 			"  fleet skill drop ~/Developer/team-customs\n" +
 			"  fleet skill drop my-customs --force",
@@ -54,11 +53,11 @@ func newSkillDropCmd(p *paths.Paths) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			unwired, unlinked := wd.Unwired, wd.Unlinked
+			unlinked := wd.Unlinked
 			if err := runSyncTo(out, p); err != nil {
 				return err
 			}
-			return printDropResult(out, res, unwired, unlinked)
+			return printDropResult(out, res, unlinked)
 		},
 	}
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "drop even with uncommitted changes (adopt-target conflicts still fail)")
@@ -66,17 +65,12 @@ func newSkillDropCmd(p *paths.Paths) *cobra.Command {
 }
 
 // printDropResult reports a completed drop in the pull:/adopt: palette
-// style: the removed headline first, then one line per unwired harness
-// and per unlinked managed link.
-func printDropResult(out io.Writer, res *drop.Result, unwired []harness.UnwireResult, unlinked []harness.UnlinkResult) error {
+// style: the removed headline first, then one line per unlinked managed
+// link.
+func printDropResult(out io.Writer, res *drop.Result, unlinked []harness.UnlinkResult) error {
 	pal := newPalette(stdoutIsTTY())
 	if _, err := fmt.Fprintf(out, "%s%s %q\n", pal.dim("drop: "), pal.good("removed"), res.Repo); err != nil {
 		return err
-	}
-	for _, w := range unwired {
-		if _, err := fmt.Fprintln(out, pal.dim("drop: ")+formatUnwired(string(w.Harness), res.Collection, w.Where, pal)); err != nil {
-			return err
-		}
 	}
 	for _, l := range unlinked {
 		if _, err := fmt.Fprintln(out, pal.dim("drop: ")+formatUnlinked(string(l.Harness), l, pal)); err != nil {
@@ -84,13 +78,6 @@ func printDropResult(out io.Writer, res *drop.Result, unwired []harness.UnwireRe
 		}
 	}
 	return nil
-}
-
-// formatUnwired renders one harness's skill-source removal, mirroring
-// adopt's wired line: 'opencode: unwired "<dir>" as a skill source
-// (skills.paths)'.
-func formatUnwired(harnessName, dir, where string, pal palette) string {
-	return fmt.Sprintf("%s: %s %q as a skill source %s", pal.info(harnessName), pal.good("unwired"), dir, pal.dim("("+where+")"))
 }
 
 // formatUnlinked renders one removed managed link, mirroring adopt's

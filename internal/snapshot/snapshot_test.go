@@ -710,13 +710,13 @@ func TestSnapshotStoreDuplicateNameKeepsFirstDirectory(t *testing.T) {
 }
 
 func TestSnapshotCustomLinkToggleState(t *testing.T) {
-	// Bob and Cursor reach a custom skill only through its managed link,
-	// so for customs the link's presence is the state; a stored skill is
-	// visible natively either way.
+	// Every native-scanning link harness reaches a custom skill only
+	// through its managed link, so for customs the link's presence is the
+	// state; a stored skill is visible natively either way.
 	home := t.TempDir()
 	p := paths.New(home)
 	t.Setenv("FLEET_REPO", "")
-	for _, dir := range []string{p.BobDir(), p.CursorDir()} {
+	for _, dir := range []string{p.OpenCodeDir(), p.PiDir(), p.CodexDir(), p.BobDir(), p.CursorDir()} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -726,6 +726,9 @@ func TestSnapshotCustomLinkToggleState(t *testing.T) {
 	writeExplicitRepos(t, p, explicit)
 	writeSkill(t, filepath.Join(explicit, "skills"), "my-notes", "my-notes", "custom")
 	target := filepath.Join(explicit, "skills", "my-notes")
+
+	nativeScanners := []string{"opencode", "pi", "codex", "cursor", "bob"}
+	linkDirs := []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.CursorSkills(), p.BobSkills()}
 
 	state := func(t *testing.T) map[string]string {
 		t.Helper()
@@ -742,8 +745,8 @@ func TestSnapshotCustomLinkToggleState(t *testing.T) {
 		return nil
 	}
 
-	// Linked: both see it.
-	for _, dir := range []string{p.BobSkills(), p.CursorSkills()} {
+	// Linked: every native scanner sees it.
+	for _, dir := range linkDirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -751,18 +754,24 @@ func TestSnapshotCustomLinkToggleState(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := state(t); got["bob"] != "on" || got["cursor"] != "on" {
-		t.Errorf("linked custom states = %v, want bob/cursor on", got)
+	got := state(t)
+	for _, h := range nativeScanners {
+		if got[h] != "on" {
+			t.Errorf("linked custom %s = %q, want on (states %v)", h, got[h], got)
+		}
 	}
 
-	// Link removed (the disable lever): both are absent, not on.
-	for _, dir := range []string{p.BobSkills(), p.CursorSkills()} {
+	// Link removed (the disable lever): every native scanner is absent.
+	for _, dir := range linkDirs {
 		if err := os.Remove(filepath.Join(dir, "my-notes")); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if got := state(t); got["bob"] != "absent" || got["cursor"] != "absent" {
-		t.Errorf("unlinked custom states = %v, want bob/cursor absent", got)
+	got = state(t)
+	for _, h := range nativeScanners {
+		if got[h] != "absent" {
+			t.Errorf("unlinked custom %s = %q, want absent (states %v)", h, got[h], got)
+		}
 	}
 
 	// The stored skill is untouched by link presence: always on.
@@ -774,8 +783,10 @@ func TestSnapshotCustomLinkToggleState(t *testing.T) {
 		if row.Name != "tdd" {
 			continue
 		}
-		if row.States["bob"] != "on" || row.States["cursor"] != "on" {
-			t.Errorf("stored skill states = %v, want bob/cursor on", row.States)
+		for _, h := range nativeScanners {
+			if row.States[h] != "on" {
+				t.Errorf("stored skill %s = %q, want on", h, row.States[h])
+			}
 		}
 	}
 }

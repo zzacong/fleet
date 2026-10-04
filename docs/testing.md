@@ -76,7 +76,7 @@ To write an adapter test for a new harness, copy the pattern: a `run<Name>Projec
 
 | Area                                                                 | Files                                                                                                                                      |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Adapter detection, read/write per harness                            | `internal/harness/*_test.go` (one pair per harness, plus `disables_test.go`, `links_test.go`, `wiring_test.go` for cross-harness behavior) |
+| Adapter detection, read/write per harness                            | `internal/harness/*_test.go` (one pair per harness, plus `disables_test.go`, `links_test.go`, `legacy_test.go` for cross-harness behavior) |
 | State file round-trips, unknown fields, version rules                | `internal/state/state_test.go`                                                                                                             |
 | Config list/scalar round-trips, aliases, home expansion, retired key | `internal/config/config_test.go`                                                                                                           |
 | Tracked-set resolution (explicit order, checkout scan, env prepend)  | `internal/trackedset/trackedset_test.go`                                                                                                   |

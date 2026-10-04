@@ -26,10 +26,12 @@ func linksHome(t *testing.T) *paths.Paths {
 // links, keyed by harness name.
 func linkDirs(p *paths.Paths) map[string]string {
 	return map[string]string{
-		"codex":  p.CodexSkills(),
-		"claude": p.ClaudeSkills(),
-		"cursor": p.CursorSkills(),
-		"bob":    p.BobSkills(),
+		"opencode": p.OpenCodeSkills(),
+		"pi":       p.PiSkills(),
+		"codex":    p.CodexSkills(),
+		"claude":   p.ClaudeSkills(),
+		"cursor":   p.CursorSkills(),
+		"bob":      p.BobSkills(),
 	}
 }
 
@@ -42,7 +44,7 @@ func readLink(t *testing.T, path string) string {
 	return target
 }
 
-func TestLinkCustomSkillLinksEveryLinkBasedHarnessAtTheRepo(t *testing.T) {
+func TestLinkCustomSkillLinksEveryHarnessAtTheRepo(t *testing.T) {
 	p := linksHome(t)
 	target := "/repo/skills/my-notes"
 
@@ -50,8 +52,8 @@ func TestLinkCustomSkillLinksEveryLinkBasedHarnessAtTheRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res) != 4 {
-		t.Fatalf("results = %v, want one per codex/claude/cursor/bob", res)
+	if len(res) != 6 {
+		t.Fatalf("results = %v, want one per harness", res)
 	}
 	for _, r := range res {
 		if r.Change.Action != LinkCreated {
@@ -65,9 +67,8 @@ func TestLinkCustomSkillLinksEveryLinkBasedHarnessAtTheRepo(t *testing.T) {
 		}
 	}
 
-	// opencode and pi discover customs through their config paths; the
-	// canonical store must stay untouched (a link there would make
-	// opencode/pi see the skill twice).
+	// The canonical store must stay untouched (a link there would make
+	// the native scanners see the skill twice).
 	if _, err := os.Lstat(filepath.Join(p.SkillsStore(), "my-notes")); !os.IsNotExist(err) {
 		t.Error("a link was created inside the canonical store")
 	}
@@ -172,22 +173,18 @@ func TestLinkCustomSkillSkipsUninstalledHarnesses(t *testing.T) {
 	}
 }
 
-func TestEveryLinkBasedHarnessHasTheRightSkillsDir(t *testing.T) {
+func TestEveryHarnessHasTheRightSkillsDir(t *testing.T) {
 	p := linksHome(t)
 	want := map[string]string{
-		"codex":  p.CodexSkills(),
-		"claude": p.ClaudeSkills(),
-		"cursor": p.CursorSkills(),
-		"bob":    p.BobSkills(),
+		"opencode": p.OpenCodeSkills(),
+		"pi":       p.PiSkills(),
+		"codex":    p.CodexSkills(),
+		"claude":   p.ClaudeSkills(),
+		"cursor":   p.CursorSkills(),
+		"bob":      p.BobSkills(),
 	}
 	for _, a := range All(p) {
 		l, ok := a.(SkillLinker)
-		if a.Harness() == OpenCode || a.Harness() == Pi {
-			if ok {
-				t.Errorf("%s must not take managed links; it wires config paths", a.Harness())
-			}
-			continue
-		}
 		if !ok {
 			t.Fatalf("%s does not implement SkillLinker", a.Harness())
 		}
@@ -502,7 +499,7 @@ func TestRemoveCustomLinksRemovesOnlyManagedLinks(t *testing.T) {
 		}
 	}
 
-	// Every link-based harness dir gets the full spread: managed links to
+	// Every harness dir gets the full spread: managed links to
 	// drop, plus entries fleet must never touch.
 	for _, dir := range linkDirs(p) {
 		symlink(t, filepath.Join(collection, "mine"), filepath.Join(dir, "mine"))
@@ -538,10 +535,12 @@ func TestRemoveCustomLinksRemovesOnlyManagedLinks(t *testing.T) {
 		byHarness[r.Harness] = append(byHarness[r.Harness], r.Name)
 	}
 	want := map[Harness][]string{
-		Codex:  {"gone", "mine", "other", "rel"},
-		Claude: {"mine", "other"},
-		Cursor: {"mine", "other"},
-		Bob:    {"mine", "other"},
+		OpenCode: {"mine", "other"},
+		Pi:       {"mine", "other"},
+		Codex:    {"gone", "mine", "other", "rel"},
+		Claude:   {"mine", "other"},
+		Cursor:   {"mine", "other"},
+		Bob:      {"mine", "other"},
 	}
 	if len(byHarness) != len(want) {
 		t.Fatalf("removed per harness = %v, want %v", byHarness, want)
@@ -642,15 +641,43 @@ func TestRemoveCustomLinksMissingDirsAreNoOps(t *testing.T) {
 	}
 }
 
-func TestLinkToggleableIsBobAndCursorOnly(t *testing.T) {
-	// Only harnesses with no config lever reach a custom skill solely
-	// through the managed link; Claude and Codex have a config disable, so
-	// their links stay for discovery.
+func TestLinkToggleableIsEveryNativeScanningLinker(t *testing.T) {
+	// A custom skill toggles by its managed link on every harness that
+	// links skills and scans the canonical store natively: opencode, pi,
+	// codex, Cursor, and Bob. Claude is a linker but not a native scanner,
+	// so its custom toggle stays on skillOverrides.
 	p := linksHome(t)
-	want := map[Harness]bool{Bob: true, Cursor: true}
+	want := map[Harness]bool{OpenCode: true, Pi: true, Codex: true, Cursor: true, Bob: true}
 	for _, a := range All(p) {
 		if got := LinkToggleable(a); got != want[a.Harness()] {
 			t.Errorf("LinkToggleable(%s) = %v, want %v", a.Harness(), got, want[a.Harness()])
+		}
+	}
+}
+
+func TestNativeScannersReportLinkPresence(t *testing.T) {
+	// opencode, codex, and pi reach custom skills through a link in their
+	// own skills dir; Read reports which requested names have one, so
+	// snapshot can render a disabled custom absent. Their config-derived
+	// state is unchanged.
+	p := linksHome(t)
+	for _, a := range []Adapter{NewOpenCode(p), NewCodex(p), NewPi(p)} {
+		dir := skillDirPaths(p)[a.Harness()]
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		symlink(t, filepath.Join(p.Home, "repos", "custom", "skills", "my-notes"), filepath.Join(dir, "my-notes"))
+	}
+	for _, a := range []Adapter{NewOpenCode(p), NewCodex(p), NewPi(p)} {
+		res, err := a.Read([]string{"my-notes", "tdd"})
+		if err != nil {
+			t.Fatalf("%s Read: %v", a.Harness(), err)
+		}
+		if len(res.Linked) != 1 || res.Linked[0] != "my-notes" {
+			t.Errorf("%s Linked = %v, want [my-notes]", a.Harness(), res.Linked)
+		}
+		if res.States["my-notes"] != StateOn || res.States["tdd"] != StateOn {
+			t.Errorf("%s states = %v, want on", a.Harness(), res.States)
 		}
 	}
 }
