@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -493,5 +494,64 @@ func TestDoctorReportsStaleDisables(t *testing.T) {
 	}
 	if !strings.Contains(out, "1 stale config rule, 1 stale state entry") {
 		t.Errorf("output missing the count summary:\n%s", out)
+	}
+}
+
+func TestDoctorStaleSectionsGroupByHarnessAndCap(t *testing.T) {
+	// Many stale skills on pi and a couple on opencode: each section is one
+	// line per harness with the skills comma-joined, the remediation lives
+	// once in the header, and a long list is capped.
+	p := doctorHome(t)
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	piSkills := []string{"ghost-a", "ghost-b", "ghost-c", "ghost-d", "ghost-e", "ghost-f", "ghost-g"}
+	for _, name := range piSkills {
+		st.SetDisabled(name, "pi")
+	}
+	for _, name := range []string{"ghost-a", "ghost-b"} {
+		st.SetDisabled(name, "opencode")
+	}
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(p.OpenCodeConfig()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.OpenCodeConfig(), []byte(`{"permission": {"skill": {"ghost-a": "deny", "ghost-b": "deny"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entries := make([]string, len(piSkills))
+	for i, name := range piSkills {
+		entries[i] = fmt.Sprintf("%q", "-skills/"+name+"/SKILL.md")
+	}
+	if err := os.MkdirAll(filepath.Dir(p.PiSettings()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.PiSettings(), []byte(`{"skills": [`+strings.Join(entries, ", ")+`]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runDoctor(t, p, "")
+
+	// The boilerplate is hoisted: the reinstall warning appears once in the
+	// state header, and no per-finding prose remains.
+	if got := strings.Count(out, "pruning loses the disable-on-reinstall behavior"); got != 1 {
+		t.Errorf("reinstall warning appears %d times, want 1 (hoisted):\n%s", got, out)
+	}
+	if strings.Contains(out, "but it is installed nowhere") {
+		t.Errorf("per-finding boilerplate still present:\n%s", out)
+	}
+	// One line per harness, skills comma-joined.
+	if !strings.Contains(out, "opencode  ghost-a, ghost-b\n") {
+		t.Errorf("opencode line missing:\n%s", out)
+	}
+	// pi has seven: five shown, two summarized.
+	if !strings.Contains(out, "ghost-a, ghost-b, ghost-c, ghost-d, ghost-e, … (+2 more)\n") {
+		t.Errorf("pi capped line missing:\n%s", out)
+	}
+	if !strings.Contains(out, "stale config rules (9)") || !strings.Contains(out, "stale state entries (9)") {
+		t.Errorf("section counts wrong:\n%s", out)
 	}
 }
