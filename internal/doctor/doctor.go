@@ -985,7 +985,7 @@ func trackedSetOverlapFindings(tracked []string) []Finding {
 				findings = append(findings, Finding{
 					Kind:    KindTrackedSetOverlap,
 					Path:    clean,
-					Message: fmt.Sprintf("tracked dir %s contains tracked dir %s — precedence between overlapping collections is ambiguous; remove one from the skillsDirs list by hand", prev, clean),
+					Message: fmt.Sprintf("tracked dir %s contains tracked dir %s — precedence between overlapping collections is ambiguous; remove one from the skillsDirs list by hand", clean, prev),
 				})
 			}
 		}
