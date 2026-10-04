@@ -1,6 +1,6 @@
 # stale-disable-prune
 
-Status: ready-for-agent
+Status: resolved
 
 Stop projecting disables for skills that are installed nowhere, report the stale disable rules and state entries that remain, and add `fleet skill prune` to remove them.
 
