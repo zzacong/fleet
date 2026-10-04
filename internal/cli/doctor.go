@@ -170,9 +170,10 @@ func printStaleSection(out io.Writer, title, note, sev string, group []doctor.Fi
 	if err := printSectionHeader(out, title, note, sev, len(group), pal); err != nil {
 		return err
 	}
-	// Group skills by harness in first-appearance order (doctor emits
-	// harness-major, so this follows the same order the per-finding lines
-	// used to).
+	// Group skills by harness in first-appearance order. Doctor's stale
+	// findings are not uniformly ordered — config findings are harness-major,
+	// state findings skill-major — so this preserves whatever order they
+	// arrive in instead of assuming one.
 	var harnesses []string
 	byHarness := map[string][]string{}
 	for _, f := range group {
