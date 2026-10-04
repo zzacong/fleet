@@ -16,9 +16,9 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/zzacong/fleet/internal/config"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/scan"
+	"github.com/zzacong/fleet/internal/trackedset"
 )
 
 // Hit is one copy of a skill: the scanned skill plus the collection dir
@@ -54,10 +54,12 @@ func CustomHomes(p *paths.Paths) ([]string, error) {
 }
 
 // customHomes resolves the custom collection dirs: every explicit
-// skillsDirs entry in order, then the fleet-home fallback. Entries are
-// deduped by cleaned collection path.
+// skillsDirs entry in order, then the fleet-home fallback. The explicit
+// order is read through the tracked-set seam — the one reader of the
+// ordering — so this package never re-derives it. Entries are deduped by
+// cleaned collection path.
 func customHomes(p *paths.Paths) ([]string, error) {
-	f, err := config.Load(p.FleetConfigFile())
+	dirs, err := trackedset.List(p)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +76,7 @@ func customHomes(p *paths.Paths) ([]string, error) {
 	// Explicit collection dirs are scanned directly: the tracked path is
 	// the collection itself, with no `skills/` derivation. They are the
 	// highest-precedence custom source.
-	for _, dir := range f.SkillsDirs() {
+	for _, dir := range dirs {
 		add(dir)
 	}
 	add(p.FleetHomeSkills())
