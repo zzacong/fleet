@@ -2,7 +2,7 @@
 
 Status: in progress
 
-Group `fleet skill doctor` double presence by harness and by the colliding copies, instead of printing one full paragraph per skill.
+Group `fleet skill doctor` double presence by harness and by the colliding homes, instead of printing one full paragraph per skill.
 
 ## Problem
 
@@ -12,7 +12,7 @@ The state drift and stale sections already solved this shape: group by harness, 
 
 ## Solution
 
-Render double presence like the other grouped sections. Each finding carries the copies it names and the installed native-scanning harnesses that would see the name twice. The CLI expands a finding under each affected harness, groups by harness and by the set of copies, prints the shared cause and the manual resolution once per group, then lists the skill names comma-joined. Copy paths shorten a leading home-directory prefix to `~`.
+Render double presence like the other grouped sections. Each finding carries the homes it names and the installed native-scanning harnesses that would see the name twice. The CLI expands a finding under each affected harness, groups by harness and by the set of homes, prints the shared cause and the manual resolution once per group, then lists the skill names comma-joined. Home paths shorten a leading home-directory prefix to `~`.
 
 ## Shape
 
@@ -28,15 +28,15 @@ After:
 
 ```
 ⚠ double presence (10)
-  opencode  duplicated in ~/Developer/projects/fleet/skills/babysit-pr and ~/Developer/projects/agent-skills/skills/babysit-pr — remove one copy by hand
+  opencode  duplicated in ~/Developer/projects/fleet/skills and ~/Developer/projects/agent-skills/skills — remove one copy by hand
             babysit-pr, choose-flow, create-plan, file-pr, postplan, postplan-read, rebase-pr, ticket-sweep, worktree-finish, worktree-session
-  pi        duplicated in ~/Developer/projects/fleet/skills/babysit-pr and ~/Developer/projects/agent-skills/skills/babysit-pr — remove one copy by hand
+  pi        duplicated in ~/Developer/projects/fleet/skills and ~/Developer/projects/agent-skills/skills — remove one copy by hand
             babysit-pr, choose-flow, create-plan, file-pr, postplan, postplan-read, rebase-pr, ticket-sweep, worktree-finish, worktree-session
 ```
 
 ## Implementation Decisions
 
-**Structured copies and harnesses.** `doctor.Finding` gains `Copies []DoublePresenceCopy` (each copy's `Home` collection dir and absolute `Path`, source order) and `Harnesses []string` (the installed native-scanning harnesses that see the collision twice, column order). The hardcoded "opencode and pi" prose is replaced by the computed set: the native scanners are OpenCode, Pi, Codex, Cursor, and Bob (`harness.SkillDirs` with `NativeScan`); Claude is link-only and does not scan the canonical store, so it never sees a name twice. The existing `Message` stays for the doctor package's own tests and any non-grouped reader.
+**Structured homes and harnesses.** `doctor.Finding` gains `Homes []string` (the scanned collection dir holding each copy, source order) and `Harnesses []string` (the installed native-scanning harnesses that see the collision twice, column order). The hardcoded "opencode and pi" prose is replaced by the computed set: the native scanners are OpenCode, Pi, Codex, Cursor, and Bob (`harness.SkillDirs` with `NativeScan`); Claude is link-only and does not scan the canonical store, so it never sees a name twice. The existing `Message` stays for the doctor package's own tests and any non-grouped reader.
 
 **The group renderer.** `printFindings` special-cases `KindDoublePresence` and calls a new `printDoublePresenceSection`, mirroring the drift and stale special cases. A finding expands to one row per affected harness; rows group by harness plus the set of homes (the copy paths' leaf differs per skill, so the homes are the shared key), so a group's label is accurate for every name under it. Groups keep first-appearance order.
 
@@ -46,7 +46,7 @@ After:
 
 ## Testing Decisions
 
-- A doctor unit test asserts `Copies` names each copy and `Harnesses` lists the native scanners (and excludes Claude).
+- A doctor unit test asserts `Homes` names each colliding home and `Harnesses` lists the native scanners (and excludes Claude).
 - A CLI integration test builds two tracked repos that share a name, then asserts the harness column, the shared grouped label, the names under it, `~` shortening, and that the old per-finding prose is gone.
 - The existing adoption-followups CLI test updates to the grouped shape.
-- The docs sample and bullet in `www/src/content/docs/cli.md` are updated.
+- The docs sample and bullet in `www/src/content/docs/cli.md`, the README summary, and the architecture note are updated.

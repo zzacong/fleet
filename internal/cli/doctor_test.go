@@ -644,6 +644,15 @@ func TestDoctorDoublePresenceGroupsByHarnessAndHomes(t *testing.T) {
 	if got := strings.Count(out, label); got != 5 {
 		t.Errorf("grouped label appears %d times, want 5 (one per native scanner):\n%s", got, out)
 	}
+	// Each native scanner is the group key; claude is link-only and absent.
+	for _, h := range []string{"opencode", "pi", "codex", "cursor", "bob"} {
+		if !strings.Contains(out, padRight(h, 8)+"  duplicated in ") {
+			t.Errorf("harness %s missing from a double-presence group:\n%s", h, out)
+		}
+	}
+	if strings.Contains(out, padRight("claude", 8)+"  duplicated in ") {
+		t.Errorf("claude must not appear: it does not scan the canonical store:\n%s", out)
+	}
 	if !strings.Contains(out, "babysit-pr, choose-flow\n") {
 		t.Errorf("names not listed under their group:\n%s", out)
 	}

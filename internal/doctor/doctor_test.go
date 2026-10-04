@@ -707,12 +707,9 @@ func TestAnalyzeDoublePresenceCarriesCopiesAndHarnesses(t *testing.T) {
 	if found == nil {
 		t.Fatalf("findings = %+v, want a double-presence finding", rep.Findings)
 	}
-	wantCopies := []DoublePresenceCopy{
-		{Home: p.SkillsStore(), Path: filepath.Join(p.SkillsStore(), "tdd")},
-		{Home: filepath.Join(repo, "skills"), Path: filepath.Join(repo, "skills", "tdd")},
-	}
-	if !reflect.DeepEqual(found.Copies, wantCopies) {
-		t.Errorf("copies = %+v, want %+v", found.Copies, wantCopies)
+	wantHomes := []string{p.SkillsStore(), filepath.Join(repo, "skills")}
+	if !reflect.DeepEqual(found.Homes, wantHomes) {
+		t.Errorf("homes = %+v, want %+v", found.Homes, wantHomes)
 	}
 	wantHarnesses := []string{"opencode", "pi", "codex", "cursor", "bob"}
 	if !reflect.DeepEqual(found.Harnesses, wantHarnesses) {
