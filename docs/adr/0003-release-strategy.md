@@ -17,7 +17,7 @@ Two structural facts forced the shape. First, `apps/cli/go.mod` declares `module
 4. **npm publishes via OIDC trusted publishing, no token.** `id-token: write`, npm ≥ 11.5.1, provenance automatic. One-time setup on npmjs.com per package pins user `zzacong` → repo `fleet` → workflow `release.yml`; the filename must never be casually renamed afterwards.
 5. **GoReleaser owns tag builds** (four tarballs + `checksums.txt`, frozen `name_template`); `install.sh` at root (OS/arch detect, SHA-256 verified against `checksums.txt`, no shell-rc edits); `fleet --version` via ldflags plus a `debug.ReadBuildInfo` fallback for `go install` builds. A ~30-line `build.mjs` cross-compiles the npm binaries independently of GoReleaser's `dist/` layout so npm packaging never parses GoReleaser internals.
 6. **Homebrew is a future personal tap** (`brews:` block + `homebrew-fleet` repo), not homebrew-core. v0.1.0's only obligation to brew is the frozen archive template and published checksums.
-7. **The skills collection stays in this repo.** Split signals, if they ever appear: skills commits dominating release history despite the commit convention, the collection needing version semantics of its own, or skills.sh requiring a repo-root shape. Exit path is `git subtree split`, per ADR 0001.
+7. **The skills collection stays in this repo.** Split signals, if they ever appear: skills commits dominating release history despite the commit convention, the collection needing version semantics of its own, or skills.sh requiring a repo-root shape. Exit path is `git subtree split`, per ADR 0001. **Superseded by ADR 0006 (2026-10-04):** the collection moved to `zzacong/agent-skills` via `git subtree split`.
 
 ## Consequences
 

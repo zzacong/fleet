@@ -27,30 +27,27 @@ State lives in `scripts/watcher/.state/` (gitignored at `.gitignore:17`):
 `snap-*.json` snapshots + `contents/<sha1>` deduped file contents for line
 diffs. Do not commit state.
 
-## Watch targets (14, from `internal/paths/paths.go`)
+## Watch targets (13, from `internal/paths/paths.go`)
 
 Targets mirror fleet's `Paths` — every location fleet derives from an injected
-home root plus the repo root. Only the config file + skills dir per harness are
-watched (full harness dirs are not). Harness targets remain derived from
-`internal/paths` (Go code at the repo root, watcher
-stays at `scripts/watcher/watch.ts`).
+home root. Only the config file + skills dir per harness are watched (full
+harness dirs are not). Harness targets are derived from `internal/paths`.
 
-| Label             | Path                                | Kind                                                                                                                                                   |
-| ----------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `fleet-config`    | `~/.config/fleet`                   | dir — covers `state.json`, `config.json`, `tree-cache.json` and `skills/` (fleet-home unversioned fallback) via dir walk                               |
-| `agents-store`    | `~/.agents`                         | dir (canonical store)                                                                                                                                  |
-| `opencode-config` | `~/.config/opencode/opencode.jsonc` | file                                                                                                                                                   |
-| `opencode-skills` | `~/.config/opencode/skills`         | dir                                                                                                                                                    |
-| `pi-settings`     | `~/.pi/agent/settings.json`         | file                                                                                                                                                   |
-| `pi-skills`       | `~/.pi/agent/skills`                | dir                                                                                                                                                    |
-| `codex-config`    | `~/.codex/config.toml`              | file                                                                                                                                                   |
-| `codex-skills`    | `~/.codex/skills`                   | dir                                                                                                                                                    |
-| `claude-skills`   | `~/.claude/skills`                  | dir                                                                                                                                                    |
-| `claude-config`   | `~/.claude/settings.json`           | file                                                                                                                                                   |
-| `cursor-skills`   | `~/.cursor/skills`                  | dir                                                                                                                                                    |
-| `bob-skills`      | `~/.bob/skills`                     | dir                                                                                                                                                    |
-| `bob-settings`    | `~/.bob/settings/settings.json`     | file                                                                                                                                                   |
-| `repo-skills`     | `<repo>/skills`                     | dir — monorepo `skills/` publishable collection at the repo root (versioned collection; what skills.sh publishes; checkout's `skills/` for dogfooding) |
+| Label             | Path                                | Kind                                                                                                                     |
+| ----------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `fleet-config`    | `~/.config/fleet`                   | dir — covers `state.json`, `config.json`, `tree-cache.json` and `skills/` (fleet-home unversioned fallback) via dir walk |
+| `agents-store`    | `~/.agents`                         | dir (canonical store)                                                                                                    |
+| `opencode-config` | `~/.config/opencode/opencode.jsonc` | file                                                                                                                     |
+| `opencode-skills` | `~/.config/opencode/skills`         | dir                                                                                                                      |
+| `pi-settings`     | `~/.pi/agent/settings.json`         | file                                                                                                                     |
+| `pi-skills`       | `~/.pi/agent/skills`                | dir                                                                                                                      |
+| `codex-config`    | `~/.codex/config.toml`              | file                                                                                                                     |
+| `codex-skills`    | `~/.codex/skills`                   | dir                                                                                                                      |
+| `claude-skills`   | `~/.claude/skills`                  | dir                                                                                                                      |
+| `claude-config`   | `~/.claude/settings.json`           | file                                                                                                                     |
+| `cursor-skills`   | `~/.cursor/skills`                  | dir                                                                                                                      |
+| `bob-skills`      | `~/.bob/skills`                     | dir                                                                                                                      |
+| `bob-settings`    | `~/.bob/settings/settings.json`     | file                                                                                                                     |
 
 ## Protocol
 

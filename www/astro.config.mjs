@@ -35,10 +35,6 @@ export default defineConfig({
             { label: "Undo & escape hatches", slug: "undo" },
           ],
         },
-        {
-          label: "Skills",
-          items: [{ label: "Skills catalog", slug: "skills" }],
-        },
       ],
       customCss: ["./src/styles/home.css"],
       head: [

@@ -4,7 +4,7 @@ Fleet touches real config files in real homes, so its tests are built around one
 
 ## The injected-home rule
 
-Every filesystem path in fleet derives from an injected `*paths.Paths` — a home root plus the repo root. Adapters, sync, doctor, toggle, customs, and the CLI all receive it; nothing below `cmd/fleet` resolves paths on its own, and nothing calls `os.UserHomeDir()`.
+Every filesystem path in fleet derives from an injected `*paths.Paths` — a home root. Adapters, sync, doctor, toggle, customs, and the CLI all receive it; nothing below `cmd/fleet` resolves paths on its own, and nothing calls `os.UserHomeDir()`.
 
 Tests exploit that directly:
 

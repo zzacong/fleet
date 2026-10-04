@@ -32,11 +32,6 @@ import { fileURLToPath } from "node:url";
 
 const HOME = homedir();
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-// Fleet repo root is two levels above scripts/watcher/ (scripts/watcher -> repo
-// root). Go code lives at the repo root (internal/paths) and the watcher stays
-// at scripts/watcher/watch.ts, so depth is unchanged — two levels still
-// resolves to the repo root's skills/ publishable collection.
-const REPO = path.resolve(SCRIPT_DIR, "..", "..");
 // State lives inside the repo (gitignored) so the watcher is self-contained.
 const STATE_DIR = path.join(SCRIPT_DIR, ".state");
 const CONTENT_DIR = path.join(STATE_DIR, "contents");
@@ -56,7 +51,6 @@ const WATCH_TARGETS: Array<[string, string]> = [
   ["cursor-skills", path.join(HOME, ".cursor/skills")],
   ["bob-skills", path.join(HOME, ".bob/skills")],
   ["bob-settings", path.join(HOME, ".bob/settings/settings.json")],
-  ["repo-skills", path.join(REPO, "skills")],
 ];
 
 const MAX_HASH = 4 * 1024 * 1024; // skip hashing files > 4MB (record size+mtime only)
