@@ -141,6 +141,12 @@ func printFindings(out io.Writer, findings []doctor.Finding, home string, pal pa
 			}
 			continue
 		}
+		if section.kind == doctor.KindDoublePresence {
+			if err := printDoublePresenceSection(out, section.title, section.note, section.sev, group, home, pal); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := printSectionHeader(out, section.title, section.note, section.sev, len(group), pal); err != nil {
 			return err
 		}
@@ -222,6 +228,88 @@ func driftReasonLabel(reason doctor.DriftReason) (label, action string) {
 		return "disabled but not discoverable", "the disable is moot until relinked"
 	}
 	return string(reason), ""
+}
+
+// printDoublePresenceSection renders double presence grouped by the installed
+// native-scanning harness that would see each name twice and by the set of
+// homes involved. The shared homes and the manual resolution print once per
+// group, then every skill name. A finding with no installed native scanner
+// keeps a single group with no harness column.
+func printDoublePresenceSection(out io.Writer, title, note, sev string, group []doctor.Finding, home string, pal palette) error {
+	if err := printSectionHeader(out, title, note, sev, len(group), pal); err != nil {
+		return err
+	}
+	type groupKey struct {
+		harness string
+		homes   string
+	}
+	type row struct {
+		key   groupKey
+		label string
+		skill string
+	}
+	var rows []row
+	for _, f := range group {
+		sig, label := doublePresenceLabel(home, f.Homes)
+		harnesses := f.Harnesses
+		if len(harnesses) == 0 {
+			harnesses = []string{""}
+		}
+		for _, h := range harnesses {
+			rows = append(rows, row{key: groupKey{harness: h, homes: sig}, label: label, skill: f.Skill})
+		}
+	}
+	order, byGroup := groupInOrder(rows, func(r row) groupKey { return r.key })
+	harnesses := make([]string, len(order))
+	for i, k := range order {
+		harnesses[i] = k.harness
+	}
+	width := maxRuneLen(harnesses)
+	for _, k := range order {
+		members := byGroup[k]
+		if k.harness == "" {
+			if _, err := fmt.Fprintf(out, "  %s\n", members[0].label); err != nil {
+				return err
+			}
+		} else if _, err := fmt.Fprintf(out, "  %s  %s\n", pal.info(padRight(k.harness, width)), members[0].label); err != nil {
+			return err
+		}
+		names := make([]string, len(members))
+		for i, r := range members {
+			names[i] = r.skill
+		}
+		// The names hang under the label, past the harness column.
+		if _, err := fmt.Fprintf(out, "  %s  %s\n", strings.Repeat(" ", width), strings.Join(names, ", ")); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// doublePresenceLabel renders the shared cause and manual resolution for one
+// set of colliding homes, returning a signature over the raw home paths so
+// findings in the same pair of homes group together. The label shortens a
+// home-directory prefix to ~.
+func doublePresenceLabel(home string, homes []string) (sig, label string) {
+	short := make([]string, len(homes))
+	for i, h := range homes {
+		short[i] = shortenHome(home, h)
+	}
+	return strings.Join(homes, "\x00"), "duplicated in " + joinWithAnd(short) + " — remove one copy by hand"
+}
+
+// joinWithAnd joins values into a readable list: "a", "a and b", or
+// "a, b, and c". Empty for no values.
+func joinWithAnd(values []string) string {
+	switch len(values) {
+	case 0:
+		return ""
+	case 1:
+		return values[0]
+	case 2:
+		return values[0] + " and " + values[1]
+	}
+	return strings.Join(values[:len(values)-1], ", ") + ", and " + values[len(values)-1]
 }
 
 // shortenHome replaces a leading home directory with "~" for display. The

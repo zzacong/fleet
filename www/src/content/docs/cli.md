@@ -250,7 +250,7 @@ The read-only report of what's wrong. It inspects every installed harness, the c
 - **stale config rules** — a fleet-owned disable rule in a harness config for a skill that is installed nowhere; reported one line per harness with its skill names, capped with a `… (+N more)` summary when a harness has many, pointing at `fleet skill prune`, which removes them
 - **stale state entries** — a state disable for a skill installed nowhere, kept as dormant intent; reported the same way, with the warning that pruning the entry loses the disable-on-reinstall behavior
 - **incomplete scan** — a skill home is missing or unreadable, so fleet cannot trust "installed nowhere"; stale findings are suppressed and the home that blocked the scan is named
-- **double presence** — a skill name that exists in more than one scanned source (canonical store, explicit repos, fleet-home checkouts, fallback), so a native-scanning harness would see it twice and one copy's rules may shadow the other; remove one of the copies by hand
+- **double presence** — a skill name that exists in more than one scanned source (canonical store, explicit repos, fleet-home checkouts, fallback), so a native-scanning harness would see it twice and one copy's rules may shadow the other; remove one of the copies by hand. Grouped by harness and by the pair of homes, like drift: the copies and the manual resolution print once, then every skill name, and a home-directory prefix is shown as `~`
 - **unscanned adopt target** — the configured adopt target points outside the scanned homes, so adopted skills would not appear in `ls`; point it at a tracked collection or the fallback
 - **non-git explicit repos** — an explicit list entry with no `.git`, so bare pull skips it; clone the repo there or remove the path from the list by hand
 - **stale lockfile entries** — the skills CLI's lockfile still carries the install entry of a skill that was adopted into a custom home, so the skills CLI keeps trying to update a skill that moved; remove the entry by hand — fleet reads the lockfile and never writes it
@@ -270,12 +270,15 @@ $ fleet skill doctor
 ⚠ state drift (1)
   bob  enabled but not linked in ~/.bob/skills — sync links on the next command
        create-plan
+⚠ double presence (1)
+  opencode  duplicated in ~/.agents/skills and ~/customs/skills — remove one copy by hand
+            create-plan
 ⚠ stale config rules (1) · run `fleet skill prune` to remove
   pi  ui-ux-pro-max
 ⚠ stale state entries (1) · run `fleet skill prune` to remove; pruning loses the disable-on-reinstall behavior
   pi  ui-ux-pro-max
 
-1 redundant link, 1 stale config rule, 1 stale state entry, 2 manual edits to resolve, run `fleet skill doctor -i` to resolve
+1 redundant link, 1 drift finding, 1 double-presence finding, 1 stale config rule, 1 stale state entry, 2 manual edits to resolve, run `fleet skill doctor -i` to resolve
 ```
 
 Sections are marked by severity: ✖ red for breakage (broken symlinks, unreadable configs), ⚠ yellow for anything sync or you should act on, ◦ dim cyan for informational. Color only renders on a terminal; piped output is plain.

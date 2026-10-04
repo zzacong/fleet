@@ -684,6 +684,39 @@ func TestAnalyzeDoublePresenceFollowsTheNameNotTheDir(t *testing.T) {
 	}
 }
 
+// TestAnalyzeDoublePresenceCarriesCopiesAndHarnesses checks the structured
+// form the CLI groups on: every copy with its home, and the installed native
+// scanners that would see the name twice. Claude is link-only, so it is not
+// one of them.
+func TestAnalyzeDoublePresenceCarriesCopiesAndHarnesses(t *testing.T) {
+	p := fakeHome(t, "opencode", "pi", "codex", "claude", "cursor", "bob")
+	repo := fakeRepo(t, p)
+	storeSkill(t, p, "tdd")
+	repoSkill(t, p, "tdd")
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	var found *Finding
+	for i := range rep.Findings {
+		if rep.Findings[i].Kind == KindDoublePresence {
+			found = &rep.Findings[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("findings = %+v, want a double-presence finding", rep.Findings)
+	}
+	wantHomes := []string{p.SkillsStore(), filepath.Join(repo, "skills")}
+	if !reflect.DeepEqual(found.Homes, wantHomes) {
+		t.Errorf("homes = %+v, want %+v", found.Homes, wantHomes)
+	}
+	wantHarnesses := []string{"opencode", "pi", "codex", "cursor", "bob"}
+	if !reflect.DeepEqual(found.Harnesses, wantHarnesses) {
+		t.Errorf("harnesses = %+v, want %+v (claude excluded: it does not scan the store)", found.Harnesses, wantHarnesses)
+	}
+}
+
 func TestAnalyzeQuietWhenTrackedSkillsAreUnique(t *testing.T) {
 	// Distinct names on each side, no lockfile: no double presence, no
 	// stale lock — the normal adopted-customs home.
