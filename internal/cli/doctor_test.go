@@ -601,22 +601,29 @@ func TestDoctorDriftGroupsByHarnessAndDirection(t *testing.T) {
 	if !strings.Contains(out, "            my-docs, my-notes\n") {
 		t.Errorf("skills not listed under their group:\n%s", out)
 	}
+	// The injected home shortens to ~; the absolute prefix stays out.
+	if !strings.Contains(out, "in ~/.config/opencode/skills") {
+		t.Errorf("home directory not shortened to ~:\n%s", out)
+	}
+	if strings.Contains(out, p.OpenCodeSkills()) {
+		t.Errorf("absolute home path still shown:\n%s", out)
+	}
 }
 
 func TestShortenHome(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		t.Skip("no user home directory")
-	}
-	cases := []struct{ in, want string }{
-		{filepath.Join(home, ".config", "opencode", "skills"), filepath.Join("~", ".config", "opencode", "skills")},
-		{home, "~"},
-		{filepath.Join(string(filepath.Separator), "elsewhere", "skills"), filepath.Join(string(filepath.Separator), "elsewhere", "skills")},
-		{"", ""},
+	home := filepath.Join(t.TempDir(), "home")
+	cases := []struct {
+		home, in, want string
+	}{
+		{home, filepath.Join(home, ".config", "opencode", "skills"), filepath.Join("~", ".config", "opencode", "skills")},
+		{home, home, "~"},
+		{home, filepath.Join(string(filepath.Separator), "elsewhere", "skills"), filepath.Join(string(filepath.Separator), "elsewhere", "skills")},
+		{home, "", ""},
+		{"", filepath.Join(home, ".config"), filepath.Join(home, ".config")},
 	}
 	for _, c := range cases {
-		if got := shortenHome(c.in); got != c.want {
-			t.Errorf("shortenHome(%q) = %q, want %q", c.in, got, c.want)
+		if got := shortenHome(c.home, c.in); got != c.want {
+			t.Errorf("shortenHome(%q, %q) = %q, want %q", c.home, c.in, got, c.want)
 		}
 	}
 }

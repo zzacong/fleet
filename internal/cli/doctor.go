@@ -13,7 +13,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -51,7 +50,7 @@ func newSkillDoctorCmd(p *paths.Paths) *cobra.Command {
 				return err
 			}
 
-			if err := printFindings(out, rep.Findings, pal); err != nil {
+			if err := printFindings(out, rep.Findings, p.Home, pal); err != nil {
 				return err
 			}
 			resolved := 0
@@ -119,7 +118,7 @@ func (pal palette) sevIcon(sev string) string {
 	}
 }
 
-func printFindings(out io.Writer, findings []doctor.Finding, pal palette) error {
+func printFindings(out io.Writer, findings []doctor.Finding, home string, pal palette) error {
 	for _, section := range findingSections {
 		var group []doctor.Finding
 		for _, f := range findings {
@@ -137,7 +136,7 @@ func printFindings(out io.Writer, findings []doctor.Finding, pal palette) error 
 			continue
 		}
 		if section.kind == doctor.KindDrift {
-			if err := printDriftSection(out, section.note, group, pal); err != nil {
+			if err := printDriftSection(out, section.title, section.note, section.sev, group, home, pal); err != nil {
 				return err
 			}
 			continue
@@ -147,12 +146,11 @@ func printFindings(out io.Writer, findings []doctor.Finding, pal palette) error 
 		}
 		// Align the harness column by hand: ANSI styles would throw off
 		// tabwriter's width math, and the names are plain anyway.
-		width := 0
-		for _, f := range group {
-			if n := len([]rune(f.Harness)); n > width {
-				width = n
-			}
+		names := make([]string, len(group))
+		for i, f := range group {
+			names[i] = f.Harness
 		}
+		width := maxRuneLen(names)
 		for _, f := range group {
 			line := "  " + f.Message
 			if f.Harness != "" {
@@ -167,41 +165,33 @@ func printFindings(out io.Writer, findings []doctor.Finding, pal palette) error 
 }
 
 // printDriftSection renders state drift grouped by harness and direction:
-// the shared cause and fix print once per group, then every skill name on
-// its own line. This replaces one full sentence per finding with one group
-// per harness-and-direction.
-func printDriftSection(out io.Writer, note string, group []doctor.Finding, pal palette) error {
-	if err := printSectionHeader(out, "state drift", note, "warn", len(group), pal); err != nil {
+// the shared cause and fix print once per group, then every skill name under
+// the group. This replaces one full sentence per finding with one group per
+// harness-and-direction.
+func printDriftSection(out io.Writer, title, note, sev string, group []doctor.Finding, home string, pal palette) error {
+	if err := printSectionHeader(out, title, note, sev, len(group), pal); err != nil {
 		return err
 	}
 	type groupKey struct {
 		harness string
 		reason  doctor.DriftReason
 	}
-	var order []groupKey
-	byGroup := map[groupKey][]doctor.Finding{}
-	for _, f := range group {
-		k := groupKey{f.Harness, f.Reason}
-		if _, ok := byGroup[k]; !ok {
-			order = append(order, k)
-		}
-		byGroup[k] = append(byGroup[k], f)
+	order, byGroup := groupInOrder(group, func(f doctor.Finding) groupKey {
+		return groupKey{f.Harness, f.Reason}
+	})
+	harnesses := make([]string, len(order))
+	for i, k := range order {
+		harnesses[i] = k.harness
 	}
-
-	width := 0
-	for _, k := range order {
-		if n := len([]rune(k.harness)); n > width {
-			width = n
-		}
-	}
+	width := maxRuneLen(harnesses)
 	for _, k := range order {
 		findings := byGroup[k]
 		names := make([]string, len(findings))
 		for i, f := range findings {
 			names[i] = f.Skill
 		}
-		label, action := driftReasonText(k.reason)
-		if dir := shortenHome(findings[0].Dir); dir != "" {
+		label, action := driftReasonLabel(k.reason)
+		if dir := shortenHome(home, findings[0].Dir); dir != "" {
 			label += " in " + pal.dim(dir)
 		}
 		if action != "" {
@@ -220,9 +210,9 @@ func printDriftSection(out io.Writer, note string, group []doctor.Finding, pal p
 	return nil
 }
 
-// driftReasonText returns the cause and the fix for a drift direction. Both
-// print once per group of skills that share the direction.
-func driftReasonText(reason doctor.DriftReason) (cause, action string) {
+// driftReasonLabel returns the short cause and the fix for a drift direction.
+// Both print once per group of skills that share the direction.
+func driftReasonLabel(reason doctor.DriftReason) (label, action string) {
 	switch reason {
 	case doctor.DriftEnabledUnlinked:
 		return "enabled but not linked", "sync links on the next command"
@@ -234,12 +224,11 @@ func driftReasonText(reason doctor.DriftReason) (cause, action string) {
 	return string(reason), ""
 }
 
-// shortenHome replaces a leading user-home directory with "~" for display.
-// A path outside the home, or any path when the home is unknown, is
-// returned unchanged.
-func shortenHome(path string) string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" || path == "" {
+// shortenHome replaces a leading home directory with "~" for display. The
+// home comes from the injected paths, so FLEET_HOME sandboxes shorten
+// correctly. A path outside the home is returned unchanged.
+func shortenHome(home, path string) string {
+	if home == "" || path == "" {
 		return path
 	}
 	if path == home {
@@ -249,6 +238,32 @@ func shortenHome(path string) string {
 		return "~" + path[len(home):]
 	}
 	return path
+}
+
+// groupInOrder groups items by key, keeping the first-appearance order of
+// both the keys and the items within each group.
+func groupInOrder[T any, K comparable](items []T, key func(T) K) ([]K, map[K][]T) {
+	var order []K
+	groups := map[K][]T{}
+	for _, item := range items {
+		k := key(item)
+		if _, ok := groups[k]; !ok {
+			order = append(order, k)
+		}
+		groups[k] = append(groups[k], item)
+	}
+	return order, groups
+}
+
+// maxRuneLen returns the longest rune length among values.
+func maxRuneLen(values []string) int {
+	width := 0
+	for _, v := range values {
+		if n := len([]rune(v)); n > width {
+			width = n
+		}
+	}
+	return width
 }
 
 // maxStalePerHarness caps how many skill names one harness line lists in a
@@ -267,22 +282,13 @@ func printStaleSection(out io.Writer, title, note, sev string, group []doctor.Fi
 	// findings are not uniformly ordered — config findings are harness-major,
 	// state findings skill-major — so this preserves whatever order they
 	// arrive in instead of assuming one.
-	var harnesses []string
-	byHarness := map[string][]string{}
-	for _, f := range group {
-		if _, ok := byHarness[f.Harness]; !ok {
-			harnesses = append(harnesses, f.Harness)
+	order, byHarness := groupInOrder(group, func(f doctor.Finding) string { return f.Harness })
+	width := maxRuneLen(order)
+	for _, h := range order {
+		skills := make([]string, len(byHarness[h]))
+		for i, f := range byHarness[h] {
+			skills[i] = f.Skill
 		}
-		byHarness[f.Harness] = append(byHarness[f.Harness], f.Skill)
-	}
-	width := 0
-	for _, h := range harnesses {
-		if n := len([]rune(h)); n > width {
-			width = n
-		}
-	}
-	for _, h := range harnesses {
-		skills := byHarness[h]
 		overflow := 0
 		if len(skills) > maxStalePerHarness {
 			overflow = len(skills) - maxStalePerHarness
