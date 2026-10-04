@@ -336,11 +336,12 @@ func TestDoctorDriftConflictKeepAdoptsTheDeletion(t *testing.T) {
 }
 
 // piConflictsHome builds a home whose pi config hand-disables two skills
-// ("tdd" from the store, "deploy-to-vercel" known only to the config), so
-// doctor has a two-conflict pi batch to walk.
+// ("tdd" and "deploy-to-vercel", both installed in the store but untracked
+// by the state), so doctor has a two-conflict pi batch to walk.
 func piConflictsHome(t *testing.T) *paths.Paths {
 	t.Helper()
 	p := doctorHome(t)
+	writeSkillDir(t, p.SkillsStore(), "deploy-to-vercel", "Deploy to Vercel.")
 	if err := os.MkdirAll(filepath.Dir(p.PiSettings()), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -459,6 +460,38 @@ func TestDoctorReportsTrackedSetWarnings(t *testing.T) {
 		t.Errorf("output missing the non-git explicit repo section:\n%s", out)
 	}
 	if !strings.Contains(out, "1 unscanned adopt target, 1 non-git explicit repo") {
+		t.Errorf("output missing the count summary:\n%s", out)
+	}
+}
+
+func TestDoctorReportsStaleDisables(t *testing.T) {
+	// A state entry and a config rule for a skill installed nowhere: both
+	// leftovers show up and point at prune.
+	p := doctorHome(t)
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.SetDisabled("ghost", "opencode")
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(p.OpenCodeConfig()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.OpenCodeConfig(), []byte(`{"permission": {"skill": {"ghost": "deny"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runDoctor(t, p, "")
+
+	if !strings.Contains(out, "stale config rules (1)") || !strings.Contains(out, "stale state entries (1)") {
+		t.Errorf("output missing the stale sections:\n%s", out)
+	}
+	if !strings.Contains(out, "`fleet skill prune`") {
+		t.Errorf("output must point at prune:\n%s", out)
+	}
+	if !strings.Contains(out, "1 stale config rule, 1 stale state entry") {
 		t.Errorf("output missing the count summary:\n%s", out)
 	}
 }

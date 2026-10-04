@@ -32,7 +32,7 @@ func newSkillDoctorCmd(p *paths.Paths) *cobra.Command {
 			"a skill name present in more than one source, stale lockfile entries for adopted skills, " +
 			"an adopt target outside the scanned homes, explicit repos that are not git checkouts, " +
 			"missing directories, a custom skill whose managed link on a native-scanning harness disagrees with the state, " +
-			"and manual config edits that disagree with the state file.\n\n" +
+			"manual config edits that disagree with the state file, and stale disable rules or state entries for skills installed nowhere.\n\n" +
 			"Doctor is read-only: it reports without changing anything, so you see what sync would " +
 			"do before sync does it (sync runs on every other command).\n\n" +
 			"By default everything is reported at once and nothing is asked — manual-edit conflicts " +
@@ -96,6 +96,9 @@ var findingSections = []struct {
 	{doctor.KindDrift, "state drift", "", "warn"},
 	{doctor.KindDoublePresence, "double presence", "", "warn"},
 	{doctor.KindStaleLock, "stale lockfile entries", "fleet never writes the lockfile", "warn"},
+	{doctor.KindStaleConfig, "stale config rules", "run `fleet skill prune`", "warn"},
+	{doctor.KindStaleState, "stale state entries", "run `fleet skill prune`", "warn"},
+	{doctor.KindIncompleteScan, "incomplete scan", "stale disables not reported", "warn"},
 	{doctor.KindUnscannedAdoptTarget, "unscanned adopt target", "", "warn"},
 	{doctor.KindNonGitRepo, "non-git explicit repos", "bare pull skips them", "warn"},
 	{doctor.KindMissingDir, "missing directories", "", "warn"},
@@ -539,6 +542,12 @@ func findingLabel(kind doctor.Kind, n int) string {
 		return pluralized("non-git explicit repo", n)
 	case doctor.KindStaleLock:
 		return pluralized("stale lockfile entry", n)
+	case doctor.KindStaleConfig:
+		return pluralized("stale config rule", n)
+	case doctor.KindStaleState:
+		return pluralized("stale state entry", n)
+	case doctor.KindIncompleteScan:
+		return "incomplete scan"
 	case doctor.KindMissingDir:
 		if n == 1 {
 			return "missing directory"

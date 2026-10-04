@@ -6,12 +6,12 @@ The config-versus-state comparison learns that a missing rule for an uninstalled
 
 **Blocked by:** 01 (Skill index completeness and installed names).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A fleet-owned config rule for an uninstalled skill yields a stale-config finding.
-- [ ] A state entry for an uninstalled skill yields a stale-state finding with the reinstall warning.
-- [ ] Both findings name the skill and harness and point at `fleet skill prune`.
-- [ ] An installed skill whose rule is missing still yields the existing drift or conflict, not a stale finding.
-- [ ] An incomplete scan suppresses both stale findings and reports the blocking home.
-- [ ] Doctor remains read-only.
-- [ ] Doctor tests drive the `doctor.Analyze` seam over a fake home.
+- [x] A fleet-owned config rule for an uninstalled skill yields a stale-config finding.
+- [x] A state entry for an uninstalled skill yields a stale-state finding with the reinstall warning.
+- [x] Both findings name the skill and harness and point at `fleet skill prune`.
+- [x] An installed skill whose rule is missing still yields the existing drift or conflict, not a stale finding.
+- [x] An incomplete scan suppresses both stale findings and reports the blocking home.
+- [x] Doctor remains read-only.
+- [x] Doctor tests drive the `doctor.Analyze` seam over a fake home.

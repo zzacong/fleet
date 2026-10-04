@@ -40,6 +40,7 @@ type Index struct {
 	byDir     map[string][]Hit
 	installed map[string]bool
 	complete  bool
+	blocked   []string
 }
 
 // CustomHomes returns the adopt-destination candidates without scanning:
@@ -129,6 +130,7 @@ func Load(p *paths.Paths) (*Index, map[string]error, error) {
 	// root to be present on disk, and no home to fail scanning. The
 	// fleet-home fallback is optional: its absence is not incomplete.
 	x.complete = dirExists(x.store) && trackedRootsPresent(roots) && len(errs) == 0
+	x.blocked = blockedHomes(roots, x.homes, errs)
 	return x, errs, nil
 }
 
@@ -151,6 +153,39 @@ func trackedRootsPresent(roots []string) bool {
 		}
 	}
 	return true
+}
+
+// blockedHomes names the homes that made a scan incomplete: each tracked
+// repo's collection whose root is absent from disk, and any home that
+// failed to scan. The canonical store's absence is deliberately not listed
+// here — doctor reports that as a missing directory; a store that exists
+// but fails to scan is a scan error and does appear. Sorted and deduped.
+func blockedHomes(roots, homes []string, errs map[string]error) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(path string) {
+		clean := filepath.Clean(path)
+		if clean == "" || seen[clean] {
+			return
+		}
+		seen[clean] = true
+		out = append(out, clean)
+	}
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+		if !dirExists(root) {
+			add(filepath.Join(root, "skills"))
+		}
+	}
+	for _, home := range homes {
+		if _, ok := errs[home]; ok {
+			add(home)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Homes returns every source scanned, precedence-first.
@@ -226,6 +261,15 @@ func (x *Index) IsCustom(name string) bool {
 // uninstalled only when Complete is true.
 func (x *Index) Complete() bool {
 	return x.complete
+}
+
+// BlockedHomes returns the homes that made the scan incomplete: each
+// tracked repo collection whose root is missing from disk, and any home
+// that failed to scan. Sorted and deduped. Empty when Complete is true, or
+// when the only reason is the canonical store's absence, which callers
+// report separately.
+func (x *Index) BlockedHomes() []string {
+	return append([]string(nil), x.blocked...)
 }
 
 // IsInstalled reports whether a skill lives in the canonical store or any
