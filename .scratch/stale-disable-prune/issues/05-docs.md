@@ -4,9 +4,9 @@
 
 **Blocked by:** 02 (Dormant disables in sync and update), 03 (Doctor reports stale disables), 04 (`fleet skill prune`).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Docs state that a disable survives an uninstall as dormant intent and is no longer written into harness configs.
-- [ ] Docs describe the two doctor findings and what they point at.
-- [ ] Docs document `fleet skill prune`, its flags, and the reinstall warning.
-- [ ] The docs site builds.
+- [x] Docs state that a disable survives an uninstall as dormant intent and is no longer written into harness configs.
+- [x] Docs describe the two doctor findings and what they point at.
+- [x] Docs document `fleet skill prune`, its flags, and the reinstall warning.
+- [x] The docs site builds.

@@ -139,6 +139,7 @@ skill: bob: no per-skill disable mechanism — disable "tdd" is a no-op
   ```
 
 - The command is idempotent: disabling an already-disabled skill changes nothing, and the outcome says so — `skill: opencode: "tdd" is already disabled` (one line per harness, `already` dim, verb green).
+- A disable outlives the skill. If you uninstall a disabled skill, the state file keeps the disable as dormant intent: sync stops writing new off entries for it, so harness configs stop collecting rules for skills you removed, but reinstalling the skill comes back disabled. A rule already written stays where it is; `fleet skill prune` removes it (see [prune](#fleet-skill-prune)).
 
 ## fleet skill on
 
@@ -155,7 +156,7 @@ skill: codex: enabled "tdd"
 
 - The outcome is one line per harness (`skill: codex: enabled "tdd"`), and reads `skill: codex: "tdd" is already enabled` (`already` dim, verb green) when nothing had to change. A harness where a foreign rule still disables the skill stays out of the list; its flag line explains (`sync: pi/tdd: still excluded by a !glob entry — left alone`).
 
-`on` is deliberately more lenient than `off`: it also cleans up entries for skills that were uninstalled while disabled, so stale state disappears instead of accumulating.
+`on` is deliberately more lenient than `off`: it also cleans up entries for skills that were uninstalled while disabled, so stale state disappears instead of accumulating. Use `fleet skill prune` to clear every stale skill at once.
 
 ## fleet skill adopt
 
@@ -246,6 +247,9 @@ The read-only report of what's wrong. It inspects every installed harness, the c
 - **unknown entries** — anything else in a skills dir (excluding managed custom-skill links into a tracked collection or the fallback); reported, never touched
 - **manual edits fleet can't manage** — pattern or blanket rules that disable a skill
 - **state drift** — the state disagreeing with a harness in a way sync will resolve: a config disable the state doesn't record (or vice versa), or, for a custom skill on a native-scanning harness (OpenCode, Codex, Pi, Cursor, Bob), a missing managed link while the state leaves it enabled (sync links it), or a link that outlived the disable (sync removes it)
+- **stale config rules** — a fleet-owned disable rule in a harness config for a skill that is installed nowhere; the finding names the skill and harness and points at `fleet skill prune`, which removes it
+- **stale state entries** — a state disable for a skill installed nowhere, kept as dormant intent; the finding names the skill and harness and points at `fleet skill prune`, warning that pruning the entry loses the disable-on-reinstall behavior
+- **incomplete scan** — a skill home is missing or unreadable, so fleet cannot trust "installed nowhere"; stale findings are suppressed and the home that blocked the scan is named
 - **double presence** — a skill name that exists in more than one scanned source (canonical store, explicit repos, fleet-home checkouts, fallback), so a native-scanning harness would see it twice and one copy's rules may shadow the other; remove one of the copies by hand
 - **unscanned adopt target** — the configured adopt target points outside the scanned homes, so adopted skills would not appear in `ls`; point it at a tracked collection or the fallback
 - **non-git explicit repos** — an explicit list entry with no `.git`, so bare pull skips it; clone the repo there or remove the path from the list by hand
@@ -265,8 +269,12 @@ $ fleet skill doctor
   k keep my change · r restore — run `fleet skill doctor -i` to pick per skill
 ⚠ state drift (1)
   bob  "create-plan" is enabled in fleet's state, but bob cannot discover it (no link in ~/.bob/skills) — sync links it on the next command
+⚠ stale config rules (1) · run `fleet skill prune`
+  pi  "ui-ux-pro-max" is disabled in the pi config, but it is installed nowhere — run `fleet skill prune` to remove the leftover rule
+⚠ stale state entries (1) · run `fleet skill prune`
+  pi  "ui-ux-pro-max" is disabled for pi in fleet's state, but it is installed nowhere — run `fleet skill prune` to remove the state entry; pruning loses the disable-on-reinstall behavior
 
-1 redundant link, 2 manual edits to resolve, run `fleet skill doctor -i` to resolve
+1 redundant link, 1 stale config rule, 1 stale state entry, 2 manual edits to resolve, run `fleet skill doctor -i` to resolve
 ```
 
 Sections are marked by severity: ✖ red for breakage (broken symlinks, unreadable configs), ⚠ yellow for anything sync or you should act on, ◦ dim cyan for informational. Color only renders on a terminal; piped output is plain.
@@ -288,6 +296,44 @@ $ fleet skill doctor -i
 Broken symlinks are handled the same way in interactive mode: each broken link is offered as `[r] remove` or `[s] skip`, with `[a] remove all` and `[x] skip all` per harness. A clean home reports `no problems found`.
 
 Doctor never runs ambient sync — the point is to show what sync _would_ do before it does it.
+
+## fleet skill prune
+
+```sh
+fleet skill prune [--yes] [--harness <harness>]... [--config-only | --state-only]
+```
+
+Removes the leftovers for skills that are installed nowhere: a fleet-owned disable rule a harness config still carries, and a dormant state disable no config can act on. With no flags it lists what it would remove and changes nothing; `--yes` applies. Sync runs after a successful apply, so configs and the state file agree when it finishes.
+
+```sh
+$ fleet skill prune
+prune: pi: would remove "ui-ux-pro-max" (config)
+prune: pi: would remove "ui-ux-pro-max" (state)
+prune: re-run with --yes to remove
+$ fleet skill prune --yes
+prune: pi: removed "ui-ux-pro-max" (config)
+prune: pi: removed "ui-ux-pro-max" (state)
+```
+
+- The outcome is one line per removal, harness first, with the axis in parentheses: `(config)` for a harness rule, `(state)` for a state entry. On a terminal the `prune:` prefix is dim, the harness cyan, the verb green, and the axis faint. A clean home prints `prune: nothing to prune`.
+- `--yes` (`-y`) applies the removals. Without it prune only reports, so a destructive run never happens by accident.
+- `--harness` is repeatable and limits the work to the named harnesses: `opencode`, `pi`, `codex`, `claude`, `cursor`, `bob`. Unlike the toggle verbs it does not require the harness to be installed, since a missing config is simply nothing to remove and its state entries can still be cleared.
+- `--config-only` prunes only harness config rules; `--state-only` prunes only state entries. They are mutually exclusive. Use `--config-only` to clear a config while keeping the disable-on-reinstall intent, and `--state-only` to drop the intent while leaving configs for doctor's manual-edit handling.
+- Prune removes only fleet's own exact disable shapes: OpenCode's exact `permission.skill` deny (V1) or three-key deny rule (V2), Pi's exact `-skills/<name>/SKILL.md` entry, Codex's simple `[[skills.config]]` block with `enabled = false`, and Claude's `skillOverrides` value of `"off"`. Pattern rules, blanket rules, extra-key shapes, and foreign values are reported as `prune: <harness>: skipped "<skill>" — <reason>` and left untouched. Cursor and Bob have no config axis.
+- A config rule for a skill the state file does not track is a manual edit, not a stale leftover; prune leaves it to `fleet skill doctor -i`.
+- Pruning a state entry loses the disable-on-reinstall behavior. Reinstalling that skill comes back enabled, and you set the disable again by hand.
+- Prune fails closed. When a skill home is missing or unreadable the scan is incomplete, so it removes nothing and names the home that blocked it:
+
+  ```sh
+  $ fleet skill prune --yes
+  prune: nothing removed — the skill scan is incomplete
+  prune: ~/Developer/customs
+  prune: fix the home above, then re-run; `fleet skill doctor` reports the same blocker
+  ```
+
+  A name that looks uninstalled might live in the unscanned home, so prune refuses to remove anything until the scan is complete.
+
+- Prune is idempotent: a second run after a clean prune reports `nothing to prune`.
 
 ## fleet skill sync
 
@@ -331,7 +377,7 @@ update: no skills updated
 update: verified disabled: "tdd" for opencode, pi, claude
 ```
 
-The census line (`1 skill in …`) is dim context; the headline is the green outcome — `update: no skills updated` when nothing changed, otherwise `update: updated 2 skills: tdd, foo` (`update:` dim, verb green). The `update: verified disabled:` line re-reads each harness's config after sync and confirms the recorded disables still hold (harness list cyan). If one didn't survive the update, the line reads `update: verified: "<skill>" for <harness> did not stay disabled` instead (`verified:` red). Like `skill: opencode: enabled` the verb carries the weight so a no-op is not mistaken for silence after `sync:` noise.
+The census line (`1 skill in …`) is dim context; the headline is the green outcome — `update: no skills updated` when nothing changed, otherwise `update: updated 2 skills: tdd, foo` (`update:` dim, verb green). The `update: verified disabled:` line re-reads each harness's config after sync and confirms the recorded disables still hold (harness list cyan). If one didn't survive the update, the line reads `update: verified: "<skill>" for <harness> did not stay disabled` instead (`verified:` red). A disable for a skill installed nowhere is skipped: there is no installed skill to verify, so it is neither counted as held nor reported as lost. Like `skill: opencode: enabled` the verb carries the weight so a no-op is not mistaken for silence after `sync:` noise.
 
 On failure the skills CLI's captured output is shown raw and the command stops — a half-finished update is yours to resolve before anything else runs:
 
@@ -457,7 +503,7 @@ Sync runs on every fleet command and after every wrapped `skills` call, and [`fl
 3. Remove redundant links: symlinks that provably resolve into the canonical store in harnesses that scan it natively (`nativeScanHarnesses`: opencode, pi, codex, cursor, bob — never claude code). Links into any tracked collection or the fleet-home fallback are never redundant and are never removed; broken links, real dirs/files, and foreign links stay.
 4. Make customs visible: link every skill in every scanned custom home (each tracked collection and the fleet-home fallback; a configured adopt target counts when it is one of those) into every installed harness, one managed link per skill. Idempotent: an already-visible home reports nothing.
 5. Hide disabled customs: on a native-scanning harness (OpenCode, Codex, Pi, Cursor, Bob), remove the managed link of a custom the state disables, since there the link is the lever. A custom's disable never becomes a config off-entry.
-6. Project the disables: for each installed harness with a config write side (OpenCode, Pi, Codex, Claude Code), write the harness's own off-entry for each canonical-store disable the state records. Claude Code writes `skillOverrides` for custom and canonical skills alike. Nothing else — an absent entry means on, and sync never writes "on" markers.
+6. Project the disables: for each installed harness with a config write side (OpenCode, Pi, Codex, Claude Code), write the harness's own off-entry for each canonical-store disable the state records whose skill is installed somewhere. A disable for a skill installed nowhere is dormant: sync keeps the name in the state but creates no new config entry, and leaves any rule already there for `fleet skill prune` to remove. Claude Code writes `skillOverrides` for custom and canonical skills alike. Nothing else — an absent entry means on, and sync never writes "on" markers. When the scan is incomplete sync projects every disable anyway, since leaving an installed skill enabled is worse than a stale rule.
 7. Flag (never touch) entries it doesn't recognize: patterns, blankets, foreign shapes.
 8. Never edit the state file.
 
@@ -484,6 +530,8 @@ Sync runs on every fleet command and after every wrapped `skills` call, and [`fl
 | Unknown config key                       | `unknown config key "foo" (want adopt-target)`                                                                             | 1    |
 | Retired single-pointer key               | `unknown config key "skills-repo" (the single repo pointer is retired; …)`                                                 | 1    |
 | `config set` with non-absolute path      | `path must be absolute: "relative/path"`                                                                                   | 1    |
+| `prune` incomplete scan                  | `prune: nothing removed — the skill scan is incomplete` + the blocking home + a re-run hint                                | 0    |
+| `prune` with both axis flags             | `if any flags in the group [config-only state-only] are set none of the others can be`                                     | 1    |
 | Wrapped `skills` failure                 | CLI's raw output, then `Error: skills update -g -y: …`                                                                     | 1    |
 
 There is no "run inside the repo" requirement and no walk-up to `.git`: customs reach fleet through `skill pull` (clone into the tracked set) and leave it through the adopt destination (`--into` for one run, `adopt-target` for the default, prompt otherwise). When nothing is tracked, `adopt` lands in `~/.config/fleet/skills/` (created on demand) and `ls` shows canonical plus fleet-home customs alone.
