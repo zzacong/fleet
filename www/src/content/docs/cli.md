@@ -246,7 +246,7 @@ The read-only report of what's wrong. It inspects every installed harness, the c
 - **broken symlinks** — targets missing or looping; `fleet skill doctor -i` offers to remove them
 - **unknown entries** — anything else in a skills dir (excluding managed custom-skill links into a tracked collection or the fallback); reported, never touched
 - **manual edits fleet can't manage** — pattern or blanket rules that disable a skill
-- **state drift** — the state disagreeing with a harness in a way sync will resolve: a config disable the state doesn't record (or vice versa), or, for a custom skill on a native-scanning harness (OpenCode, Codex, Pi, Cursor, Bob), a missing managed link while the state leaves it enabled (sync links it), or a link that outlived the disable (sync removes it)
+- **state drift** — the state disagreeing with a harness in a way sync will resolve: a config disable the state doesn't record (or vice versa), or, for a custom skill on a native-scanning harness (OpenCode, Codex, Pi, Cursor, Bob), a missing managed link while the state leaves it enabled (sync links it), or a link that outlived the disable (sync removes it). Drift is grouped by harness and direction: the cause and its fix print once, then every skill name follows, and a home-directory prefix in the directory annotation is shown as `~`
 - **stale config rules** — a fleet-owned disable rule in a harness config for a skill that is installed nowhere; reported one line per harness with its skill names, capped with a `… (+N more)` summary when a harness has many, pointing at `fleet skill prune`, which removes them
 - **stale state entries** — a state disable for a skill installed nowhere, kept as dormant intent; reported the same way, with the warning that pruning the entry loses the disable-on-reinstall behavior
 - **incomplete scan** — a skill home is missing or unreadable, so fleet cannot trust "installed nowhere"; stale findings are suppressed and the home that blocked the scan is named
@@ -268,7 +268,8 @@ $ fleet skill doctor
   pi       pdf-tools     config on · state off
   k keep my change · r restore — run `fleet skill doctor -i` to pick per skill
 ⚠ state drift (1)
-  bob  "create-plan" is enabled in fleet's state, but bob cannot discover it (no link in ~/.bob/skills) — sync links it on the next command
+  bob  enabled but not linked in ~/.bob/skills — sync links on the next command
+       create-plan
 ⚠ stale config rules (1) · run `fleet skill prune` to remove
   pi  ui-ux-pro-max
 ⚠ stale state entries (1) · run `fleet skill prune` to remove; pruning loses the disable-on-reinstall behavior

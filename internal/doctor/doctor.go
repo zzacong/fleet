@@ -77,6 +77,23 @@ const (
 	KindIncompleteScan Kind = "incomplete-scan"
 )
 
+// DriftReason names why a KindDrift finding exists, so the report can group
+// findings that share one cause and one fix instead of repeating a full
+// sentence per skill.
+type DriftReason string
+
+const (
+	// DriftEnabledUnlinked: the state leaves a custom skill enabled but the
+	// link-toggleable harness has no managed link; sync links it.
+	DriftEnabledUnlinked DriftReason = "enabled-unlinked"
+	// DriftDisabledLinked: the state disables a custom skill but its managed
+	// link is still present; sync removes the link.
+	DriftDisabledLinked DriftReason = "disabled-linked"
+	// DriftDisabledUnlinked: the state disables a skill the harness cannot
+	// discover, so the disable is moot until the link returns.
+	DriftDisabledUnlinked DriftReason = "disabled-unlinked"
+)
+
 // Finding is one observed problem that has no interactive resolution: it
 // either needs fleet's machinery (sync), the user's hands, or nothing.
 type Finding struct {
@@ -89,6 +106,13 @@ type Finding struct {
 	Message string
 	// Path is the filesystem path for link findings; empty otherwise.
 	Path string
+	// Reason identifies the drift direction when Kind is KindDrift; empty
+	// otherwise. The CLI groups drift findings by harness and reason so the
+	// shared cause and fix print once per group.
+	Reason DriftReason
+	// Dir is the harness skills directory a drift finding concerns (the link
+	// that is missing or stale); empty otherwise.
+	Dir string
 }
 
 // Conflict is a manual edit that disagrees with the state file, offered to
@@ -467,6 +491,8 @@ func analyzeConfigs(p *paths.Paths, customByName map[string]bool) ([]Conflict, [
 					Kind:    KindDrift,
 					Harness: h,
 					Skill:   name,
+					Reason:  DriftDisabledUnlinked,
+					Dir:     skillsDirFor(p, a.Harness()),
 					Message: fmt.Sprintf("%q is disabled in fleet's state, but %s cannot discover it (no link in %s) — the disable is moot until the link returns",
 						name, h, skillsDirFor(p, a.Harness())),
 				})
@@ -552,6 +578,8 @@ func analyzeLinkToggles(p *paths.Paths, customByDir map[string]string, present, 
 					Kind:    KindDrift,
 					Harness: h,
 					Skill:   name,
+					Reason:  DriftEnabledUnlinked,
+					Dir:     d.Path,
 					Message: fmt.Sprintf("%q is enabled in fleet's state, but %s cannot discover it (no link in %s) — sync links it on the next command",
 						name, h, d.Path),
 				})
@@ -561,6 +589,8 @@ func analyzeLinkToggles(p *paths.Paths, customByDir map[string]string, present, 
 					Harness: h,
 					Skill:   name,
 					Path:    filepath.Join(d.Path, dir),
+					Reason:  DriftDisabledLinked,
+					Dir:     d.Path,
 					Message: fmt.Sprintf("%q is disabled in fleet's state, but %s still has a link for it in %s — sync removes it on the next command",
 						name, h, d.Path),
 				})

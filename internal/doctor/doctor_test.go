@@ -421,6 +421,10 @@ func TestAnalyzeClaudeDisableWithoutLinkIsAFinding(t *testing.T) {
 	if len(rep.Findings) != 1 || rep.Findings[0].Kind != KindDrift {
 		t.Fatalf("findings = %+v, want one drift finding", rep.Findings)
 	}
+	f := rep.Findings[0]
+	if f.Reason != DriftDisabledUnlinked || f.Dir != p.ClaudeSkills() {
+		t.Errorf("finding = %+v, want the disabled-unlinked reason and claude's skills dir", f)
+	}
 }
 
 func TestAnalyzeEnabledCustomWithoutLinkIsDrift(t *testing.T) {
@@ -442,6 +446,9 @@ func TestAnalyzeEnabledCustomWithoutLinkIsDrift(t *testing.T) {
 	f := rep.Findings[0]
 	if f.Harness != "bob" || f.Skill != "my-notes" {
 		t.Errorf("finding = %+v, want bob/my-notes", f)
+	}
+	if f.Reason != DriftEnabledUnlinked || f.Dir != p.BobSkills() {
+		t.Errorf("finding = %+v, want the enabled-unlinked reason and bob's skills dir", f)
 	}
 	if !strings.Contains(f.Message, "enabled in fleet's state") || !strings.Contains(f.Message, "cannot discover it") {
 		t.Errorf("message must state the mismatch: %q", f.Message)
@@ -491,6 +498,9 @@ func TestAnalyzeDisabledCustomWithLinkIsDrift(t *testing.T) {
 	f := rep.Findings[0]
 	if f.Harness != "bob" || f.Skill != "my-notes" || f.Path == "" {
 		t.Errorf("finding = %+v, want bob/my-notes with the link path", f)
+	}
+	if f.Reason != DriftDisabledLinked || f.Dir != p.BobSkills() {
+		t.Errorf("finding = %+v, want the disabled-linked reason and bob's skills dir", f)
 	}
 	if !strings.Contains(f.Message, "disabled in fleet's state") || !strings.Contains(f.Message, "still has a link") {
 		t.Errorf("message must state the mismatch: %q", f.Message)
