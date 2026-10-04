@@ -62,6 +62,167 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
+// writeSkillsDirs records the explicit collection-dir list in the fake
+// home's config file, preserving the legacy list when one is present.
+func writeSkillsDirs(t *testing.T, p *paths.Paths, dirs ...string) {
+	t.Helper()
+	f, err := config.Load(p.FleetConfigFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.SetSkillsDirs(dirs)
+	if err := config.Save(p.FleetConfigFile(), f); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSkillsDirsScannedDirectlyNoSubdirDerivation(t *testing.T) {
+	p := indexHome(t, nil, nil)
+	collection := filepath.Join(t.TempDir(), "collection")
+	// The tracked path is the collection: an immediate child with a
+	// SKILL.md is a skill.
+	writeIndexSkill(t, collection, "alpha", "alpha")
+	// A legacy-style `skills/` subdir is NOT derived: a skill nested under
+	// collection/skills is invisible.
+	writeIndexSkill(t, filepath.Join(collection, "skills"), "nested", "nested")
+	writeSkillsDirs(t, p, collection)
+
+	idx, errs, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(errs) != 0 {
+		t.Fatalf("Load() errs = %v, want none", errs)
+	}
+	if !idx.IsInstalled("alpha") {
+		t.Errorf("IsInstalled(alpha) = false, want true: immediate child of the collection")
+	}
+	if idx.IsInstalled("nested") {
+		t.Errorf("IsInstalled(nested) = true, want false: no `skills/` derivation")
+	}
+	if got := idx.Skills(collection); len(got) != 1 || got[0].Dir != "alpha" {
+		t.Errorf("Skills(collection) = %+v, want just alpha", got)
+	}
+}
+
+func TestCustomHomesOrdersSkillsDirsBeforeLegacySources(t *testing.T) {
+	p := indexHome(t, []string{filepath.Join(t.TempDir(), "legacy")}, []string{"zeta"})
+	dirA := filepath.Join(t.TempDir(), "collection-a")
+	dirB := filepath.Join(t.TempDir(), "collection-b")
+	writeSkillsDirs(t, p, dirA, dirB)
+
+	got, err := CustomHomes(p)
+	if err != nil {
+		t.Fatalf("CustomHomes() error = %v", err)
+	}
+	// Explicit collections are scanned directly (no `skills/` join) and
+	// come before the legacy repo-derived collection and the fallback.
+	legacyRoot := mustLegacyRoot(t, p)
+	checkout := filepath.Join(p.FleetReposDir(), "zeta", "skills")
+	want := []string{dirA, dirB, filepath.Join(legacyRoot, "skills"), checkout, p.FleetHomeSkills()}
+	if !equalStrings(got, want) {
+		t.Fatalf("CustomHomes() = %q, want %q", got, want)
+	}
+}
+
+// mustLegacyRoot returns the single legacy repo root recorded by an
+// indexHome fixture (the explicit list's first entry).
+func mustLegacyRoot(t *testing.T, p *paths.Paths) string {
+	t.Helper()
+	f, err := config.Load(p.FleetConfigFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	repos := f.SkillsRepos()
+	if len(repos) != 1 {
+		t.Fatalf("legacy repos = %q, want exactly one fixture root", repos)
+	}
+	return repos[0]
+}
+
+func TestSkillsDirsPrecedeLegacySourcesOnNameCollision(t *testing.T) {
+	p := indexHome(t, []string{filepath.Join(t.TempDir(), "legacy")}, nil)
+	legacyRoot := mustLegacyRoot(t, p)
+	writeSkillsDirs(t, p, filepath.Join(t.TempDir(), "collection"))
+	collection := mustSkillsDir(t, p, 0)
+
+	writeIndexSkill(t, p.SkillsStore(), "canon", "clash")
+	writeIndexSkill(t, p.FleetHomeSkills(), "fleet", "clash")
+	writeIndexSkill(t, filepath.Join(legacyRoot, "skills"), "legacy", "clash")
+	writeIndexSkill(t, collection, "explicit", "clash")
+
+	idx, _, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	hits := idx.Lookup("clash")
+	if len(hits) != 4 {
+		t.Fatalf("Lookup(clash) = %d copies, want 4: %+v", len(hits), hits)
+	}
+	wantHomes := []string{
+		collection,
+		filepath.Join(legacyRoot, "skills"),
+		p.FleetHomeSkills(),
+		p.SkillsStore(),
+	}
+	for i, want := range wantHomes {
+		if hits[i].Home != want {
+			t.Errorf("Lookup(clash)[%d].Home = %q, want %q", i, hits[i].Home, want)
+		}
+	}
+	if hits[0].Skill.Dir != "explicit" {
+		t.Errorf("winner dir = %q, want explicit (skillsDirs first)", hits[0].Skill.Dir)
+	}
+}
+
+// mustSkillsDir returns the i-th explicit collection dir recorded in the
+// fake home's config.
+func mustSkillsDir(t *testing.T, p *paths.Paths, i int) string {
+	t.Helper()
+	f, err := config.Load(p.FleetConfigFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirs := f.SkillsDirs()
+	if i >= len(dirs) {
+		t.Fatalf("skillsDirs = %q, want index %d", dirs, i)
+	}
+	return dirs[i]
+}
+
+func TestMissingSkillsDirScansEmptyWithoutError(t *testing.T) {
+	p := indexHome(t, nil, nil)
+	writeIndexSkill(t, p.SkillsStore(), "canon", "canon")
+	missing := filepath.Join(t.TempDir(), "gone")
+	writeSkillsDirs(t, p, missing)
+
+	idx, errs, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load() with a missing skillsDirs entry should not error: %v", err)
+	}
+	if len(errs) != 0 {
+		t.Fatalf("Load() errs = %v, want none for a missing collection", errs)
+	}
+	if got := idx.Skills(missing); len(got) != 0 {
+		t.Errorf("Skills(missing) = %+v, want empty", got)
+	}
+	found := false
+	for _, h := range idx.Homes() {
+		if h == missing {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("Homes() = %q, want the missing collection still listed", idx.Homes())
+	}
+	if !idx.Complete() {
+		t.Errorf("Complete() = false, want true: a missing optional skillsDirs entry is not a blocker")
+	}
+	if len(idx.BlockedHomes()) != 0 {
+		t.Errorf("BlockedHomes() = %q, want none", idx.BlockedHomes())
+	}
+}
+
 func TestCustomHomesOrdersTrackedThenFallback(t *testing.T) {
 	home := t.TempDir()
 	outsideB := filepath.Join(home, "explicit-b")

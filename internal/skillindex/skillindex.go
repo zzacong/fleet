@@ -1,14 +1,15 @@
 // Package skillindex owns the skill index: the precedence-ordered union
-// of every skill source — the canonical store, every tracked collection
-// in tracked-set order, then the fleet-home fallback. It is the sole
-// scanner of skill homes: snapshot, doctor, adopt, and update read
-// through it instead of scanning homes themselves. Each reader keeps its
-// own collision policy (display picks the precedence winner, adopt
-// errors, doctor reports); the index only reports every copy in
-// precedence order, keyed by skill directory with lookup by frontmatter
-// name. It also answers the shared "is this skill installed" question by
-// directory or frontmatter name, and carries the completeness signal
-// that says whether a negative answer can be trusted.
+// of every skill source — every explicit `skillsDirs` collection (scanned
+// directly, no `skills/` derivation), then the legacy repo-root-derived
+// collections in tracked-set order, then the fleet-home fallback, then the
+// canonical store. It is the sole scanner of skill homes: snapshot,
+// doctor, adopt, and update read through it instead of scanning homes
+// themselves. Each reader keeps its own collision policy (display picks
+// the precedence winner, adopt errors, doctor reports); the index only
+// reports every copy in precedence order, keyed by skill directory with
+// lookup by frontmatter name. It also answers the shared "is this skill
+// installed" question by directory or frontmatter name, and carries the
+// completeness signal that says whether a negative answer can be trusted.
 package skillindex
 
 import (
@@ -16,6 +17,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/zzacong/fleet/internal/config"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/scan"
 	"github.com/zzacong/fleet/internal/trackedset"
@@ -29,8 +31,9 @@ type Hit struct {
 }
 
 // Index is the scanned union of every skill source. Homes are
-// precedence-first: tracked collections in tracked-set order, then the
-// fleet-home fallback, then the canonical store.
+// precedence-first: every explicit skillsDirs collection, then the legacy
+// tracked collections in tracked-set order, then the fleet-home fallback,
+// then the canonical store.
 type Index struct {
 	homes     []string
 	customs   []string
@@ -44,7 +47,8 @@ type Index struct {
 }
 
 // CustomHomes returns the adopt-destination candidates without scanning:
-// every tracked collection in tracked-set order, then the always-offered
+// every explicit collection dir in precedence order, then every legacy
+// tracked collection in tracked-set order, then the always-offered
 // fleet-home fallback. Zero tracked collections yields exactly the
 // fallback, so no prompt is needed. Entries are deduped by cleaned path.
 func CustomHomes(p *paths.Paths) ([]string, error) {
@@ -53,10 +57,16 @@ func CustomHomes(p *paths.Paths) ([]string, error) {
 }
 
 // customHomes resolves the custom collection dirs together with the repo
-// roots that back them: roots[i] is the root for homes[i], and the
-// fleet-home fallback entry is rooted at "" so callers can treat its
-// absence as optional. Entries are deduped by cleaned collection path.
+// roots that back them: roots[i] is the root for homes[i], and an entry
+// rooted at "" is optional — the fleet-home fallback and every explicit
+// skillsDirs entry (the collection is itself the tracked unit). Legacy
+// repo-root entries are rooted at their repo root. Entries are deduped by
+// cleaned collection path.
 func customHomes(p *paths.Paths) (homes, roots []string, err error) {
+	f, err := config.Load(p.FleetConfigFile())
+	if err != nil {
+		return nil, nil, err
+	}
 	repos, err := trackedset.List(p)
 	if err != nil {
 		return nil, nil, err
@@ -71,6 +81,14 @@ func customHomes(p *paths.Paths) (homes, roots []string, err error) {
 		homes = append(homes, clean)
 		roots = append(roots, root)
 	}
+	// Explicit collection dirs are scanned directly: the tracked path is
+	// the collection itself, with no `skills/` derivation. They are the
+	// highest-precedence custom source.
+	for _, dir := range f.SkillsDirs() {
+		add(dir, "")
+	}
+	// Legacy repo-root entries keep resolving as before: each root's
+	// implied `skills/` collection, below every explicit collection.
 	for _, root := range repos {
 		add(filepath.Join(root, "skills"), root)
 	}
@@ -126,9 +144,10 @@ func Load(p *paths.Paths) (*Index, map[string]error, error) {
 			x.installed[s.Name] = true
 		}
 	}
-	// Complete requires the store to exist and scan, every tracked repo
-	// root to be present on disk, and no home to fail scanning. The
-	// fleet-home fallback is optional: its absence is not incomplete.
+	// Complete requires the store to exist and scan, every legacy tracked
+	// repo root to be present on disk, and no home to fail scanning. The
+	// fleet-home fallback and every explicit skillsDirs entry are
+	// optional: their absence is not incomplete.
 	x.complete = dirExists(x.store) && trackedRootsPresent(roots) && len(errs) == 0
 	x.blocked = blockedHomes(roots, x.homes, errs)
 	return x, errs, nil
@@ -140,9 +159,11 @@ func dirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// trackedRootsPresent reports whether every tracked repo root backing a
-// custom collection is present on disk. The fleet-home fallback root is
-// "" and skipped, since its absence is optional by design.
+// trackedRootsPresent reports whether every legacy tracked repo root
+// backing a custom collection is present on disk. Roots of "" are skipped:
+// the fleet-home fallback and every explicit skillsDirs collection are
+// optional by design — a listed dir missing from disk scans empty rather
+// than failing.
 func trackedRootsPresent(roots []string) bool {
 	for _, root := range roots {
 		if root == "" {

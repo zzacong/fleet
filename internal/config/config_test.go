@@ -303,6 +303,111 @@ func TestEmptyFileIsEmpty(t *testing.T) {
 	}
 }
 
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestSkillsDirsRoundTripPreservesOrderAndUnknowns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	src := `{
+  "skillsRepos": ["/repo/legacy"],
+  "future": 123
+}`
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(f.SkillsDirs()) != 0 {
+		t.Fatalf("SkillsDirs() = %q, want empty for an absent key", f.SkillsDirs())
+	}
+	f.SetSkillsDirs([]string{"/dirs/b", "/dirs/a"})
+	if err := Save(path, f); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if want := []string{"/dirs/b", "/dirs/a"}; !sameStrings(got.SkillsDirs(), want) {
+		t.Errorf("SkillsDirs() = %q, want order-preserved %q", got.SkillsDirs(), want)
+	}
+	// The legacy repo-root list still resolves verbatim alongside.
+	if want := []string{"/repo/legacy"}; !sameStrings(got.SkillsRepos(), want) {
+		t.Errorf("SkillsRepos() = %q, want preserved %q", got.SkillsRepos(), want)
+	}
+	if _, ok := got.Unknown()["future"]; !ok {
+		t.Errorf("round-trip lost unknown key future: %v", got.Unknown())
+	}
+	body, _ := os.ReadFile(path)
+	want := "{\n  \"skillsDirs\": [\n    \"/dirs/b\",\n    \"/dirs/a\"\n  ],\n  \"skillsRepos\": [\n    \"/repo/legacy\"\n  ],\n  \"future\": 123\n}\n"
+	if string(body) != want {
+		t.Errorf("file =\n%s\nwant\n%s", body, want)
+	}
+}
+
+func TestSkillsDirsEmptyMeansNoneAndUnsetOmitsKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	f, _ := Load(path)
+	f.SetSkillsDirs(nil)
+	if len(f.SkillsDirs()) != 0 {
+		t.Errorf("SkillsDirs() = %q, want empty", f.SkillsDirs())
+	}
+	f.SetSkillsDirs([]string{"/dirs/one"})
+	f.UnsetSkillsDirs()
+	if len(f.SkillsDirs()) != 0 {
+		t.Errorf("UnsetSkillsDirs() left %q", f.SkillsDirs())
+	}
+	if err := Save(path, f); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	body, _ := os.ReadFile(path)
+	if strings.Contains(string(body), "skillsDirs") {
+		t.Errorf("empty skillsDirs should not render the key:\n%s", body)
+	}
+}
+
+func TestLoadRejectsMalformedSkillsDirs(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"not an array", `{"skillsDirs": "/dirs/one"}`},
+		{"non-string entry", `{"skillsDirs": ["/dirs/one", 123]}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(path, []byte(c.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(path); err == nil {
+				t.Errorf("Load(%s) should fail", c.body)
+			}
+		})
+	}
+}
+
+func TestNormalizeKeyIncludesSkillsDirs(t *testing.T) {
+	if got := NormalizeKey("skills-dirs"); got != "skills-dirs" {
+		t.Errorf("NormalizeKey(skills-dirs) = %q, want skills-dirs", got)
+	}
+	if got := NormalizeKey("skillsDirs"); got != "skills-dirs" {
+		t.Errorf("NormalizeKey(skillsDirs) = %q, want skills-dirs", got)
+	}
+}
+
 func TestSkillsReposRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	f, _ := Load(path)

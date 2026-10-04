@@ -980,6 +980,68 @@ func TestLsListsTrackedSetUnionWithExplicitPrecedence(t *testing.T) {
 	}
 }
 
+func TestLsListsSkillsDirsCollectionDirectly(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	p := paths.New(home)
+	collection := filepath.Join(t.TempDir(), "collection")
+	// The listed dir is the collection: an immediate child with a SKILL.md
+	// is a skill.
+	writeSkillDir(t, collection, "dir-skill", "From a collection dir.")
+	// A legacy `skills/` subdir is not derived from a listed dir.
+	writeSkillDir(t, filepath.Join(collection, "skills"), "nested", "Nested under skills/.")
+	writeSkillsDirsConfig(t, p, collection)
+
+	out, _, err := runLsCapture(t, p, &fakeTrees{}, "--json")
+	if err != nil {
+		t.Fatalf("ls with a skillsDirs collection: error = %v", err)
+	}
+	var report struct {
+		Skills []struct {
+			Name   string `json:"name"`
+			Custom bool   `json:"custom"`
+		} `json:"skills"`
+	}
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("bad JSON: %v\n%s", err, out)
+	}
+	if len(report.Skills) != 1 {
+		t.Fatalf("skills = %+v, want just the collection's immediate child", report.Skills)
+	}
+	if report.Skills[0].Name != "dir-skill" || !report.Skills[0].Custom {
+		t.Errorf("row = %+v, want dir-skill marked custom", report.Skills[0])
+	}
+}
+
+func TestLsMissingSkillsDirDoesNotError(t *testing.T) {
+	p := paths.New(filepath.Join(t.TempDir(), "home"))
+	missing := filepath.Join(t.TempDir(), "gone")
+	writeSkillsDirsConfig(t, p, missing)
+
+	out, _, err := runLsCapture(t, p, &fakeTrees{}, "--json")
+	if err != nil {
+		t.Fatalf("a missing skillsDirs entry must not error the listing: %v", err)
+	}
+	if !strings.Contains(out, `"skills": []`) {
+		t.Errorf("missing collection should scan empty, got:\n%s", out)
+	}
+}
+
+// writeSkillsDirsConfig records the explicit collection-dir list in the
+// fake home's config file.
+func writeSkillsDirsConfig(t *testing.T, p *paths.Paths, dirs ...string) {
+	t.Helper()
+	cfg, err := json.Marshal(map[string]any{"skillsDirs": dirs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(p.FleetConfigFile()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.FleetConfigFile(), cfg, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func writeNamedSkillCLI(t *testing.T, store, dir, name, desc string) {
 	t.Helper()
 	path := filepath.Join(store, dir, "SKILL.md")

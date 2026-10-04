@@ -4,11 +4,11 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Config accepts a `skillsDirs` array of absolute collection dirs, order significant, empty means none.
-- [ ] `fleet skill ls` lists the skills of each listed dir, each child with a `SKILL.md`, scanned directly with no subdirectory derivation.
-- [ ] Existing repo-root entries still resolve as before during this ticket.
-- [ ] A listed dir that is missing from disk scans empty and does not error the listing.
-- [ ] Precedence among `skillsDirs` entries and the older sources is deterministic and documented in the ADR.
-- [ ] The config round-trip preserves order and unknown fields; a malformed `skillsDirs` value errors.
+- [x] Config accepts a `skillsDirs` array of absolute collection dirs, order significant, empty means none.
+- [x] `fleet skill ls` lists the skills of each listed dir, each child with a `SKILL.md`, scanned directly with no subdirectory derivation.
+- [x] Existing repo-root entries still resolve as before during this ticket.
+- [x] A listed dir that is missing from disk scans empty and does not error the listing.
+- [x] Precedence among `skillsDirs` entries and the older sources is deterministic and documented in the ADR.
+- [x] The config round-trip preserves order and unknown fields; a malformed `skillsDirs` value errors.
