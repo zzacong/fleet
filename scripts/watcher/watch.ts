@@ -5,9 +5,10 @@
  * What it does
  * ------------
  * Takes a content-hashed snapshot of all fleet-managed locations (fleet state,
- * canonical skill store, and each harness's config + skills dir) and diffs it
- * against the previous snapshot. Modified files get a unified line diff via a
- * deduped content store; identical-content rewrites are reported as "touched"
+ * canonical skill store, each harness's config + skills dir, and every tracked
+ * collection dir from config) and diffs it against the previous snapshot.
+ * Modified files get a unified line diff via a deduped content store;
+ * identical-content rewrites are reported as "touched"
  * rather than "modified"; empty-dir creation/removal is reported explicitly;
  * minified blobs are summarized by hash.
  *
@@ -36,8 +37,9 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const STATE_DIR = path.join(SCRIPT_DIR, ".state");
 const CONTENT_DIR = path.join(STATE_DIR, "contents");
 
-// (label, absolute path) — paths derived from fleet's internal/paths/paths.go
-const WATCH_TARGETS: Array<[string, string]> = [
+// Fixed targets fleet always touches — paths derived from fleet's
+// internal/paths/paths.go.
+const BASE_WATCH_TARGETS: Array<[string, string]> = [
   ["fleet-config", path.join(HOME, ".config/fleet")],
   ["agents-store", path.join(HOME, ".agents")],
   ["opencode-config", path.join(HOME, ".config/opencode/opencode.jsonc")],
@@ -51,6 +53,38 @@ const WATCH_TARGETS: Array<[string, string]> = [
   ["cursor-skills", path.join(HOME, ".cursor/skills")],
   ["bob-skills", path.join(HOME, ".bob/skills")],
   ["bob-settings", path.join(HOME, ".bob/settings/settings.json")],
+];
+
+// Tracked collection dirs live in fleet's machine-local config
+// (~/.config/fleet/config.json) under `skillsDirs`. Each entry becomes its
+// own target, labelled by list position, so an edit inside a collection
+// shows as a diff. The watcher is a dev tool: a missing or malformed config,
+// or a non-array `skillsDirs`, simply yields no extra targets.
+function trackedCollectionTargets(): Array<[string, string]> {
+  const file = path.join(HOME, ".config", "fleet", "config.json");
+  let raw: unknown;
+  try {
+    raw = JSON.parse(fs.readFileSync(file, "utf-8"));
+  } catch {
+    return [];
+  }
+  if (typeof raw !== "object" || raw === null) return [];
+  const rawDirs = (raw as Record<string, unknown>).skillsDirs;
+  const dirs: unknown[] = Array.isArray(rawDirs) ? rawDirs : [];
+  const targets: Array<[string, string]> = [];
+  dirs.forEach((dir, i) => {
+    if (typeof dir === "string" && dir !== "") {
+      targets.push([`collection-${i + 1}`, dir]);
+    }
+  });
+  return targets;
+}
+
+// (label, absolute path) — fixed fleet locations plus one target per tracked
+// collection dir, in `skillsDirs` order.
+const WATCH_TARGETS: Array<[string, string]> = [
+  ...BASE_WATCH_TARGETS,
+  ...trackedCollectionTargets(),
 ];
 
 const MAX_HASH = 4 * 1024 * 1024; // skip hashing files > 4MB (record size+mtime only)
