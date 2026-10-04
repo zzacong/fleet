@@ -555,3 +555,68 @@ func TestDoctorStaleSectionsGroupByHarnessAndCap(t *testing.T) {
 		t.Errorf("section counts wrong:\n%s", out)
 	}
 }
+
+func TestDoctorDriftGroupsByHarnessAndDirection(t *testing.T) {
+	// Custom skills in a tracked repo, unlinked on every native scanner.
+	// opencode also carries a disabled custom whose managed link survived,
+	// so it holds two directions and must print two groups. The shared
+	// cause and fix print once per group, not once per finding.
+	p := doctorHome(t)
+	repo := filepath.Join(t.TempDir(), "customs")
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeAdoptConfig(t, p, `{"skillsRepos": ["`+repo+`"]}`)
+	writeSkillDir(t, filepath.Join(repo, "skills"), "my-notes", "Notes.")
+	writeSkillDir(t, filepath.Join(repo, "skills"), "my-docs", "Docs.")
+	// my-docs is disabled on opencode, but its managed link is still there.
+	makeLink(t, filepath.Join(repo, "skills", "my-docs"), filepath.Join(p.OpenCodeSkills(), "my-docs"))
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.SetDisabled("my-docs", "opencode")
+	if err := state.Save(p.FleetStateFile(), st); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runDoctor(t, p, "")
+
+	// opencode: enabled-unlinked (my-notes) plus disabled-linked (my-docs).
+	// pi, codex, cursor, bob: enabled-unlinked (my-notes, my-docs).
+	if !strings.Contains(out, "state drift (10)") {
+		t.Errorf("want a drift count of 10:\n%s", out)
+	}
+	if got := strings.Count(out, "enabled but not linked"); got != 5 {
+		t.Errorf("enabled-unlinked groups = %d, want 5 (one per native scanner):\n%s", got, out)
+	}
+	if got := strings.Count(out, "disabled but still linked"); got != 1 {
+		t.Errorf("disabled-linked groups = %d, want 1:\n%s", got, out)
+	}
+	// The full sentence is replaced by the group label.
+	if strings.Contains(out, "is enabled in fleet's state") || strings.Contains(out, "is disabled in fleet's state") {
+		t.Errorf("per-finding drift prose still present:\n%s", out)
+	}
+	// Names hang under the harness column: 2 + width(8) + 2 spaces.
+	if !strings.Contains(out, "            my-docs, my-notes\n") {
+		t.Errorf("skills not listed under their group:\n%s", out)
+	}
+}
+
+func TestShortenHome(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skip("no user home directory")
+	}
+	cases := []struct{ in, want string }{
+		{filepath.Join(home, ".config", "opencode", "skills"), filepath.Join("~", ".config", "opencode", "skills")},
+		{home, "~"},
+		{filepath.Join(string(filepath.Separator), "elsewhere", "skills"), filepath.Join(string(filepath.Separator), "elsewhere", "skills")},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := shortenHome(c.in); got != c.want {
+			t.Errorf("shortenHome(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

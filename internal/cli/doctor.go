@@ -13,6 +13,8 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -134,6 +136,12 @@ func printFindings(out io.Writer, findings []doctor.Finding, pal palette) error 
 			}
 			continue
 		}
+		if section.kind == doctor.KindDrift {
+			if err := printDriftSection(out, section.note, group, pal); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := printSectionHeader(out, section.title, section.note, section.sev, len(group), pal); err != nil {
 			return err
 		}
@@ -156,6 +164,91 @@ func printFindings(out io.Writer, findings []doctor.Finding, pal palette) error 
 		}
 	}
 	return nil
+}
+
+// printDriftSection renders state drift grouped by harness and direction:
+// the shared cause and fix print once per group, then every skill name on
+// its own line. This replaces one full sentence per finding with one group
+// per harness-and-direction.
+func printDriftSection(out io.Writer, note string, group []doctor.Finding, pal palette) error {
+	if err := printSectionHeader(out, "state drift", note, "warn", len(group), pal); err != nil {
+		return err
+	}
+	type groupKey struct {
+		harness string
+		reason  doctor.DriftReason
+	}
+	var order []groupKey
+	byGroup := map[groupKey][]doctor.Finding{}
+	for _, f := range group {
+		k := groupKey{f.Harness, f.Reason}
+		if _, ok := byGroup[k]; !ok {
+			order = append(order, k)
+		}
+		byGroup[k] = append(byGroup[k], f)
+	}
+
+	width := 0
+	for _, k := range order {
+		if n := len([]rune(k.harness)); n > width {
+			width = n
+		}
+	}
+	for _, k := range order {
+		findings := byGroup[k]
+		names := make([]string, len(findings))
+		for i, f := range findings {
+			names[i] = f.Skill
+		}
+		label, action := driftReasonText(k.reason)
+		if dir := shortenHome(findings[0].Dir); dir != "" {
+			label += " in " + pal.dim(dir)
+		}
+		if action != "" {
+			label += " — " + action
+		}
+		if _, err := fmt.Fprintf(out, "  %s  %s\n",
+			pal.info(padRight(k.harness, width)), label); err != nil {
+			return err
+		}
+		// The names hang under the label, past the harness column.
+		if _, err := fmt.Fprintf(out, "  %s  %s\n",
+			strings.Repeat(" ", width), strings.Join(names, ", ")); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// driftReasonText returns the cause and the fix for a drift direction. Both
+// print once per group of skills that share the direction.
+func driftReasonText(reason doctor.DriftReason) (cause, action string) {
+	switch reason {
+	case doctor.DriftEnabledUnlinked:
+		return "enabled but not linked", "sync links on the next command"
+	case doctor.DriftDisabledLinked:
+		return "disabled but still linked", "sync removes the link"
+	case doctor.DriftDisabledUnlinked:
+		return "disabled but not discoverable", "the disable is moot until relinked"
+	}
+	return string(reason), ""
+}
+
+// shortenHome replaces a leading user-home directory with "~" for display.
+// A path outside the home, or any path when the home is unknown, is
+// returned unchanged.
+func shortenHome(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" || path == "" {
+		return path
+	}
+	if path == home {
+		return "~"
+	}
+	if strings.HasPrefix(path, home+string(filepath.Separator)) {
+		return "~" + path[len(home):]
+	}
+	return path
 }
 
 // maxStalePerHarness caps how many skill names one harness line lists in a
