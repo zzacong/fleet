@@ -124,8 +124,10 @@ func (a *ClaudeAdapter) Project(writes []SkillWrite) (WriteReport, error) {
 
 	flagUnmanagedClaude(overrides, writes, &rep)
 
-	if err := writeIfConfigChanged(a.home.ClaudeSettings(), src, renderConfig(src, doc)); err != nil {
-		return WriteReport{}, err
+	if !allPreview(writes) {
+		if err := writeIfConfigChanged(a.home.ClaudeSettings(), src, renderConfig(src, doc)); err != nil {
+			return WriteReport{}, err
+		}
 	}
 	return rep, nil
 }

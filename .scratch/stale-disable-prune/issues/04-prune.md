@@ -8,15 +8,15 @@ This ticket is gated on 02 so that a `--config-only` prune is not immediately re
 
 **Blocked by:** 01 (Skill index completeness and installed names), 02 (Dormant disables in sync and update).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Without `--yes`, prune lists the stale config rules and state entries and changes nothing.
-- [ ] `--yes` removes them.
-- [ ] `--harness` limits to named harnesses; `--config-only` and `--state-only` select an axis.
-- [ ] Only fleet's own exact disable shapes are removed; a pattern rule, a blanket rule, and a foreign value survive.
-- [ ] Removing a state entry deletes the skill entry once nothing remains.
-- [ ] An incomplete scan removes nothing and names the blocking home.
-- [ ] Sync runs after a successful prune.
-- [ ] A second run reports nothing to do.
-- [ ] Output follows the `drop:` and `adopt:` palette.
-- [ ] Package tests cover the operation; CLI tests cover flags, confirmation, and output over a fake home.
+- [x] Without `--yes`, prune lists the stale config rules and state entries and changes nothing.
+- [x] `--yes` removes them.
+- [x] `--harness` limits to named harnesses; `--config-only` and `--state-only` select an axis.
+- [x] Only fleet's own exact disable shapes are removed; a pattern rule, a blanket rule, and a foreign value survive.
+- [x] Removing a state entry deletes the skill entry once nothing remains.
+- [x] An incomplete scan removes nothing and names the blocking home.
+- [x] Sync runs after a successful prune.
+- [x] A second run reports nothing to do.
+- [x] Output follows the `drop:` and `adopt:` palette.
+- [x] Package tests cover the operation; CLI tests cover flags, confirmation, and output over a fake home.

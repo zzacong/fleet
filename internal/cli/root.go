@@ -61,5 +61,6 @@ func newSkillCmd(p *paths.Paths) *cobra.Command {
 	skill.AddCommand(newSkillUpdateCmd(p))
 	skill.AddCommand(newSkillPullCmd(p))
 	skill.AddCommand(newSkillDropCmd(p))
+	skill.AddCommand(newSkillPruneCmd(p))
 	return skill
 }

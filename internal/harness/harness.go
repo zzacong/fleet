@@ -67,6 +67,11 @@ type SkillWrite struct {
 	// only when the skill index scan is complete, so an incomplete scan
 	// still projects every disable.
 	Dormant bool
+	// DryRun marks a write that is only previewed: the adapter computes
+	// its report exactly as a real write would but leaves the config file
+	// untouched. Prune sets it for its no-flag listing; every other caller
+	// leaves it false.
+	DryRun bool
 }
 
 // Change records one enablement flip a write actually applied: the skill's

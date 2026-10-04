@@ -81,8 +81,10 @@ func (a *CodexAdapter) Project(writes []SkillWrite) (WriteReport, error) {
 
 	flagUnmanagedCodex(blocks, writes, &rep)
 
-	if err := writeIfChanged(a.home.CodexConfig(), src, strings.Join(lines, "\n")); err != nil {
-		return WriteReport{}, err
+	if !allPreview(writes) {
+		if err := writeIfChanged(a.home.CodexConfig(), src, strings.Join(lines, "\n")); err != nil {
+			return WriteReport{}, err
+		}
 	}
 	return rep, nil
 }

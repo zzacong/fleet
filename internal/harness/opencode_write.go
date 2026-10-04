@@ -60,8 +60,10 @@ func (a *OpenCodeAdapter) Project(writes []SkillWrite) (WriteReport, error) {
 
 	flagUnmanagedOpenCode(root, writes, &rep)
 
-	if err := writeIfConfigChanged(a.home.OpenCodeConfig(), src, renderConfig(src, doc)); err != nil {
-		return WriteReport{}, err
+	if !allPreview(writes) {
+		if err := writeIfConfigChanged(a.home.OpenCodeConfig(), src, renderConfig(src, doc)); err != nil {
+			return WriteReport{}, err
+		}
 	}
 	return rep, nil
 }
