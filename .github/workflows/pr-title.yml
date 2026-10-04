@@ -4,7 +4,7 @@ name: pr-title
 # release-please infers semver from that message (ADR 0003). A plain-English
 # title silently skips the release, so validate it here. Path filtering (see
 # `exclude-paths` in release-please-config.json) means a mistyped
-# feat(www)/feat(skills) cannot cut a release; this check only enforces the
+# feat(www) cannot cut a release; this check only enforces the
 # conventional shape.
 on:
   pull_request_target:

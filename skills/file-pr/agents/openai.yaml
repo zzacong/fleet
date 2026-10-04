@@ -1,5 +1,0 @@
-interface:
-  display_name: "File PR"
-  short_description: "Create a PR and monitor its checks"
-policy:
-  allow_implicit_invocation: true

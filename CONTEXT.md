@@ -41,7 +41,7 @@ One auto-tracked customs repo under `~/.config/fleet/repos/<name>/`. A pull with
 _Avoid_: fleet repo, customs repo
 
 **Skills collection**:
-The `skills/` directory at the root of a customs repo (`<repo>/skills/`). Each immediate child with a `SKILL.md` is a custom skill. Every tracked repo contributes its collection subdir when present; in the monorepo that is this checkout, `skills/` at its root is the publishable collection skills.sh points at.
+The `skills/` directory at the root of a customs repo (`<repo>/skills/`). Each immediate child with a `SKILL.md` is a custom skill. Every tracked repo contributes its collection subdir when present.
 _Avoid_: repo skills, custom skills dir
 
 **Skill index**:

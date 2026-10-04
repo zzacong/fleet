@@ -24,5 +24,4 @@ PR titles must be conventional too, since squash merge uses them as the
 commit message.
 
 Scope by area: `cli` (the Go binary, `cmd/` and `internal/`), `www` (the
-docs site), `skills` (the skills collection). Split a change into focused
-commits by scope when you can.
+docs site). Split a change into focused commits by scope when you can.
