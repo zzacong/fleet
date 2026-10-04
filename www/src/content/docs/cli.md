@@ -247,8 +247,8 @@ The read-only report of what's wrong. It inspects every installed harness, the c
 - **unknown entries** — anything else in a skills dir (excluding managed custom-skill links into a tracked collection or the fallback); reported, never touched
 - **manual edits fleet can't manage** — pattern or blanket rules that disable a skill
 - **state drift** — the state disagreeing with a harness in a way sync will resolve: a config disable the state doesn't record (or vice versa), or, for a custom skill on a native-scanning harness (OpenCode, Codex, Pi, Cursor, Bob), a missing managed link while the state leaves it enabled (sync links it), or a link that outlived the disable (sync removes it)
-- **stale config rules** — a fleet-owned disable rule in a harness config for a skill that is installed nowhere; the finding names the skill and harness and points at `fleet skill prune`, which removes it
-- **stale state entries** — a state disable for a skill installed nowhere, kept as dormant intent; the finding names the skill and harness and points at `fleet skill prune`, warning that pruning the entry loses the disable-on-reinstall behavior
+- **stale config rules** — a fleet-owned disable rule in a harness config for a skill that is installed nowhere; reported one line per harness with its skill names, pointing at `fleet skill prune`, which removes them
+- **stale state entries** — a state disable for a skill installed nowhere, kept as dormant intent; reported the same way, with the warning that pruning the entry loses the disable-on-reinstall behavior
 - **incomplete scan** — a skill home is missing or unreadable, so fleet cannot trust "installed nowhere"; stale findings are suppressed and the home that blocked the scan is named
 - **double presence** — a skill name that exists in more than one scanned source (canonical store, explicit repos, fleet-home checkouts, fallback), so a native-scanning harness would see it twice and one copy's rules may shadow the other; remove one of the copies by hand
 - **unscanned adopt target** — the configured adopt target points outside the scanned homes, so adopted skills would not appear in `ls`; point it at a tracked collection or the fallback
@@ -269,10 +269,10 @@ $ fleet skill doctor
   k keep my change · r restore — run `fleet skill doctor -i` to pick per skill
 ⚠ state drift (1)
   bob  "create-plan" is enabled in fleet's state, but bob cannot discover it (no link in ~/.bob/skills) — sync links it on the next command
-⚠ stale config rules (1) · run `fleet skill prune`
-  pi  "ui-ux-pro-max" is disabled in the pi config, but it is installed nowhere — run `fleet skill prune` to remove the leftover rule
-⚠ stale state entries (1) · run `fleet skill prune`
-  pi  "ui-ux-pro-max" is disabled for pi in fleet's state, but it is installed nowhere — run `fleet skill prune` to remove the state entry; pruning loses the disable-on-reinstall behavior
+⚠ stale config rules (1) · run `fleet skill prune` to remove
+  pi  ui-ux-pro-max
+⚠ stale state entries (1) · run `fleet skill prune` to remove; pruning loses the disable-on-reinstall behavior
+  pi  ui-ux-pro-max
 
 1 redundant link, 1 stale config rule, 1 stale state entry, 2 manual edits to resolve, run `fleet skill doctor -i` to resolve
 ```
