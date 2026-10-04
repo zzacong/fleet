@@ -1,6 +1,6 @@
 # Spec: Unified managed links for custom skills
 
-Status: ready-for-agent
+Status: resolved
 
 ## Problem Statement
 
