@@ -8,6 +8,11 @@ Status: Accepted
 > ticket 01. The Go module now lives at the repo root, `apps/docs` moved to
 > `www/`, `apps/desktop/` was deleted, and `apps/` is gone. This ADR remains
 > the record of the original monorepo decision.
+>
+> **Superseded in part (2026-10-04):** §1's repo-root `skills/` collection is
+> superseded by ADR 0006. The collection now lives in its own repo
+> (`zzacong/agent-skills`); the designated-repo + fleet-home fallback model
+> below is unchanged.
 
 ## Context
 

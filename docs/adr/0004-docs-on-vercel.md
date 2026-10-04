@@ -3,6 +3,11 @@
 Date: 2026-09-07
 Status: Accepted
 
+> **Superseded in part (2026-10-04):** the skills-catalog coupling described
+> below is gone with ADR 0006. `SkillsCatalog.astro` and the repo-root
+> `skills/` read were removed, and `vercel.json`'s `ignoreCommand` no longer
+> watches `skills/`.
+
 ## Context
 
 `www/` is an Astro 7 + Starlight static site (`site: https://fleet.zzacong.com`, build `astro build`, output `dist/`). It is a pnpm workspace package (`pnpm-workspace.yaml` packages `www`, lockfile at repo root). One build-time read reaches outside `www/`: `src/components/SkillsCatalog.astro:27-32` resolves `../skills` (repo-root `skills/`) and degrades to an empty state when missing.
