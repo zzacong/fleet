@@ -4,11 +4,11 @@
 
 **Blocked by:** 05.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The README quickstart documents `add-dir` and `remove-dir` and the `skillsDirs` list.
-- [ ] The command reference has `fleet skill add-dir` and `remove-dir` sections and no `pull` or `drop` sections.
-- [ ] The state and config explanation describes `skillsDirs` and the preserved `skillsRepos` unknown.
-- [ ] The undo guide describes removing a tracked dir without deleting it from disk.
-- [ ] The architecture and testing docs describe the path-tracked model and the deleted git seam.
-- [ ] No doc presents `pull`, `drop`, `FLEET_REPO`, or the fleet-home checkout convention as current.
+- [x] The README quickstart documents `add-dir` and `remove-dir` and the `skillsDirs` list.
+- [x] The command reference has `fleet skill add-dir` and `remove-dir` sections and no `pull` or `drop` sections.
+- [x] The state and config explanation describes `skillsDirs` and the preserved `skillsRepos` unknown.
+- [x] The undo guide describes removing a tracked dir without deleting it from disk.
+- [x] The architecture and testing docs describe the path-tracked model and the deleted git seam.
+- [x] No doc presents `pull`, `drop`, `FLEET_REPO`, or the fleet-home checkout convention as current.

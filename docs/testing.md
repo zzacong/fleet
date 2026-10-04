@@ -17,7 +17,7 @@ Every test builds a fake home in `t.TempDir()`. Nothing outside the project dire
 Two consequences worth keeping:
 
 - **Assert external behavior** — the written config file's content, the returned report — never internal call order. A refactor that reorders writes must not break a test; a behavior change must.
-- **The network is a seam, not a dependency.** GitHub calls, `skills` process calls, and git calls are injected vars, stubbed in tests.
+- **The network is a seam, not a dependency.** GitHub calls and `skills` process calls are injected vars, stubbed in tests.
 
 ## Anatomy of an adapter test
 
@@ -79,8 +79,8 @@ To write an adapter test for a new harness, copy the pattern: a `run<Name>Projec
 | Adapter detection, read/write per harness                            | `internal/harness/*_test.go` (one pair per harness, plus `disables_test.go`, `links_test.go`, `legacy_test.go` for cross-harness behavior) |
 | State file round-trips, unknown fields, version rules                | `internal/state/state_test.go`                                                                                                             |
 | Config list/scalar round-trips, aliases, home expansion, retired key | `internal/config/config_test.go`                                                                                                           |
-| Tracked-set resolution (explicit order, checkout scan, env prepend)  | `internal/trackedset/trackedset_test.go`                                                                                                   |
-| Pull flow via the stubbed git runner, per-repo reports               | `internal/pull/pull_test.go`, `internal/cli/pull_test.go`                                                                                  |
+| Tracked-set list/add/remove rules, precedence order                  | `internal/trackedset/trackedset_test.go`                                                                                                   |
+| `add-dir`/`remove-dir` end to end: output, links, config bytes       | `internal/cli/adddir_test.go`, `internal/cli/removedir_test.go`                                                                            |
 | Snapshot union and precedence across the tracked set                 | `internal/snapshot/*_test.go`                                                                                                              |
 | Adopt destination (`--into`, target, prompt, save-back)              | `internal/customs/*_test.go`, `internal/cli/adopt*_test.go`                                                                                |
 | Sync drift scenarios (re-created links, manual edits)                | `internal/sync/sync_test.go`                                                                                                               |
@@ -94,12 +94,11 @@ To write an adapter test for a new harness, copy the pattern: a `run<Name>Projec
 
 ## The seams tests stub
 
-| Var               | Replaces                                    | Used by                                                        |
-| ----------------- | ------------------------------------------- | -------------------------------------------------------------- |
-| `newSkillsRunner` | the `skills` process (absent in sandboxes)  | `fleet skill update`                                           |
-| `newTreeClient`   | the GitHub trees API                        | `ls --json`, `ls`, the TUI's update badges                     |
-| `newPullRunner`   | the git binary (never shelled out in tests) | `fleet skill pull` (clone, fast-forward-only)                  |
-| `stdoutTTY`       | terminal detection                          | the summary line, the piped `fleet` fallback, the adopt prompt |
+| Var               | Replaces                                   | Used by                                                        |
+| ----------------- | ------------------------------------------ | -------------------------------------------------------------- |
+| `newSkillsRunner` | the `skills` process (absent in sandboxes) | `fleet skill update`                                           |
+| `newTreeClient`   | the GitHub trees API                       | `ls --json`, `ls`, the TUI's update badges                     |
+| `stdoutTTY`       | terminal detection                         | the summary line, the piped `fleet` fallback, the adopt prompt |
 
 ## Running the suite
 
@@ -130,11 +129,13 @@ cat $sandbox/.config/opencode/opencode.jsonc      # see the written shape
 FLEET_HOME=$sandbox ./bin/fleet skill doctor      # inspect without changing anything
 ```
 
-`FLEET_HOME` sandboxes fleet, and `skill pull` accepts any git URL — including a local path — so the customs flow works end to end in a sandbox:
+`FLEET_HOME` sandboxes fleet, and `skill add-dir` accepts any existing directory of skills, so the customs flow works end to end in a sandbox:
 
 ```sh
-FLEET_HOME=$sandbox ./bin/fleet skill pull /tmp/fake-customs
-FLEET_HOME=$sandbox ./bin/fleet skill adopt my-skill --into /tmp/fake-customs/skills
+customs=$(mktemp -d)
+mkdir -p $customs/my-notes && printf -- '---\nname: my-notes\ndescription: demo\n---\n' > $customs/my-notes/SKILL.md
+FLEET_HOME=$sandbox ./bin/fleet skill add-dir $customs
+FLEET_HOME=$sandbox ./bin/fleet skill remove-dir $customs   # unlists, leaves the files
 ```
 
 One trap: **`FLEET_HOME` sandboxes fleet, not the `skills` CLI.** `fleet skill update` shells out to the real `skills update -g -y`, which ignores `FLEET_HOME` and operates on your actual home. When testing `update` in a sandbox, put a stub `skills` executable earlier on `PATH` first.

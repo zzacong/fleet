@@ -3,6 +3,13 @@
 Date: 2026-09-04
 Status: Accepted
 
+> **Superseded in part (2026-10-04):** §1 (the tracked set of explicit repo
+> roots plus fleet-home checkouts), §2 (`skill pull` clones and fast-forwards),
+> §3 (fast-forward-only, never destructive), §4 (scan precedence across the
+> set), §6 (the `skillsRepos` config schema), §7 (the retired single pointer),
+> and §8 (the git runner seam) are superseded by ADR 0007, which tracks custom
+> skill directories by path. §5 (the explicit adopt destination) still stands.
+
 ## Context
 
 ADR 0001 gave fleet one versioned home for custom skills: the single

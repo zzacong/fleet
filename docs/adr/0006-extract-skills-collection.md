@@ -7,6 +7,11 @@ Status: Accepted
 > §7 ("The skills collection stays in this repo"). The skills-catalog coupling
 > in ADR 0004 is dropped with it.
 
+> **Superseded in part (2026-10-04):** §4's runtime contract — that the new
+> repo is consumable with `fleet skill pull <url>` — is superseded by ADR 0007,
+> which registers an existing directory with `fleet skill add-dir`. The split
+> of the collection into `zzacong/agent-skills` stands.
+
 ## Context
 
 Fleet has shipped since ADR 0001 with the versioned skills collection at the
