@@ -282,12 +282,12 @@ func toggledFlips(name string, targets []string, projected []toggle.Projected, r
 }
 
 // printToggleDetail writes what the run did beyond the toggle itself, in
-// sync's own order: redundant-link removals, then drift repairs, then
-// flags. Flags about the toggled skill always print — they mean the
-// recorded state did not fully land — deduplicated, because the direct
-// "on" writes and the sync pass that follows can flag the same entry.
-// Flags about other skills are ambient config findings: `fleet skill
-// sync` and `fleet skill doctor` report them, the toggle stays quiet.
+// sync's own order: one-time legacy cleanup, redundant-link removals, then
+// drift repairs, then flags. Flags about the toggled skill always print —
+// they mean the recorded state did not fully land — deduplicated, because
+// the direct "on" writes and the sync pass that follows can flag the same
+// entry. Flags about other skills are ambient config findings: `fleet
+// skill sync` and `fleet skill doctor` report them, the toggle stays quiet.
 func printToggleDetail(out io.Writer, name string, targets []string, projected []toggle.Projected, reports []fleetsync.Report) error {
 	pal := newPalette(stdoutIsTTY())
 	targeted := map[string]bool{}
@@ -296,6 +296,11 @@ func printToggleDetail(out io.Writer, name string, targets []string, projected [
 	}
 
 	for _, r := range reports {
+		for _, c := range r.Cleaned {
+			if _, err := fmt.Fprintln(out, styleSyncLine(formatLegacy(r.Harness, c), pal)); err != nil {
+				return err
+			}
+		}
 		for _, e := range r.Removed {
 			if _, err := fmt.Fprintln(out, styleSyncLine(formatRemoved(r.Harness, e), pal)); err != nil {
 				return err

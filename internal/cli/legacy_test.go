@@ -238,3 +238,25 @@ func TestSyncLegacyCleanupIsIdempotent(t *testing.T) {
 		t.Errorf("second sync reported work it did not do:\n%s", out)
 	}
 }
+
+func TestOnRemovesLegacyCustomOffEntry(t *testing.T) {
+	// The named seam: enabling a custom recreates its managed link, and
+	// the ambient sync on the way removes a legacy fleet-owned off-entry
+	// naming it and reports the removal by name.
+	p, collection := adoptHome(t)
+	writeSkillDir(t, collection, "my-notes", "Personal notes.")
+	writeHarnessConfig(t, p.CodexConfig(), "[[skills.config]]\nname = \"my-notes\"\nenabled = false\n")
+
+	out, _ := runToggle(t, p, "on", "my-notes")
+
+	target := filepath.Join(collection, "my-notes")
+	if got, err := os.Readlink(filepath.Join(p.CodexSkills(), "my-notes")); err != nil || got != target {
+		t.Errorf("codex link after on = %q, %v; want %q", got, err, target)
+	}
+	if got := readFile(t, p.CodexConfig()); strings.Contains(got, `name = "my-notes"`) {
+		t.Errorf("legacy custom off-entry survived the enable:\n%s", got)
+	}
+	if !strings.Contains(out, `sync: codex: removed legacy disable entry "my-notes"`) {
+		t.Errorf("toggle output did not report the legacy removal:\n%s", out)
+	}
+}
