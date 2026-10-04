@@ -57,6 +57,9 @@ func (a *PiAdapter) Project(writes []SkillWrite) (WriteReport, error) {
 	var fresh []string
 
 	for _, w := range writes {
+		if w.Dormant {
+			continue // installed nowhere: leave any existing entry, write none
+		}
 		before := read.States[w.Name]
 		switch w.State {
 		case StateOff:

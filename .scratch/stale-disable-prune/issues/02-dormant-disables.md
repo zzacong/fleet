@@ -6,14 +6,14 @@ The update report stops counting an uninstalled disable as held or lost, while a
 
 **Blocked by:** 01 (Skill index completeness and installed names).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A state disable for a skill installed nowhere produces no new off entry in any config lever: OpenCode in both dialects, Pi, Codex, and Claude.
-- [ ] A disable rule already present for an uninstalled skill is left byte-for-byte and not flagged as untracked.
-- [ ] A config rule for a name the state does not track is still flagged as it is today.
-- [ ] The state file is unchanged by sync and still holds the dormant entry.
-- [ ] When the scan is incomplete, sync still projects the disable.
-- [ ] `fleet skill update` no longer reports an uninstalled disabled skill as "did not stay disabled".
-- [ ] An installed disabled skill is still verified as held by update.
-- [ ] The existing disable-outlives-skill test is rewritten to assert dormancy.
-- [ ] Sync tests drive the fake-home `sync.Run` seam.
+- [x] A state disable for a skill installed nowhere produces no new off entry in any config lever: OpenCode in both dialects, Pi, Codex, and Claude.
+- [x] A disable rule already present for an uninstalled skill is left byte-for-byte and not flagged as untracked.
+- [x] A config rule for a name the state does not track is still flagged as it is today.
+- [x] The state file is unchanged by sync and still holds the dormant entry.
+- [x] When the scan is incomplete, sync still projects the disable.
+- [x] `fleet skill update` no longer reports an uninstalled disabled skill as "did not stay disabled".
+- [x] An installed disabled skill is still verified as held by update.
+- [x] The existing disable-outlives-skill test is rewritten to assert dormancy.
+- [x] Sync tests drive the fake-home `sync.Run` seam.

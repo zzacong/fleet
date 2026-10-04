@@ -39,6 +39,9 @@ func (a *CodexAdapter) Project(writes []SkillWrite) (WriteReport, error) {
 	blocks := codexParseBlocks(lines)
 
 	for _, w := range writes {
+		if w.Dormant {
+			continue // installed nowhere: leave any existing block, write none
+		}
 		before := read.States[w.Name]
 		switch w.State {
 		case StateOff:

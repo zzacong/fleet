@@ -229,6 +229,15 @@ func verifyDisables(out io.Writer, p *paths.Paths, skills []scan.Skill) error {
 		return err
 	}
 
+	// A disable whose skill is installed nowhere is dormant: there is no
+	// loading skill to verify. The answer is only trusted when the scan is
+	// complete; otherwise every disable is verified as before.
+	idx, _, err := skillindex.Load(p)
+	if err != nil {
+		return err
+	}
+	complete := idx.Complete()
+
 	// The universe of names the configs can talk about: everything in the
 	// store plus everything the state knows (a disable may outlive the
 	// skill it was recorded for).
@@ -254,6 +263,9 @@ func verifyDisables(out io.Writer, p *paths.Paths, skills []scan.Skill) error {
 			return fmt.Errorf("read %s config: %w", h, err)
 		}
 		for _, name := range disabled {
+			if complete && !idx.IsInstalled(name) {
+				continue // dormant: no installed skill to verify
+			}
 			switch read.States[name] {
 			case harness.StateOff, harness.StateAbsent:
 				holds[name] = append(holds[name], h)

@@ -160,6 +160,9 @@ func projectOpenCodeV1(root *jsonc.Object, writes []SkillWrite, read ReadResult,
 	var fresh []string
 
 	for _, w := range writes {
+		if w.Dormant {
+			continue // installed nowhere: leave any existing rule, write none
+		}
 		before := read.States[w.Name]
 		switch w.State {
 		case StateOff:
@@ -321,6 +324,9 @@ func projectOpenCodeV2(root *jsonc.Object, writes []SkillWrite, read ReadResult,
 	var fresh []string
 
 	for _, w := range writes {
+		if w.Dormant {
+			continue // installed nowhere: leave any existing rule, write none
+		}
 		before := read.States[w.Name]
 		switch w.State {
 		case StateOff:

@@ -60,6 +60,13 @@ type SkillWrite struct {
 	// State is the desired state: StateOff ensures fleet's own marker is
 	// present, StateOn ensures it is gone.
 	State State
+	// Dormant marks a disable the state owns but whose skill is installed
+	// nowhere. An adapter never creates a new off entry for a dormant
+	// write, but the name still counts as fleet-owned, so the unmanaged
+	// sweep leaves an existing rule in place and stays quiet. Sync sets it
+	// only when the skill index scan is complete, so an incomplete scan
+	// still projects every disable.
+	Dormant bool
 }
 
 // Change records one enablement flip a write actually applied: the skill's

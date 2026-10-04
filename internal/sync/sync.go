@@ -1,12 +1,14 @@
 // Package sync makes each installed harness's config match the state
 // file. It runs on every fleet command: read each config, diff against
 // the state, repair what fleet owns, and flag what it doesn't recognize
-// instead of touching it. It makes every custom home visible (linking every
-// skill it holds into every installed harness) so customs stay
-// discoverable without an adopt or pull run. It also removes redundant
-// per-agent links — symlinks into the canonical store in harnesses that
-// scan the store natively — so the skills CLI's link spam stops
-// accumulating. Sync never edits the state file.
+// instead of touching it. A disable for a skill installed nowhere is
+// dormant: the state keeps the intent but sync creates no new off entry
+// for it, leaving any rule it already owns byte-for-byte. It makes every
+// custom home visible (linking every skill it holds into every installed
+// harness) so customs stay discoverable without an adopt or pull run. It
+// also removes redundant per-agent links — symlinks into the canonical
+// store in harnesses that scan the store natively — so the skills CLI's
+// link spam stops accumulating. Sync never edits the state file.
 package sync
 
 import (
@@ -57,10 +59,18 @@ func Run(p *paths.Paths) ([]Report, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The skill index answers "is this installed anywhere" (and whether
+	// that answer can be trusted). A disable for a skill installed nowhere
+	// is dormant: sync keeps the name in the write batch (so the state
+	// still owns any existing rule) but marks it dormant so no adapter
+	// creates a new off entry. The answer is only trusted when the scan is
+	// complete; an incomplete scan projects every disable, since leaving an
+	// installed skill enabled is worse.
 	idx, _, err := skillindex.Load(p)
 	if err != nil {
 		return nil, fmt.Errorf("resolve tracked repos: %w", err)
 	}
+	complete := idx.Complete()
 
 	reports := map[string]*Report{}
 	var order []string
@@ -158,7 +168,8 @@ func Run(p *paths.Paths) ([]Report, error) {
 			if linkCustom && idx.IsCustom(name) {
 				continue
 			}
-			writes = append(writes, harness.SkillWrite{Name: name, State: harness.StateOff})
+			dormant := complete && !idx.IsInstalled(name)
+			writes = append(writes, harness.SkillWrite{Name: name, State: harness.StateOff, Dormant: dormant})
 		}
 		rep, err := a.Project(writes)
 		if err != nil {
