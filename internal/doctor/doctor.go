@@ -47,7 +47,7 @@ const (
 	// on it until it's fixed.
 	KindBrokenConfig Kind = "broken-config"
 	// KindDoublePresence: a skill name that exists in more than one of the
-	// skill homes (canonical store, fleet-home fallback, tracked repos) —
+	// skill homes (canonical store, fleet-home fallback, tracked dirs) —
 	// the harnesses that read more than one would see it twice. Only the
 	// user's hands can remove a copy.
 	KindDoublePresence Kind = "double-presence"
@@ -55,10 +55,6 @@ const (
 	// is not one of the scanned custom homes, so skills adopted there
 	// won't appear in ls. Adopt still proceeds; the footgun stays visible.
 	KindUnscannedAdoptTarget Kind = "unscanned-adopt-target"
-	// KindNonGitRepo: an explicit tracked repo root that is not a git
-	// checkout (no .git). Bare pull skips it with a warning instead of
-	// failing the whole run; the entry needs a clone or a removal by hand.
-	KindNonGitRepo Kind = "non-git-repo"
 	// KindStaleLock: a skills CLI lockfile entry for a skill that now
 	// lives in a custom home (fleet-home fallback or tracked collection) —
 	// the skills CLI would keep trying to update it. Fleet reads the
@@ -178,7 +174,7 @@ func Analyze(p *paths.Paths) (Report, error) {
 
 	// Links: what's in each installed harness's skills dir.
 	// Custom skills are recognized across every custom home (fallback and
-	// tracked repos) so managed links into any of them are filtered from
+	// tracked dirs) so managed links into any of them are filtered from
 	// unknown entries.
 	customHomes, customByDir, customByName := customLinkIndex(p)
 	present := map[harness.Harness]map[string]bool{}
@@ -228,7 +224,7 @@ func Analyze(p *paths.Paths) (Report, error) {
 	rep.Findings = append(rep.Findings, findings...)
 	rep.Conflicts = conflicts
 
-	// Customs: the repo's skills/ dir against the canonical store and the
+	// Customs: each tracked dir against the canonical store and the
 	// skills CLI lockfile.
 	repoFindings, err := analyzeRepoSkills(p)
 	if err != nil {
@@ -265,7 +261,7 @@ func linkFinding(e harness.Entry) (Finding, bool) {
 }
 
 // customLinkIndex maps every custom home — the fleet-home fallback and
-// each tracked repo's collection — for managed-link filtering: the home
+// each tracked dir — for managed-link filtering: the home
 // dirs, skills keyed by directory, and frontmatter names. Unreadable
 // homes and sets only narrow the filter, mirroring the old best-effort
 // scan.
@@ -298,7 +294,7 @@ func customLinkIndex(p *paths.Paths) ([]string, map[string]string, map[string]bo
 }
 
 // isManagedCustomLink reports whether the entry is a managed custom-skill
-// link pointing into any custom home (fallback or tracked repo). Such links
+// link pointing into any custom home (fallback or tracked dir). Such links
 // are fleet's own discovery path for adopted skills, not unknown entries.
 func isManagedCustomLink(e harness.Entry, homes []string, byDir map[string]string, byName map[string]bool) bool {
 	if e.Class != harness.EntryForeign {
@@ -637,24 +633,22 @@ func joinWithAnd(values []string) string {
 }
 
 // analyzeRepoSkills cross-checks every skill home — the canonical store
-// (~/.agents/skills), each tracked repo's collection (explicit list order,
-// then auto-tracked fleet-home checkouts alphabetically, env override
-// first), the unversioned fleet-home fallback — plus the skills CLI lockfile
+// (~/.agents/skills), each tracked collection dir (explicit list order), the
+// unversioned fleet-home fallback — plus the skills CLI lockfile
 // and the machine-local config. A name present in more than one home is
 // double visibility: the installed native-scanning harnesses read the
 // canonical store and the linked custom homes, so they would see the skill
 // twice. A lock entry for a custom
 // skill is stale provenance from before its adoption: the skills CLI keys
 // updates by it and would keep touching a skill that moved. An adopt target
-// outside the scanned homes and an explicit entry without a git checkout are
-// warnings with the same shape: visible footguns, never silent failures. All
-// of them need the user's hands; fleet never deletes a copy or edits the
-// lockfile.
+// outside the scanned homes is a warning: a visible footgun, never a silent
+// failure. All of them need the user's hands; fleet never deletes a copy or
+// edits the lockfile.
 func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 	type source struct {
 		// key groups copies of one name; one finding lists every key.
 		key string
-		// label describes the home in messages, e.g. "the explicit repo".
+		// label describes the home in messages, e.g. "the tracked dir".
 		label string
 		// skillsDir is the collection dir scanned.
 		skillsDir string
@@ -662,10 +656,10 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 	}
 	var sources []source
 	// Every home scanned once through the skill index; the tracked-set
-	// calls below stay for source keys and message labels only.
+	// call below stays for source keys and message labels only.
 	idx, errs, err := skillindex.Load(p)
 	if err != nil {
-		return nil, fmt.Errorf("resolve tracked repos: %w", err)
+		return nil, fmt.Errorf("resolve tracked dirs: %w", err)
 	}
 	addSource := func(key, label, dir string) error {
 		if serr, ok := errs[filepath.Clean(dir)]; ok {
@@ -678,42 +672,23 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 		return nil, err
 	}
 
-	// Reserve the fixed homes so a tracked root that overlaps one is not
-	// counted twice.
+	// Reserve the fixed homes so a tracked dir that overlaps one is not
+	// counted twice, and skip duplicate skillsDirs entries a hand-edited
+	// config carries (ticket 06 reports those separately).
 	reserved := map[string]bool{
 		filepath.Clean(p.SkillsStore()):     true,
 		filepath.Clean(p.FleetHomeSkills()): true,
 	}
 	tracked, err := trackedset.List(p)
 	if err != nil {
-		return nil, fmt.Errorf("resolve tracked repos: %w", err)
+		return nil, fmt.Errorf("resolve tracked dirs: %w", err)
 	}
-	collections, err := trackedset.CollectionDirs(p)
-	if err != nil {
-		return nil, fmt.Errorf("resolve tracked repos: %w", err)
-	}
-	var envRoot string
-	if env := os.Getenv("FLEET_REPO"); env != "" {
-		envRoot, err = filepath.Abs(env)
-		if err != nil {
-			return nil, err
-		}
-		envRoot = filepath.Clean(envRoot)
-	}
-	for i, root := range tracked {
-		collection := collections[i]
-		if reserved[filepath.Clean(collection)] {
+	for _, dir := range tracked {
+		if reserved[dir] {
 			continue
 		}
-		reserved[filepath.Clean(collection)] = true
-		label := "the explicit repo"
-		switch clean := filepath.Clean(root); {
-		case envRoot != "" && clean == envRoot:
-			label = "the env override repo"
-		case clean != "" && filepath.Dir(clean) == filepath.Clean(p.FleetReposDir()):
-			label = "the fleet-home checkout"
-		}
-		if err := addSource("tracked:"+filepath.Clean(root), label, collection); err != nil {
+		reserved[dir] = true
+		if err := addSource("tracked:"+dir, "the tracked dir", dir); err != nil {
 			return nil, err
 		}
 	}
@@ -803,7 +778,7 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 		})
 	}
 	// Stale lock entries for every custom home (union, deduped by Dir).
-	// The message names the home the copy lives in so multi-repo setups
+	// The message names the home the copy lives in so multi-dir setups
 	// say which collection holds it.
 	type customCopy struct {
 		name     string
@@ -867,20 +842,8 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 		if !scanned {
 			findings = append(findings, Finding{
 				Kind: KindUnscannedAdoptTarget,
-				Message: fmt.Sprintf("adopt target %q is not one of the scanned custom homes (tracked repos plus the fleet-home fallback) — skills adopted there won't appear in ls — point it at a tracked collection or the fleet-home fallback (%s)",
+				Message: fmt.Sprintf("adopt target %q is not one of the scanned custom homes (tracked dirs plus the fleet-home fallback) — skills adopted there won't appear in ls — point it at a tracked dir or the fleet-home fallback (%s)",
 					target, p.FleetHomeSkills()),
-			})
-		}
-	}
-	// Explicit entries without a git checkout are skipped with a warning
-	// on bare pull; surface the same warning here so one uncloned path
-	// never blocks the rest silently.
-	for _, root := range cfg.SkillsRepos() {
-		if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
-			findings = append(findings, Finding{
-				Kind: KindNonGitRepo,
-				Message: fmt.Sprintf("explicit repo %q is not a git checkout (no .git there) — bare pull skips it instead of failing the run — clone the repo there or remove the path from the explicit list by hand",
-					root),
 			})
 		}
 	}

@@ -1,8 +1,7 @@
 // Package skillindex owns the skill index: the precedence-ordered union
 // of every skill source — every explicit `skillsDirs` collection (scanned
-// directly, no `skills/` derivation), then the legacy repo-root-derived
-// collections in tracked-set order, then the fleet-home fallback, then the
-// canonical store. It is the sole scanner of skill homes: snapshot,
+// directly, no `skills/` derivation), then the fleet-home fallback, then
+// the canonical store. It is the sole scanner of skill homes: snapshot,
 // doctor, adopt, and update read through it instead of scanning homes
 // themselves. Each reader keeps its own collision policy (display picks
 // the precedence winner, adopt errors, doctor reports); the index only
@@ -20,7 +19,6 @@ import (
 	"github.com/zzacong/fleet/internal/config"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/scan"
-	"github.com/zzacong/fleet/internal/trackedset"
 )
 
 // Hit is one copy of a skill: the scanned skill plus the collection dir
@@ -31,9 +29,8 @@ type Hit struct {
 }
 
 // Index is the scanned union of every skill source. Homes are
-// precedence-first: every explicit skillsDirs collection, then the legacy
-// tracked collections in tracked-set order, then the fleet-home fallback,
-// then the canonical store.
+// precedence-first: every explicit skillsDirs collection, then the
+// fleet-home fallback, then the canonical store.
 type Index struct {
 	homes     []string
 	customs   []string
@@ -47,53 +44,41 @@ type Index struct {
 }
 
 // CustomHomes returns the adopt-destination candidates without scanning:
-// every explicit collection dir in precedence order, then every legacy
-// tracked collection in tracked-set order, then the always-offered
-// fleet-home fallback. Zero tracked collections yields exactly the
-// fallback, so no prompt is needed. Entries are deduped by cleaned path.
+// every explicit collection dir in precedence order, then the
+// always-offered fleet-home fallback. Zero tracked collections yields
+// exactly the fallback, so no prompt is needed. Entries are deduped by
+// cleaned path.
 func CustomHomes(p *paths.Paths) ([]string, error) {
-	homes, _, err := customHomes(p)
+	homes, err := customHomes(p)
 	return homes, err
 }
 
-// customHomes resolves the custom collection dirs together with the repo
-// roots that back them: roots[i] is the root for homes[i], and an entry
-// rooted at "" is optional — the fleet-home fallback and every explicit
-// skillsDirs entry (the collection is itself the tracked unit). Legacy
-// repo-root entries are rooted at their repo root. Entries are deduped by
-// cleaned collection path.
-func customHomes(p *paths.Paths) (homes, roots []string, err error) {
+// customHomes resolves the custom collection dirs: every explicit
+// skillsDirs entry in order, then the fleet-home fallback. Entries are
+// deduped by cleaned collection path.
+func customHomes(p *paths.Paths) ([]string, error) {
 	f, err := config.Load(p.FleetConfigFile())
 	if err != nil {
-		return nil, nil, err
-	}
-	repos, err := trackedset.List(p)
-	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	seen := map[string]bool{}
-	add := func(dir, root string) {
+	var homes []string
+	add := func(dir string) {
 		clean := filepath.Clean(dir)
 		if clean == "" || seen[clean] {
 			return
 		}
 		seen[clean] = true
 		homes = append(homes, clean)
-		roots = append(roots, root)
 	}
 	// Explicit collection dirs are scanned directly: the tracked path is
 	// the collection itself, with no `skills/` derivation. They are the
 	// highest-precedence custom source.
 	for _, dir := range f.SkillsDirs() {
-		add(dir, "")
+		add(dir)
 	}
-	// Legacy repo-root entries keep resolving as before: each root's
-	// implied `skills/` collection, below every explicit collection.
-	for _, root := range repos {
-		add(filepath.Join(root, "skills"), root)
-	}
-	add(p.FleetHomeSkills(), "")
-	return homes, roots, nil
+	add(p.FleetHomeSkills())
+	return homes, nil
 }
 
 // Load scans every skill source once. The tracked set itself unreadable
@@ -102,7 +87,7 @@ func customHomes(p *paths.Paths) (homes, roots []string, err error) {
 // skips). A missing home scans empty, never an error. The result also
 // carries the completeness signal: see Complete.
 func Load(p *paths.Paths) (*Index, map[string]error, error) {
-	customs, roots, err := customHomes(p)
+	customs, err := customHomes(p)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -144,12 +129,12 @@ func Load(p *paths.Paths) (*Index, map[string]error, error) {
 			x.installed[s.Name] = true
 		}
 	}
-	// Complete requires the store to exist and scan, every legacy tracked
-	// repo root to be present on disk, and no home to fail scanning. The
-	// fleet-home fallback and every explicit skillsDirs entry are
-	// optional: their absence is not incomplete.
-	x.complete = dirExists(x.store) && trackedRootsPresent(roots) && len(errs) == 0
-	x.blocked = blockedHomes(roots, x.homes, errs)
+	// Complete requires the store to exist and scan and no home to fail
+	// scanning. The fleet-home fallback and every explicit skillsDirs
+	// entry are optional: a listed dir missing from disk scans empty
+	// rather than blocking, and doctor reports it separately.
+	x.complete = dirExists(x.store) && len(errs) == 0
+	x.blocked = blockedHomes(x.homes, errs)
 	return x, errs, nil
 }
 
@@ -159,29 +144,11 @@ func dirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// trackedRootsPresent reports whether every legacy tracked repo root
-// backing a custom collection is present on disk. Roots of "" are skipped:
-// the fleet-home fallback and every explicit skillsDirs collection are
-// optional by design — a listed dir missing from disk scans empty rather
-// than failing.
-func trackedRootsPresent(roots []string) bool {
-	for _, root := range roots {
-		if root == "" {
-			continue
-		}
-		if !dirExists(root) {
-			return false
-		}
-	}
-	return true
-}
-
-// blockedHomes names the homes that made a scan incomplete: each tracked
-// repo's collection whose root is absent from disk, and any home that
+// blockedHomes names the homes that made a scan incomplete: any home that
 // failed to scan. The canonical store's absence is deliberately not listed
 // here — doctor reports that as a missing directory; a store that exists
 // but fails to scan is a scan error and does appear. Sorted and deduped.
-func blockedHomes(roots, homes []string, errs map[string]error) []string {
+func blockedHomes(homes []string, errs map[string]error) []string {
 	seen := map[string]bool{}
 	var out []string
 	add := func(path string) {
@@ -191,14 +158,6 @@ func blockedHomes(roots, homes []string, errs map[string]error) []string {
 		}
 		seen[clean] = true
 		out = append(out, clean)
-	}
-	for _, root := range roots {
-		if root == "" {
-			continue
-		}
-		if !dirExists(root) {
-			add(filepath.Join(root, "skills"))
-		}
 	}
 	for _, home := range homes {
 		if _, ok := errs[home]; ok {
@@ -277,15 +236,13 @@ func (x *Index) IsCustom(name string) bool {
 }
 
 // Complete reports whether the "installed" answer can be trusted: the
-// canonical store exists and scans, every tracked repo root is present on
-// disk, and no home failed to scan. A caller may assert a skill is
-// uninstalled only when Complete is true.
+// canonical store exists and scans and no home failed to scan. A caller
+// may assert a skill is uninstalled only when Complete is true.
 func (x *Index) Complete() bool {
 	return x.complete
 }
 
-// BlockedHomes returns the homes that made the scan incomplete: each
-// tracked repo collection whose root is missing from disk, and any home
+// BlockedHomes returns the homes that made the scan incomplete: any home
 // that failed to scan. Sorted and deduped. Empty when Complete is true, or
 // when the only reason is the canonical store's absence, which callers
 // report separately.

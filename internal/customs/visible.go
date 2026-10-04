@@ -1,8 +1,7 @@
 // Custom-skill visibility: the one fan-out that makes a collection dir
 // discoverable in every installed harness. Every harness reaches a custom
-// skill through a managed symlink per skill the collection holds. Adopt,
-// pull, and re-ensure all call in here instead of repeating the scan +
-// link tail.
+// skill through a managed symlink per skill the collection holds. Adopt
+// and re-ensure all call in here instead of repeating the scan + link tail.
 package customs
 
 import (
@@ -128,7 +127,7 @@ func PruneHiddenLinks(p *paths.Paths) ([]harness.UnlinkResult, error) {
 // adopt target lands when it is tracked). Homes are visited in precedence
 // order and share one winner set, so a name in more than one home is linked
 // from the first home only — the same winner the listing shows. Sync calls
-// it so customs stay visible without an adopt or pull run. It is idempotent
+// it so customs stay visible without an adopt run. It is idempotent
 // like the primitive underneath, and homes that do not exist on disk are
 // skipped: linking into a phantom home would make every later run report a
 // change.
@@ -160,7 +159,7 @@ func EnsureVisible(p *paths.Paths) (*Visibility, error) {
 }
 
 // Withdraw unlinks collectionDir's managed links: the inverse of
-// MakeVisible, run on drop. It fails fast on the first harness error.
+// MakeVisible, run on remove-dir. It fails fast on the first harness error.
 func Withdraw(p *paths.Paths, collectionDir string) (*Withdrawal, error) {
 	unlinked, err := harness.RemoveCustomLinks(p, collectionDir)
 	if err != nil {

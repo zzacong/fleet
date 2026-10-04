@@ -9,8 +9,21 @@ import (
 
 	"github.com/zzacong/fleet/internal/config"
 	"github.com/zzacong/fleet/internal/paths"
-	"github.com/zzacong/fleet/internal/pull"
 )
+
+// harnessHome builds a fake home with every harness's config dir present,
+// and no tracked dirs or skills.
+func harnessHome(t *testing.T) *paths.Paths {
+	t.Helper()
+	home := filepath.Join(t.TempDir(), "home")
+	p := paths.New(home)
+	for _, dir := range []string{p.OpenCodeDir(), p.PiDir(), p.CodexDir(), p.ClaudeDir(), p.CursorDir(), p.BobDir()} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return p
+}
 
 // runAddDir runs `fleet skill add-dir` against a fake home and returns
 // stdout, stderr, and the error.
@@ -22,7 +35,6 @@ func runAddDir(t *testing.T, p *paths.Paths, args ...string) (string, string, er
 	root.SetErr(errOut)
 	root.SetArgs(append([]string{"skill", "add-dir"}, args...))
 	t.Cleanup(func() { stdoutTTY = func() bool { return false } })
-	t.Setenv("FLEET_REPO", "")
 	err := root.Execute()
 	return out.String(), errOut.String(), err
 }
@@ -37,7 +49,7 @@ func skillsDirsNow(t *testing.T, p *paths.Paths) []string {
 }
 
 func TestAddDirLinksEveryHarnessPerSkillAndSyncs(t *testing.T) {
-	p := pullHome(t)
+	p := harnessHome(t)
 	collection := filepath.Join(t.TempDir(), "customs")
 	writeSkillDir(t, collection, "alpha", "Alpha.")
 	writeSkillDir(t, collection, "beta", "Beta.")
@@ -94,7 +106,7 @@ func TestAddDirLinksEveryHarnessPerSkillAndSyncs(t *testing.T) {
 }
 
 func TestAddDirResolvesTildeAndRelative(t *testing.T) {
-	p := pullHome(t)
+	p := harnessHome(t)
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
 	tilded := filepath.Join(fakeHome, "skills")
@@ -121,7 +133,7 @@ func TestAddDirResolvesTildeAndRelative(t *testing.T) {
 }
 
 func TestAddDirAlreadyTrackedIsNoOp(t *testing.T) {
-	p := pullHome(t)
+	p := harnessHome(t)
 	collection := filepath.Join(t.TempDir(), "customs")
 	writeSkillDir(t, collection, "alpha", "Alpha.")
 	if _, _, err := runAddDir(t, p, collection); err != nil {
@@ -141,7 +153,7 @@ func TestAddDirAlreadyTrackedIsNoOp(t *testing.T) {
 }
 
 func TestAddDirRefusalsLeaveConfigUntouched(t *testing.T) {
-	p := pullHome(t)
+	p := harnessHome(t)
 	file := filepath.Join(t.TempDir(), "SKILL.md")
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
@@ -178,7 +190,7 @@ func TestAddDirRefusalsLeaveConfigUntouched(t *testing.T) {
 }
 
 func TestAddDirRefusesNestedAndNameCollision(t *testing.T) {
-	p := pullHome(t)
+	p := harnessHome(t)
 	first := filepath.Join(t.TempDir(), "first")
 	writeSkillDir(t, first, "shared", "Shared.")
 	if _, _, err := runAddDir(t, p, first); err != nil {
@@ -200,22 +212,5 @@ func TestAddDirRefusesNestedAndNameCollision(t *testing.T) {
 	}
 	if got := skillsDirsNow(t, p); len(got) != 1 || got[0] != filepath.Clean(first) {
 		t.Errorf("refused add-dir changed SkillsDirs() = %q", got)
-	}
-}
-
-func TestAddDirConsultsNoGitRunner(t *testing.T) {
-	p := pullHome(t)
-	collection := filepath.Join(t.TempDir(), "customs")
-	writeSkillDir(t, collection, "alpha", "Alpha.")
-
-	prev := newPullRunner
-	newPullRunner = func() pull.Runner {
-		t.Fatal("add-dir consulted the git runner")
-		return nil
-	}
-	t.Cleanup(func() { newPullRunner = prev })
-
-	if _, _, err := runAddDir(t, p, collection); err != nil {
-		t.Fatalf("add-dir with git unavailable: %v", err)
 	}
 }

@@ -101,18 +101,17 @@ func trackedHome(t *testing.T, roots ...string) (*paths.Paths, []string) {
 			t.Fatal(err)
 		}
 	}
+	collections := make([]string, len(roots))
+	for i, root := range roots {
+		collections[i] = filepath.Join(root, "skills")
+	}
 	f, err := config.Load(p.FleetConfigFile())
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.SetSkillsRepos(roots)
+	f.SetSkillsDirs(collections)
 	if err := config.Save(p.FleetConfigFile(), f); err != nil {
 		t.Fatal(err)
-	}
-	t.Setenv("FLEET_REPO", "")
-	collections := make([]string, len(roots))
-	for i, root := range roots {
-		collections[i] = filepath.Join(root, "skills")
 	}
 	return p, collections
 }

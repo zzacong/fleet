@@ -188,22 +188,6 @@ func TestAddRefusesNestedTrackedDirsBothDirections(t *testing.T) {
 	}
 }
 
-func TestAddRefusesLegacyTrackedCollection(t *testing.T) {
-	p := testPaths(t)
-	repo := filepath.Join(t.TempDir(), "legacy")
-	collection := filepath.Join(repo, "skills")
-	writeSkill(t, collection, "alpha")
-	trackExplicit(t, p, repo)
-
-	_, err := Add(p, collection)
-	if err == nil || !strings.Contains(err.Error(), "already tracked") {
-		t.Fatalf("Add(legacy collection) error = %v, want already-tracked refusal", err)
-	}
-	if got := skillsDirsOf(t, p); len(got) != 0 {
-		t.Errorf("legacy refusal wrote SkillsDirs() = %q", got)
-	}
-}
-
 func TestAddRefusesNameCollisionWithTrackedDirAndFallback(t *testing.T) {
 	p := testPaths(t)
 	first := filepath.Join(t.TempDir(), "first")

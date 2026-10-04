@@ -233,10 +233,7 @@ func TestDoctorFlagsAdoptionFollowups(t *testing.T) {
 	p := doctorHome(t)
 	tracked := filepath.Join(t.TempDir(), "tracked")
 	trackedCollection := filepath.Join(tracked, "skills")
-	if err := os.MkdirAll(filepath.Join(tracked, ".git"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"]}`)
+	writeAdoptConfig(t, p, `{"skillsDirs": ["`+trackedCollection+`"]}`)
 	writeSkillDir(t, trackedCollection, "tdd", "Red-green-refactor workflow.")
 	lock := `{"skills": {"tdd": {"source": "mattpocock/skills", "sourceType": "github", "skillFolderHash": "abc123"}}}`
 	if err := os.WriteFile(p.SkillLock(), []byte(lock), 0o644); err != nil {
@@ -439,16 +436,10 @@ func TestDoctorBatchOptionsNeverCrossHarnesses(t *testing.T) {
 	}
 }
 
-func TestDoctorReportsTrackedSetWarnings(t *testing.T) {
+func TestDoctorReportsUnscannedAdoptTarget(t *testing.T) {
 	p := doctorHome(t)
-	t.Setenv("FLEET_REPO", "")
-	plain := filepath.Join(t.TempDir(), "plain") // no .git inside
-	if err := os.MkdirAll(plain, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	target := filepath.Join(t.TempDir(), "elsewhere", "skills")
 	cfg, err := json.Marshal(map[string]any{
-		"skillsRepos": []string{plain},
 		"adoptTarget": target,
 	})
 	if err != nil {
@@ -466,10 +457,7 @@ func TestDoctorReportsTrackedSetWarnings(t *testing.T) {
 	if !strings.Contains(out, "unscanned adopt target (1)") || !strings.Contains(out, target) {
 		t.Errorf("output missing the unscanned adopt target section:\n%s", out)
 	}
-	if !strings.Contains(out, "non-git explicit repos (1)") || !strings.Contains(out, plain) {
-		t.Errorf("output missing the non-git explicit repo section:\n%s", out)
-	}
-	if !strings.Contains(out, "1 unscanned adopt target, 1 non-git explicit repo") {
+	if !strings.Contains(out, "1 unscanned adopt target") {
 		t.Errorf("output missing the count summary:\n%s", out)
 	}
 }
@@ -572,14 +560,12 @@ func TestDoctorDriftGroupsByHarnessAndDirection(t *testing.T) {
 	// cause and fix print once per group, not once per finding.
 	p := doctorHome(t)
 	repo := filepath.Join(t.TempDir(), "customs")
-	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeAdoptConfig(t, p, `{"skillsRepos": ["`+repo+`"]}`)
-	writeSkillDir(t, filepath.Join(repo, "skills"), "my-notes", "Notes.")
-	writeSkillDir(t, filepath.Join(repo, "skills"), "my-docs", "Docs.")
+	collection := filepath.Join(repo, "skills")
+	writeAdoptConfig(t, p, `{"skillsDirs": ["`+collection+`"]}`)
+	writeSkillDir(t, collection, "my-notes", "Notes.")
+	writeSkillDir(t, collection, "my-docs", "Docs.")
 	// my-docs is disabled on opencode, but its managed link is still there.
-	makeLink(t, filepath.Join(repo, "skills", "my-docs"), filepath.Join(p.OpenCodeSkills(), "my-docs"))
+	makeLink(t, filepath.Join(collection, "my-docs"), filepath.Join(p.OpenCodeSkills(), "my-docs"))
 	st, err := state.Load(p.FleetStateFile())
 	if err != nil {
 		t.Fatal(err)
@@ -627,16 +613,13 @@ func TestDoctorDoublePresenceGroupsByHarnessAndHomes(t *testing.T) {
 	p := doctorHome(t)
 	first := filepath.Join(p.Home, "repos-a")
 	second := filepath.Join(p.Home, "repos-b")
-	for _, repo := range []string{first, second} {
-		if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	writeAdoptConfig(t, p, `{"skillsRepos": ["`+first+`", "`+second+`"]}`)
-	writeSkillDir(t, filepath.Join(first, "skills"), "babysit-pr", "Reviews PRs.")
-	writeSkillDir(t, filepath.Join(second, "skills"), "babysit-pr", "Reviews PRs.")
-	writeSkillDir(t, filepath.Join(first, "skills"), "choose-flow", "Picks a flow.")
-	writeSkillDir(t, filepath.Join(second, "skills"), "choose-flow", "Picks a flow.")
+	firstCollection := filepath.Join(first, "skills")
+	secondCollection := filepath.Join(second, "skills")
+	writeAdoptConfig(t, p, `{"skillsDirs": ["`+firstCollection+`", "`+secondCollection+`"]}`)
+	writeSkillDir(t, firstCollection, "babysit-pr", "Reviews PRs.")
+	writeSkillDir(t, secondCollection, "babysit-pr", "Reviews PRs.")
+	writeSkillDir(t, firstCollection, "choose-flow", "Picks a flow.")
+	writeSkillDir(t, secondCollection, "choose-flow", "Picks a flow.")
 
 	out := runDoctor(t, p, "")
 

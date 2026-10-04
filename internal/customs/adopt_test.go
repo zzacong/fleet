@@ -25,22 +25,21 @@ func adoptHome(t *testing.T, storeSkills, repoSkills []string) (*paths.Paths, st
 		}
 	}
 	repo := filepath.Join(t.TempDir(), "repo")
+	collection := filepath.Join(repo, "skills")
 	f, err := config.Load(p.FleetConfigFile())
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.SetSkillsRepos([]string{repo})
+	f.SetSkillsDirs([]string{collection})
 	if err := config.Save(p.FleetConfigFile(), f); err != nil {
 		t.Fatal(err)
 	}
-	collection := filepath.Join(repo, "skills")
 	for _, name := range storeSkills {
 		writeSkill(t, p.SkillsStore(), name)
 	}
 	for _, name := range repoSkills {
 		writeSkill(t, collection, name)
 	}
-	t.Setenv("FLEET_REPO", "")
 	return p, collection
 }
 
@@ -493,15 +492,15 @@ func TestAdoptWithTrackedTargetButSkillInFleetHomeLinksToFleetHome(t *testing.T)
 		}
 	}
 	tracked := filepath.Join(t.TempDir(), "tracked")
+	trackedCollection := filepath.Join(tracked, "skills")
 	f, err := config.Load(p.FleetConfigFile())
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.SetSkillsRepos([]string{tracked})
+	f.SetSkillsDirs([]string{trackedCollection})
 	if err := config.Save(p.FleetConfigFile(), f); err != nil {
 		t.Fatal(err)
 	}
-	trackedCollection := filepath.Join(tracked, "skills")
 	// Skill only in fleet-home, not in the tracked collection or store.
 	writeSkill(t, p.FleetHomeSkills(), "my-notes")
 	if err := os.MkdirAll(trackedCollection, 0o755); err != nil {

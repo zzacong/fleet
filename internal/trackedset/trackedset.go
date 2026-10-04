@@ -1,23 +1,13 @@
-// Package trackedset owns the tracked set of versioned custom-skill
-// homes: the ordered repo roots every reader resolves. The order is the
-// FLEET_REPO env override when set (prepended, highest precedence, kept
-// working in code only and never persisted), then the config's explicit
-// non-fleet-home list in order, then every fleet-home checkout slot
-// present on disk (immediate child directories of the fleet-home checkout
-// parent, alphabetical by directory name). Entries are deduped by cleaned
-// path with the first occurrence winning. The unversioned fleet-home
-// fallback is not part of the set; display and adopt layers add it where
-// they need it.
+// Package trackedset owns the tracked set of custom-skill homes: the
+// explicit collection-dir list from the config's `skillsDirs` key, in
+// order. The order is precedence. There is no env override and no
+// convention-tracked checkout: every entry is an absolute directory the
+// user registered. The unversioned fleet-home fallback is not part of the
+// set; display and adopt layers add it where they need it.
 //
-// This is the only writer of the explicit list (Remember/Forget) and the
-// only reader of the ordering (List/CollectionDirs/Resolve). The skill
-// index, pull, and drop call in instead of re-deriving it.
-//
-// Add is the same domain seam for the path-tracked model: it owns the
-// explicit skillsDirs collection-dir list, appending one validated
-// directory at a time with every add rule in one place. Remove is the
-// matching unlist side, preserving the order of the rest. Ticket 05
-// collapses List onto the same list.
+// This is the only writer of the explicit list (Add/Remove) and the only
+// reader of the ordering (List). Doctor calls in instead of re-deriving
+// it.
 package trackedset
 
 import (
@@ -25,7 +15,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/zzacong/fleet/internal/config"
@@ -102,13 +91,12 @@ func untrackedDirError(clean string, tracked []string) error {
 // path against the working directory, then applies every add rule, reporting
 // the specific refusal: the path must exist, be a directory, hold at least
 // one skill, and scan. It refuses the canonical store, the fleet-home
-// fallback, any path inside fleet home, a path already tracked by the
-// transitional legacy repo list, a path nested inside or containing a
-// tracked dir, and a skill name that collides with another tracked home (an
-// explicit dir, a legacy collection, or the fallback). Re-adding a path
-// already in the explicit list is a no-op. A collision with the canonical
-// store is allowed — custom outranks canonical and doctor reports the
-// shadow.
+// fallback, any path inside fleet home, a path already tracked, a path
+// nested inside or containing a tracked dir, and a skill name that collides
+// with another tracked home (an explicit dir or the fallback). Re-adding a
+// path already in the explicit list is a no-op. A collision with the
+// canonical store is allowed — custom outranks canonical and doctor reports
+// the shadow.
 func Add(p *paths.Paths, arg string) (*AddResult, error) {
 	clean, err := resolveDirArg(arg)
 	if err != nil {
@@ -144,20 +132,7 @@ func Add(p *paths.Paths, arg string) (*AddResult, error) {
 			return &AddResult{Dir: clean, Added: false}, nil
 		}
 	}
-	// The transitional legacy repo list is a custom home too: a legacy repo's
-	// collection, or a dir nesting with one, is already tracked and would
-	// double-scan. Ticket 05 retires that list.
-	legacy, err := CollectionDirs(p)
-	if err != nil {
-		return nil, err
-	}
-	for _, dir := range legacy {
-		if filepath.Clean(dir) == clean {
-			return nil, fmt.Errorf("add-dir: %q is already tracked as a legacy repo's collection", clean)
-		}
-	}
-	tracked := append(append([]string(nil), existing...), legacy...)
-	if err := checkNested(clean, tracked); err != nil {
+	if err := checkNested(clean, existing); err != nil {
 		return nil, err
 	}
 
@@ -168,7 +143,7 @@ func Add(p *paths.Paths, arg string) (*AddResult, error) {
 	if len(skills) == 0 {
 		return nil, fmt.Errorf("add-dir: %q holds no skills — a collection dir's immediate children must each hold a SKILL.md", clean)
 	}
-	if err := checkNameCollisions(p, clean, skills, tracked); err != nil {
+	if err := checkNameCollisions(p, clean, skills, existing); err != nil {
 		return nil, err
 	}
 
@@ -211,10 +186,10 @@ func checkNested(clean string, existing []string) error {
 }
 
 // checkNameCollisions refuses a skill name the incoming collection shares
-// with another tracked home (an explicit dir or a transitional legacy
-// collection) or the fallback, listing every collision and the home already
-// holding it. A canonical-store collision is deliberately not checked:
-// custom outranks canonical, and doctor reports the shadow.
+// with another tracked home (an explicit dir or the fallback), listing every
+// collision and the home already holding it. A canonical-store collision is
+// deliberately not checked: custom outranks canonical, and doctor reports
+// the shadow.
 func checkNameCollisions(p *paths.Paths, clean string, incoming []scan.Skill, existing []string) error {
 	homes := append(append([]string(nil), existing...), p.FleetHomeSkills())
 	owner := map[string]string{}
@@ -255,171 +230,19 @@ func isInside(path, dir string) bool {
 	return rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// List resolves the ordered tracked set of versioned custom-skill homes
-// (repo roots). A missing checkout parent means no auto-tracked slots,
-// not an error. The retired single-pointer file key is never read:
-// old-key-only configs resolve as if unset.
+// List returns the explicit skillsDirs collection dirs in precedence
+// order, cleaned. It is the one reader of the order. Duplicate or nested
+// entries a hand-edited config carries are preserved here so doctor can
+// report them; scanning callers dedupe.
 func List(p *paths.Paths) ([]string, error) {
-	var out []string
-	seen := map[string]bool{}
-	add := func(path string) {
-		if path == "" {
-			return
-		}
-		clean := filepath.Clean(path)
-		if seen[clean] {
-			return
-		}
-		seen[clean] = true
-		out = append(out, clean)
-	}
-	if env := os.Getenv("FLEET_REPO"); env != "" {
-		abs, err := filepath.Abs(env)
-		if err != nil {
-			return nil, err
-		}
-		add(abs)
-	}
 	f, err := config.Load(p.FleetConfigFile())
 	if err != nil {
 		return nil, err
 	}
-	for _, repo := range f.SkillsRepos() {
-		add(repo)
-	}
-	entries, err := os.ReadDir(p.FleetReposDir())
-	if err != nil {
-		if os.IsNotExist(err) {
-			return out, nil
-		}
-		return nil, err
-	}
-	var names []string
-	for _, e := range entries {
-		if e.IsDir() {
-			names = append(names, e.Name())
-		}
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		add(filepath.Join(p.FleetReposDir(), name))
+	dirs := f.SkillsDirs()
+	out := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		out = append(out, filepath.Clean(dir))
 	}
 	return out, nil
-}
-
-// CollectionDirs returns each tracked repo root's skills-collection subdir
-// in List order. Entry i is the collection of List entry i: List already
-// dedupes by cleaned root, and distinct cleaned roots yield distinct
-// collections, so the two slices stay parallel and callers needing root
-// labels can zip them.
-func CollectionDirs(p *paths.Paths) ([]string, error) {
-	repos, err := List(p)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]string, 0, len(repos))
-	for _, root := range repos {
-		out = append(out, filepath.Clean(filepath.Join(root, "skills")))
-	}
-	return out, nil
-}
-
-// Remember applies the config-write rule: repo roots landing inside fleet
-// home write no config (auto-tracked by convention); roots outside append
-// to the explicit list (no duplicates, appending preserves existing
-// order). It reports whether the file was written.
-func Remember(p *paths.Paths, repoRoot string) (bool, error) {
-	clean := filepath.Clean(repoRoot)
-	if p.InsideFleetHome(clean) {
-		return false, nil
-	}
-	f, err := config.Load(p.FleetConfigFile())
-	if err != nil {
-		return false, err
-	}
-	for _, existing := range f.SkillsRepos() {
-		if filepath.Clean(existing) == clean {
-			return false, nil
-		}
-	}
-	f.SetSkillsRepos(append(f.SkillsRepos(), clean))
-	if err := config.Save(p.FleetConfigFile(), f); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-// Forget removes repoRoot from the explicit `skillsRepos` list, preserving
-// the order of the rest. It saves only when the entry was present, so
-// forgetting a convention-tracked checkout never creates or rewrites the
-// config file. It reports whether the file was written.
-func Forget(p *paths.Paths, repoRoot string) (bool, error) {
-	f, err := config.Load(p.FleetConfigFile())
-	if err != nil {
-		return false, err
-	}
-	kept := make([]string, 0, len(f.SkillsRepos()))
-	removed := false
-	for _, existing := range f.SkillsRepos() {
-		if filepath.Clean(existing) == repoRoot {
-			removed = true
-			continue
-		}
-		kept = append(kept, existing)
-	}
-	if !removed {
-		return false, nil
-	}
-	f.SetSkillsRepos(kept)
-	if err := config.Save(p.FleetConfigFile(), f); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-// Resolve maps a `<path-or-name>` argument onto the tracked set: either an
-// exact repo-root path match or a fleet-home slot name. Relative paths are
-// absolutized against the working directory before matching. An unknown
-// target errors listing the tracked repos.
-func Resolve(p *paths.Paths, arg string) (string, error) {
-	repos, err := List(p)
-	if err != nil {
-		return "", err
-	}
-	clean := filepath.Clean(arg)
-	for _, r := range repos {
-		if r == clean {
-			return r, nil
-		}
-	}
-	if !filepath.IsAbs(clean) {
-		if abs, absErr := filepath.Abs(clean); absErr == nil {
-			for _, r := range repos {
-				if r == abs {
-					return r, nil
-				}
-			}
-		}
-		if slot := filepath.Join(p.FleetReposDir(), clean); slot != clean {
-			for _, r := range repos {
-				if r == slot {
-					return r, nil
-				}
-			}
-		}
-	}
-	return "", unknownTargetError(arg, repos)
-}
-
-func unknownTargetError(arg string, repos []string) error {
-	if len(repos) == 0 {
-		return fmt.Errorf("unknown target %q: no skills repos are tracked", arg)
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "unknown target %q: tracked repos:", arg)
-	for _, r := range repos {
-		b.WriteString("\n- ")
-		b.WriteString(r)
-	}
-	return errors.New(b.String())
 }

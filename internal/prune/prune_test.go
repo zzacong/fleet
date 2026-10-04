@@ -16,7 +16,6 @@ import (
 // complete) with the given harnesses' config directories present.
 func fakeHome(t *testing.T, harnesses ...string) *paths.Paths {
 	t.Helper()
-	t.Setenv("FLEET_REPO", "")
 	p := paths.New(filepath.Join(t.TempDir(), "home"))
 	if err := os.MkdirAll(p.SkillsStore(), 0o755); err != nil {
 		t.Fatal(err)
@@ -332,12 +331,13 @@ func TestRunStateOnlyLeavesConfig(t *testing.T) {
 
 func TestRunIncompleteScanRemovesNothingAndNamesBlocker(t *testing.T) {
 	p := fakeHome(t, "opencode")
-	missing := filepath.Join(t.TempDir(), "moved-repo")
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	writeFile(t, blocker, "not a dir")
 	f, err := config.Load(p.FleetConfigFile())
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.SetSkillsRepos([]string{missing})
+	f.SetSkillsDirs([]string{blocker})
 	if err := config.Save(p.FleetConfigFile(), f); err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +350,6 @@ func TestRunIncompleteScanRemovesNothingAndNamesBlocker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	blocker := filepath.Join(missing, "skills")
 	if !slices.Contains(rep.Blocked, blocker) {
 		t.Fatalf("blocked = %v, want %s", rep.Blocked, blocker)
 	}

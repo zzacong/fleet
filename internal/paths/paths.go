@@ -113,13 +113,6 @@ func (p *Paths) FleetVersionCheckFile() string {
 	return join(p, ".config", "fleet", "version-check.json")
 }
 
-// FleetReposDir is the fleet-home checkout parent: every immediate child
-// directory is an auto-tracked customs checkout slot (presence on disk,
-// never a config write). Clones landing inside the fleet home stay
-// convention-tracked; clones outside are remembered in the config's
-// explicit repo-root list.
-func (p *Paths) FleetReposDir() string { return join(p, ".config", "fleet", "repos") }
-
 // InsideFleetHome reports whether path sits inside the fleet home dir
 // (~/.config/fleet). The check is lexical on the cleaned path; callers
 // pass expanded absolute paths. Relative paths classify as outside.

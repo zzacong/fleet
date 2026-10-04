@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/zzacong/fleet/internal/paths"
-	"github.com/zzacong/fleet/internal/pull"
 )
 
 // runRemoveDir runs `fleet skill remove-dir` against a fake home and returns
@@ -21,13 +20,12 @@ func runRemoveDir(t *testing.T, p *paths.Paths, args ...string) (string, string,
 	root.SetErr(errOut)
 	root.SetArgs(append([]string{"skill", "remove-dir"}, args...))
 	t.Cleanup(func() { stdoutTTY = func() bool { return false } })
-	t.Setenv("FLEET_REPO", "")
 	err := root.Execute()
 	return out.String(), errOut.String(), err
 }
 
 func TestRemoveDirUnlistsRemovesLinksAndKeepsFiles(t *testing.T) {
-	p := pullHome(t)
+	p := harnessHome(t)
 	collection := filepath.Join(t.TempDir(), "customs")
 	writeSkillDir(t, collection, "alpha", "Alpha.")
 	writeSkillDir(t, collection, "beta", "Beta.")
@@ -76,7 +74,7 @@ func TestRemoveDirUnlistsRemovesLinksAndKeepsFiles(t *testing.T) {
 }
 
 func TestRemoveDirUntrackedErrorsListingTracked(t *testing.T) {
-	p := pullHome(t)
+	p := harnessHome(t)
 	tracked := filepath.Join(t.TempDir(), "tracked")
 	writeSkillDir(t, tracked, "alpha", "Alpha.")
 	if _, _, err := runAddDir(t, p, tracked); err != nil {
@@ -93,7 +91,7 @@ func TestRemoveDirUntrackedErrorsListingTracked(t *testing.T) {
 }
 
 func TestRemoveDirMissingOnDiskStillUnlists(t *testing.T) {
-	p := pullHome(t)
+	p := harnessHome(t)
 	collection := filepath.Join(t.TempDir(), "customs")
 	writeSkillDir(t, collection, "alpha", "Alpha.")
 	if _, _, err := runAddDir(t, p, collection); err != nil {
@@ -118,7 +116,7 @@ func TestRemoveDirMissingOnDiskStillUnlists(t *testing.T) {
 }
 
 func TestRemoveDirResolvesTildeAndRelative(t *testing.T) {
-	p := pullHome(t)
+	p := harnessHome(t)
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
 	tilded := filepath.Join(fakeHome, "skills")
@@ -145,25 +143,5 @@ func TestRemoveDirResolvesTildeAndRelative(t *testing.T) {
 	}
 	if got := skillsDirsNow(t, p); len(got) != 0 {
 		t.Errorf("SkillsDirs() = %q, want empty", got)
-	}
-}
-
-func TestRemoveDirConsultsNoGitRunner(t *testing.T) {
-	p := pullHome(t)
-	collection := filepath.Join(t.TempDir(), "customs")
-	writeSkillDir(t, collection, "alpha", "Alpha.")
-	if _, _, err := runAddDir(t, p, collection); err != nil {
-		t.Fatal(err)
-	}
-
-	prev := newPullRunner
-	newPullRunner = func() pull.Runner {
-		t.Fatal("remove-dir consulted the git runner")
-		return nil
-	}
-	t.Cleanup(func() { newPullRunner = prev })
-
-	if _, _, err := runRemoveDir(t, p, collection); err != nil {
-		t.Fatalf("remove-dir with git unavailable: %v", err)
 	}
 }

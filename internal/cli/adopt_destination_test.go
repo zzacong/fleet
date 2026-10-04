@@ -19,7 +19,6 @@ func adoptDestHome(t *testing.T, storeSkills ...string) *paths.Paths {
 	t.Helper()
 	home := filepath.Join(t.TempDir(), "home")
 	p := paths.New(home)
-	t.Setenv("FLEET_REPO", "")
 	for _, name := range storeSkills {
 		writeSkillDir(t, p.SkillsStore(), name, "Does "+name+" things.")
 	}
@@ -70,7 +69,7 @@ func TestAdoptIntoFlagWinsWithNoPromptNoConfigWrite(t *testing.T) {
 	tracked := filepath.Join(t.TempDir(), "tracked")
 	configured := filepath.Join(t.TempDir(), "configured", "skills")
 	p := adoptDestHome(t, "my-notes")
-	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"], "adoptTarget": "`+configured+`"}`)
+	writeAdoptConfig(t, p, `{"skillsDirs": ["`+tracked+`/skills"], "adoptTarget": "`+configured+`"}`)
 	into := filepath.Join(t.TempDir(), "one-off", "skills")
 
 	out, err := runAdoptFull(t, p, "", "my-notes", "--into", into)
@@ -98,7 +97,7 @@ func TestAdoptConfiguredTargetWinsWithNoPrompt(t *testing.T) {
 	tracked := filepath.Join(t.TempDir(), "tracked")
 	configured := filepath.Join(t.TempDir(), "configured", "skills")
 	p := adoptDestHome(t, "my-notes")
-	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"], "adoptTarget": "`+configured+`"}`)
+	writeAdoptConfig(t, p, `{"skillsDirs": ["`+tracked+`/skills"], "adoptTarget": "`+configured+`"}`)
 
 	out, err := runAdoptFull(t, p, "", "my-notes")
 	if err != nil {
@@ -132,7 +131,7 @@ func TestAdoptPromptAlwaysIncludesFallback(t *testing.T) {
 	stubTTY(t, false, true)
 	tracked := filepath.Join(t.TempDir(), "tracked")
 	p := adoptDestHome(t, "my-notes")
-	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"]}`)
+	writeAdoptConfig(t, p, `{"skillsDirs": ["`+tracked+`/skills"]}`)
 	trackedSkills := filepath.Join(tracked, "skills")
 
 	// One tracked collection means two options; pick 2 (the fallback),
@@ -163,7 +162,7 @@ func TestAdoptPromptChoiceIsOneShotAndSavebackYesPersists(t *testing.T) {
 	stubTTY(t, false, true)
 	tracked := filepath.Join(t.TempDir(), "tracked")
 	p := adoptDestHome(t, "my-notes")
-	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"]}`)
+	writeAdoptConfig(t, p, `{"skillsDirs": ["`+tracked+`/skills"]}`)
 	trackedSkills := filepath.Join(tracked, "skills")
 
 	out, err := runAdoptFull(t, p, "1\ny\n", "my-notes")
@@ -189,7 +188,7 @@ func TestAdoptPipedAmbiguousFailsWithCandidatesAndFlagHint(t *testing.T) {
 	stubTTY(t, false, false)
 	tracked := filepath.Join(t.TempDir(), "tracked")
 	p := adoptDestHome(t, "my-notes")
-	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"]}`)
+	writeAdoptConfig(t, p, `{"skillsDirs": ["`+tracked+`/skills"]}`)
 
 	_, err := runAdoptFull(t, p, "", "my-notes")
 	if err == nil {
@@ -274,7 +273,7 @@ func TestAdoptPromptInvalidChoiceFailsWithoutMoving(t *testing.T) {
 	stubTTY(t, false, true)
 	tracked := filepath.Join(t.TempDir(), "tracked")
 	p := adoptDestHome(t, "my-notes")
-	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"]}`)
+	writeAdoptConfig(t, p, `{"skillsDirs": ["`+tracked+`/skills"]}`)
 
 	_, err := runAdoptFull(t, p, "9\n", "my-notes")
 	if err == nil || !strings.Contains(err.Error(), "invalid choice") {

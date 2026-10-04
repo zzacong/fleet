@@ -5,7 +5,7 @@
 // dormant: the state keeps the intent but sync creates no new off entry
 // for it, leaving any rule it already owns byte-for-byte. It makes every
 // custom home visible (linking every skill it holds into every installed
-// harness) so customs stay discoverable without an adopt or pull run. It
+// harness) so customs stay discoverable without an adopt run. It
 // also removes redundant per-agent links — symlinks into the canonical
 // store in harnesses that scan the store natively — so the skills CLI's
 // link spam stops accumulating. Sync never edits the state file.
@@ -68,7 +68,7 @@ func Run(p *paths.Paths) ([]Report, error) {
 	// installed skill enabled is worse.
 	idx, _, err := skillindex.Load(p)
 	if err != nil {
-		return nil, fmt.Errorf("resolve tracked repos: %w", err)
+		return nil, fmt.Errorf("resolve tracked dirs: %w", err)
 	}
 	complete := idx.Complete()
 
@@ -130,8 +130,8 @@ func Run(p *paths.Paths) ([]Report, error) {
 
 	// Custom visibility: every scanned custom home — each tracked
 	// collection plus the fleet-home fallback — is linked into every
-	// installed harness, so customs stay discoverable without an adopt or
-	// pull run. Idempotent: a home that is already visible reports nothing.
+	// installed harness, so customs stay discoverable without an adopt
+	// run. Idempotent: a home that is already visible reports nothing.
 	vis, err := customs.EnsureVisible(p)
 	if err != nil {
 		return nil, fmt.Errorf("make customs visible: %w", err)

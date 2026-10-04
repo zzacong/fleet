@@ -100,7 +100,7 @@ func pruneHarnessNames(p *paths.Paths, flags []string) ([]string, error) {
 }
 
 // printPruneReport renders what prune removed (or would remove) and what
-// it left alone, in the drop:/adopt: palette: dim command prefix, cyan
+// it left alone, in the remove-dir:/adopt: palette: dim command prefix, cyan
 // harness, green verb, and a faint axis annotation.
 func printPruneReport(out io.Writer, rep prune.Report, apply bool) error {
 	pal := newPalette(stdoutIsTTY())

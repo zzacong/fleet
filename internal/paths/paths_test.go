@@ -126,7 +126,6 @@ func TestFromEnvIgnoresUnknownFileKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("FLEET_HOME", home)
-	t.Setenv("FLEET_REPO", "")
 
 	p, err := FromEnv()
 	if err != nil {
@@ -142,7 +141,6 @@ func TestFromEnvIgnoresUnknownFileKeys(t *testing.T) {
 func TestFromEnvDoesNotPickUpUnrelatedGitCheckout(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("FLEET_HOME", home)
-	t.Setenv("FLEET_REPO", "")
 
 	// No config file -> empty
 	repo := filepath.Join(t.TempDir(), "unrelated")
@@ -161,13 +159,6 @@ func TestFromEnvDoesNotPickUpUnrelatedGitCheckout(t *testing.T) {
 	}
 	if p.Home != home {
 		t.Errorf("Home = %q, want %q (an unrelated checkout must not leak in)", p.Home, home)
-	}
-}
-
-func TestFleetReposDirDerivesFromInjectedHome(t *testing.T) {
-	p := New("/home/fake")
-	if got := p.FleetReposDir(); got != "/home/fake/.config/fleet/repos" {
-		t.Errorf("FleetReposDir() = %q, want /home/fake/.config/fleet/repos", got)
 	}
 }
 
@@ -211,7 +202,6 @@ func TestFleetConfigFileAndFleetHomeSkillsAreFleetHomeAware(t *testing.T) {
 	}
 	sandbox := filepath.Join(t.TempDir(), "home2")
 	t.Setenv("FLEET_HOME", sandbox)
-	t.Setenv("FLEET_REPO", "")
 	p2, err := FromEnv()
 	if err != nil {
 		t.Fatalf("FromEnv() error = %v", err)

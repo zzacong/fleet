@@ -16,7 +16,6 @@ import (
 // present, returning the Paths and the harness names installed.
 func fakeHome(t *testing.T, harnesses ...string) *paths.Paths {
 	t.Helper()
-	t.Setenv("FLEET_REPO", "")
 	p := paths.New(filepath.Join(t.TempDir(), "home"))
 	dirs := map[string]string{
 		"opencode": p.OpenCodeDir(),
@@ -53,15 +52,15 @@ func readFile(t *testing.T, path string) string {
 	return string(body)
 }
 
-// writeExplicitRepos records the explicit repo-root list in the fake home's
+// trackDirs records the explicit collection-dir list in the fake home's
 // config file, in precedence order.
-func writeExplicitRepos(t *testing.T, p *paths.Paths, roots ...string) {
+func trackDirs(t *testing.T, p *paths.Paths, dirs ...string) {
 	t.Helper()
 	f, err := config.Load(p.FleetConfigFile())
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.SetSkillsRepos(roots)
+	f.SetSkillsDirs(dirs)
 	if err := config.Save(p.FleetConfigFile(), f); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +134,8 @@ func TestRunNeverWritesCustomOffEntriesOnNativeScanners(t *testing.T) {
 	// no config off-entry; a canonical skill disabled for the same
 	// harnesses still projects to config.
 	p := fakeHome(t, "opencode", "pi", "codex", "claude", "cursor", "bob")
-	collection := filepath.Join(p.FleetReposDir(), "team", "skills")
+	collection := filepath.Join(t.TempDir(), "team", "skills")
+	trackDirs(t, p, collection)
 	writeFile(t, filepath.Join(collection, "my-notes", "SKILL.md"), "---\nname: my-notes\ndescription: notes\n---\n")
 	writeFile(t, filepath.Join(p.SkillsStore(), "tdd", "SKILL.md"), "---\nname: tdd\ndescription: tdd\n---\n")
 
@@ -196,7 +196,8 @@ func TestRunRemovesLegacyCustomOffEntry(t *testing.T) {
 	p := fakeHome(t, "opencode")
 	before := `{"permission": {"skill": {"my-notes": "deny"}}}`
 	writeFile(t, p.OpenCodeConfig(), before)
-	collection := filepath.Join(p.FleetReposDir(), "team", "skills")
+	collection := filepath.Join(t.TempDir(), "team", "skills")
+	trackDirs(t, p, collection)
 	writeFile(t, filepath.Join(collection, "my-notes", "SKILL.md"), "---\nname: my-notes\ndescription: notes\n---\n")
 
 	st, _ := state.Load(p.FleetStateFile())
@@ -406,11 +407,12 @@ func TestRunRemovesRedundantLinksAndLeavesTheRest(t *testing.T) {
 }
 
 func TestRunMakesCustomHomesVisible(t *testing.T) {
-	// A convention-tracked checkout and the fleet-home fallback each hold a
+	// A tracked collection dir and the fleet-home fallback each hold a
 	// custom skill. Sync links both skills into every installed harness,
-	// with no adopt or pull run.
+	// with no adopt run.
 	p := fakeHome(t, "opencode", "pi", "codex", "claude", "cursor", "bob")
-	collection := filepath.Join(p.FleetReposDir(), "team", "skills")
+	collection := filepath.Join(t.TempDir(), "team", "skills")
+	trackDirs(t, p, collection)
 	writeFile(t, filepath.Join(collection, "my-notes", "SKILL.md"), "---\nname: my-notes\ndescription: notes\n---\n")
 	writeFile(t, filepath.Join(p.FleetHomeSkills(), "scratch", "SKILL.md"), "---\nname: scratch\ndescription: scratch\n---\n")
 
@@ -458,9 +460,11 @@ func TestRunFirstTrackedHomeWinsCustomLinkCollision(t *testing.T) {
 	// to say.
 	p := fakeHome(t, "opencode", "pi", "codex", "claude", "cursor", "bob")
 	first, second := t.TempDir(), t.TempDir()
-	writeExplicitRepos(t, p, first, second)
-	writeFile(t, filepath.Join(first, "skills", "dup", "SKILL.md"), "---\nname: dup\ndescription: first\n---\n")
-	writeFile(t, filepath.Join(second, "skills", "dup", "SKILL.md"), "---\nname: dup\ndescription: second\n---\n")
+	firstCollection := filepath.Join(first, "skills")
+	secondCollection := filepath.Join(second, "skills")
+	trackDirs(t, p, firstCollection, secondCollection)
+	writeFile(t, filepath.Join(firstCollection, "dup", "SKILL.md"), "---\nname: dup\ndescription: first\n---\n")
+	writeFile(t, filepath.Join(secondCollection, "dup", "SKILL.md"), "---\nname: dup\ndescription: second\n---\n")
 
 	reports, err := Run(p)
 	if err != nil {
@@ -751,12 +755,15 @@ func TestRunProjectsDisableWhenScanIncomplete(t *testing.T) {
 	}
 }
 
-func TestRunProjectsDisableWhenTrackedRepoIsMissing(t *testing.T) {
-	// A tracked repo root recorded in config but missing from disk makes
-	// the scan incomplete even though the store exists.
+func TestRunProjectsDisableWhenTrackedDirScanFails(t *testing.T) {
+	// A tracked dir that fails to scan makes the scan incomplete even
+	// though the store exists: "installed nowhere" cannot be trusted, so
+	// sync projects the disable.
 	p := fakeHome(t, "pi")
 	scanComplete(t, p)
-	writeFile(t, p.FleetConfigFile(), `{"skillsRepos": ["`+filepath.Join(p.Home, "gone")+`"]}`)
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	writeFile(t, blocker, "not a dir")
+	trackDirs(t, p, blocker)
 	writeFile(t, p.PiSettings(), "{}\n")
 
 	st, _ := state.Load(p.FleetStateFile())

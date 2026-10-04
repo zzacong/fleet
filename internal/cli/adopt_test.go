@@ -18,12 +18,11 @@ import (
 // store. It returns the paths and the tracked collection dir.
 func adoptHome(t *testing.T, storeSkills ...string) (*paths.Paths, string) {
 	t.Helper()
-	t.Setenv("FLEET_REPO", "")
 	home := filepath.Join(t.TempDir(), "home")
 	p := paths.New(home)
 	tracked := filepath.Join(t.TempDir(), "tracked")
 	collection := filepath.Join(tracked, "skills")
-	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"], "adoptTarget": "`+collection+`"}`)
+	writeAdoptConfig(t, p, `{"skillsDirs": ["`+collection+`"], "adoptTarget": "`+collection+`"}`)
 	for _, name := range storeSkills {
 		writeSkillDir(t, p.SkillsStore(), name, "Does "+name+" things.")
 	}
@@ -287,7 +286,7 @@ func TestAdoptOnlyTouchesInstalledHarnesses(t *testing.T) {
 	p := paths.New(home)
 	tracked := filepath.Join(t.TempDir(), "tracked")
 	collection := filepath.Join(tracked, "skills")
-	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"], "adoptTarget": "`+collection+`"}`)
+	writeAdoptConfig(t, p, `{"skillsDirs": ["`+collection+`"], "adoptTarget": "`+collection+`"}`)
 	writeSkillDir(t, p.SkillsStore(), "my-notes", "desc.")
 	if err := os.MkdirAll(p.OpenCodeDir(), 0o755); err != nil {
 		t.Fatal(err)
@@ -322,7 +321,7 @@ func TestAdoptByFrontmatterNameKeepsTheDirName(t *testing.T) {
 	p := paths.New(home)
 	tracked := filepath.Join(t.TempDir(), "tracked")
 	collection := filepath.Join(tracked, "skills")
-	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"], "adoptTarget": "`+collection+`"}`)
+	writeAdoptConfig(t, p, `{"skillsDirs": ["`+collection+`"], "adoptTarget": "`+collection+`"}`)
 	skillDir := filepath.Join(p.SkillsStore(), "notes")
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)

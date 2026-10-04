@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zzacong/fleet/internal/customs"
+	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/trackedset"
 )
@@ -49,4 +50,10 @@ func newSkillRemoveDirCmd(p *paths.Paths) *cobra.Command {
 			return runSyncTo(out, p)
 		},
 	}
+}
+
+// formatUnlinked renders one removed managed link, mirroring adopt's
+// linked line: 'codex: unlinked "my-notes" → /repo/skills/my-notes'.
+func formatUnlinked(harnessName string, l harness.UnlinkResult, pal palette) string {
+	return fmt.Sprintf("%s: %s %q → %s", pal.info(harnessName), pal.good("unlinked"), l.Name, l.Target)
 }
