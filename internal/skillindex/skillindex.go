@@ -6,11 +6,15 @@
 // own collision policy (display picks the precedence winner, adopt
 // errors, doctor reports); the index only reports every copy in
 // precedence order, keyed by skill directory with lookup by frontmatter
-// name.
+// name. It also answers the shared "is this skill installed" question by
+// directory or frontmatter name, and carries the completeness signal
+// that says whether a negative answer can be trusted.
 package skillindex
 
 import (
+	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/scan"
@@ -28,12 +32,14 @@ type Hit struct {
 // precedence-first: tracked collections in tracked-set order, then the
 // fleet-home fallback, then the canonical store.
 type Index struct {
-	homes    []string
-	customs  []string
-	store    string
-	fallback string
-	byHome   map[string][]scan.Skill
-	byDir    map[string][]Hit
+	homes     []string
+	customs   []string
+	store     string
+	fallback  string
+	byHome    map[string][]scan.Skill
+	byDir     map[string][]Hit
+	installed map[string]bool
+	complete  bool
 }
 
 // CustomHomes returns the adopt-destination candidates without scanning:
@@ -41,41 +47,52 @@ type Index struct {
 // fleet-home fallback. Zero tracked collections yields exactly the
 // fallback, so no prompt is needed. Entries are deduped by cleaned path.
 func CustomHomes(p *paths.Paths) ([]string, error) {
-	collections, err := trackedset.CollectionDirs(p)
+	homes, _, err := customHomes(p)
+	return homes, err
+}
+
+// customHomes resolves the custom collection dirs together with the repo
+// roots that back them: roots[i] is the root for homes[i], and the
+// fleet-home fallback entry is rooted at "" so callers can treat its
+// absence as optional. Entries are deduped by cleaned collection path.
+func customHomes(p *paths.Paths) (homes, roots []string, err error) {
+	repos, err := trackedset.List(p)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	var out []string
 	seen := map[string]bool{}
-	add := func(dir string) {
+	add := func(dir, root string) {
 		clean := filepath.Clean(dir)
 		if clean == "" || seen[clean] {
 			return
 		}
 		seen[clean] = true
-		out = append(out, clean)
+		homes = append(homes, clean)
+		roots = append(roots, root)
 	}
-	for _, c := range collections {
-		add(c)
+	for _, root := range repos {
+		add(filepath.Join(root, "skills"), root)
 	}
-	add(p.FleetHomeSkills())
-	return out, nil
+	add(p.FleetHomeSkills(), "")
+	return homes, roots, nil
 }
 
 // Load scans every skill source once. The tracked set itself unreadable
 // is a hard error; per-home scan failures come back in the error map so
 // each caller applies its own rule (snapshot and adopt fail, doctor
-// skips). A missing home scans empty, never an error.
+// skips). A missing home scans empty, never an error. The result also
+// carries the completeness signal: see Complete.
 func Load(p *paths.Paths) (*Index, map[string]error, error) {
-	customs, err := CustomHomes(p)
+	customs, roots, err := customHomes(p)
 	if err != nil {
 		return nil, nil, err
 	}
 	x := &Index{
-		store:    filepath.Clean(p.SkillsStore()),
-		fallback: filepath.Clean(p.FleetHomeSkills()),
-		byHome:   map[string][]scan.Skill{},
-		byDir:    map[string][]Hit{},
+		store:     filepath.Clean(p.SkillsStore()),
+		fallback:  filepath.Clean(p.FleetHomeSkills()),
+		byHome:    map[string][]scan.Skill{},
+		byDir:     map[string][]Hit{},
+		installed: map[string]bool{},
 	}
 	seen := map[string]bool{}
 	add := func(dir string) (string, bool) {
@@ -104,9 +121,36 @@ func Load(p *paths.Paths) (*Index, map[string]error, error) {
 		x.byHome[home] = skills
 		for _, s := range skills {
 			x.byDir[s.Dir] = append(x.byDir[s.Dir], Hit{Skill: s, Home: home})
+			x.installed[s.Dir] = true
+			x.installed[s.Name] = true
 		}
 	}
+	// Complete requires the store to exist and scan, every tracked repo
+	// root to be present on disk, and no home to fail scanning. The
+	// fleet-home fallback is optional: its absence is not incomplete.
+	x.complete = dirExists(x.store) && trackedRootsPresent(roots) && len(errs) == 0
 	return x, errs, nil
+}
+
+// dirExists reports whether path is an existing directory.
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// trackedRootsPresent reports whether every tracked repo root backing a
+// custom collection is present on disk. The fleet-home fallback root is
+// "" and skipped, since its absence is optional by design.
+func trackedRootsPresent(roots []string) bool {
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+		if !dirExists(root) {
+			return false
+		}
+	}
+	return true
 }
 
 // Homes returns every source scanned, precedence-first.
@@ -174,4 +218,30 @@ func (x *Index) IsCustom(name string) bool {
 		}
 	}
 	return false
+}
+
+// Complete reports whether the "installed" answer can be trusted: the
+// canonical store exists and scans, every tracked repo root is present on
+// disk, and no home failed to scan. A caller may assert a skill is
+// uninstalled only when Complete is true.
+func (x *Index) Complete() bool {
+	return x.complete
+}
+
+// IsInstalled reports whether a skill lives in the canonical store or any
+// custom home, matched by directory name or frontmatter name.
+func (x *Index) IsInstalled(name string) bool {
+	return x.installed[name]
+}
+
+// InstalledNames returns the sorted, deduped set of names the index can
+// match as installed: every scanned skill's directory name and frontmatter
+// name across the canonical store and every custom home.
+func (x *Index) InstalledNames() []string {
+	out := make([]string, 0, len(x.installed))
+	for name := range x.installed {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }

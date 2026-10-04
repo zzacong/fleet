@@ -6,11 +6,11 @@ This is a prefactor with no user surface. Sync, doctor, and prune all consume it
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The index exposes the set of installed names across the canonical store and every tracked custom home, matched by directory name or frontmatter name.
-- [ ] The index exposes a completeness signal: true only when the store exists and scans and every tracked collection is present on disk and scans cleanly.
-- [ ] A missing fleet-home fallback does not mark the scan incomplete.
-- [ ] A tracked repo root missing from disk marks the scan incomplete.
-- [ ] A per-home scan error marks the scan incomplete.
-- [ ] Tests cover each case over a fake home.
+- [x] The index exposes the set of installed names across the canonical store and every tracked custom home, matched by directory name or frontmatter name.
+- [x] The index exposes a completeness signal: true only when the store exists and scans and every tracked collection is present on disk and scans cleanly.
+- [x] A missing fleet-home fallback does not mark the scan incomplete.
+- [x] A tracked repo root missing from disk marks the scan incomplete.
+- [x] A per-home scan error marks the scan incomplete.
+- [x] Tests cover each case over a fake home.
