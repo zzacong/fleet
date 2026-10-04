@@ -582,6 +582,23 @@ func TestSyncNoticeCountsCustomLinks(t *testing.T) {
 	}
 }
 
+func TestSyncNoticeCountsLegacyCleanup(t *testing.T) {
+	// The one-time migration's removals are user-visible in the launch
+	// notice too, so a silent TUI launch still reports what fleet changed.
+	reports := []fleetsync.Report{
+		{
+			Harness: "opencode",
+			Cleaned: []harness.LegacyRemoval{
+				{Harness: harness.OpenCode, Kind: "collection path", Entry: "/repo/skills"},
+			},
+		},
+	}
+	got := syncNotice(reports)
+	if !strings.Contains(got, "1 legacy entry removed") {
+		t.Errorf("syncNotice = %q, want the legacy count", got)
+	}
+}
+
 func TestViewCarriesBannerStatusAndHelp(t *testing.T) {
 	p := tuiHome(t)
 	stubTreeClient(t)

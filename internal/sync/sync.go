@@ -36,13 +36,17 @@ type Report struct {
 	// Removed lists the redundant links deleted from this harness's
 	// skills dir. Nothing else in the dir is ever touched.
 	Removed []harness.Entry
+	// Cleaned lists legacy fleet-owned config entries the one-time
+	// migration removed this run: old collection paths and custom
+	// off-entries from the pre-link model.
+	Cleaned []harness.LegacyRemoval
 }
 
 // Empty reports whether the report has nothing to tell the user.
 func (r Report) Empty() bool {
 	return len(r.Changed) == 0 && len(r.Flags) == 0 &&
 		len(r.Linked) == 0 && len(r.Unlinked) == 0 &&
-		len(r.Removed) == 0
+		len(r.Removed) == 0 && len(r.Cleaned) == 0
 }
 
 // Run projects the state file into every installed harness that can be
@@ -68,6 +72,23 @@ func Run(p *paths.Paths) ([]Report, error) {
 			order = append(order, string(h))
 		}
 		return r
+	}
+
+	// One-time legacy cleanup: remove the collection paths and custom
+	// off-entries the old wiring model left behind, before projection
+	// consults the configs. The scope is the current custom homes and
+	// names, so anything fleet did not write is left alone. Idempotent: a
+	// second sync finds nothing to remove.
+	cleaned, err := harness.CleanLegacy(p, harness.LegacyScope{
+		Homes:    idx.CustomHomes(),
+		IsCustom: idx.IsCustom,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("clean legacy entries: %w", err)
+	}
+	for _, rem := range cleaned {
+		r := reportFor(rem.Harness)
+		r.Cleaned = append(r.Cleaned, rem)
 	}
 
 	// Redundant links first: they are pure filesystem hygiene, independent

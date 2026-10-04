@@ -222,18 +222,22 @@ func fleetUpdateLine(p *paths.Paths) string {
 
 // syncNotice compresses sync's reports into one launch line.
 func syncNotice(reports []fleetsync.Report) string {
-	var removed, linked, unlinked, changed, flagged int
+	var cleaned, removed, linked, unlinked, changed, flagged int
 	for _, r := range reports {
+		cleaned += len(r.Cleaned)
 		removed += len(r.Removed)
 		linked += len(r.Linked)
 		unlinked += len(r.Unlinked)
 		changed += len(r.Changed)
 		flagged += len(r.Flags)
 	}
-	if removed+linked+unlinked+changed+flagged == 0 {
+	if cleaned+removed+linked+unlinked+changed+flagged == 0 {
 		return ""
 	}
 	var parts []string
+	if cleaned > 0 {
+		parts = append(parts, fmt.Sprintf("%d legacy entr%s removed", cleaned, pick(cleaned, "y", "ies")))
+	}
 	if removed > 0 {
 		parts = append(parts, fmt.Sprintf("%d redundant link%s removed", removed, plural(removed)))
 	}

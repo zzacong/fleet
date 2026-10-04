@@ -173,10 +173,10 @@ func TestRunNeverWritesCustomOffEntriesOnNativeScanners(t *testing.T) {
 	}
 }
 
-func TestRunLeavesLegacyCustomOffEntryAlone(t *testing.T) {
-	// A config off-entry recorded before this model is not sync's to
-	// remove here (the upgrade migration owns that); sync must not write a
-	// second entry or otherwise rewrite the file.
+func TestRunRemovesLegacyCustomOffEntry(t *testing.T) {
+	// A config off-entry recorded before the unified-link model is removed
+	// by the one-time cleanup: the custom's lever is now its managed link,
+	// so sync must not leave the stale deny behind or write a new one.
 	p := fakeHome(t, "opencode")
 	before := `{"permission": {"skill": {"my-notes": "deny"}}}`
 	writeFile(t, p.OpenCodeConfig(), before)
@@ -189,11 +189,30 @@ func TestRunLeavesLegacyCustomOffEntryAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := Run(p); err != nil {
+	reports, err := Run(p)
+	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if got := readFile(t, p.OpenCodeConfig()); got != before {
-		t.Errorf("opencode config rewritten:\n%s\nwas\n%s", got, before)
+	if got := readFile(t, p.OpenCodeConfig()); strings.Contains(got, `"my-notes"`) {
+		t.Errorf("legacy custom off-entry survived:\n%s", got)
+	}
+	// The removal is reported once, and no new custom off-entry replaces it.
+	var cleaned int
+	for _, r := range reports {
+		cleaned += len(r.Cleaned)
+	}
+	if cleaned != 1 {
+		t.Errorf("cleaned = %d, want 1 (the legacy custom deny)", cleaned)
+	}
+	// Idempotent: a second run finds nothing left to remove.
+	reports, err = Run(p)
+	if err != nil {
+		t.Fatalf("second Run() error = %v", err)
+	}
+	for _, r := range reports {
+		if len(r.Cleaned) != 0 {
+			t.Errorf("%s cleaned %v on the second run, want nothing", r.Harness, r.Cleaned)
+		}
 	}
 }
 
