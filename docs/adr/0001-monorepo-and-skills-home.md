@@ -13,6 +13,11 @@ Status: Accepted
 > superseded by ADR 0006. The collection now lives in its own repo
 > (`zzacong/agent-skills`); the designated-repo + fleet-home fallback model
 > below is unchanged.
+>
+> **Superseded in part (2026-10-04):** the designated-repo pointer and the
+> `FLEET_REPO` env override described below are superseded by ADR 0002's
+> multi-repo tracked set and then ADR 0007's path-tracked dirs. The unversioned
+> fleet-home fallback stands.
 
 ## Context
 

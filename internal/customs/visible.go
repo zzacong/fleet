@@ -1,8 +1,7 @@
 // Custom-skill visibility: the one fan-out that makes a collection dir
 // discoverable in every installed harness. Every harness reaches a custom
-// skill through a managed symlink per skill the collection holds. Adopt,
-// pull, and re-ensure all call in here instead of repeating the scan +
-// link tail.
+// skill through a managed symlink per skill the collection holds. Adopt
+// and re-ensure all call in here instead of repeating the scan + link tail.
 package customs
 
 import (
@@ -36,9 +35,24 @@ type Withdrawal struct {
 // link is the only disable lever, so its absence is the disable.
 // It fails fast on the first harness error, matching the tails it replaces.
 func MakeVisible(p *paths.Paths, collectionDir string) (*Visibility, error) {
+	return makeVisible(p, collectionDir, nil)
+}
+
+// makeVisible links collectionDir's skills, skipping any name already in
+// seen. MakeVisible passes no set, so it dedupes within the one home: the
+// first directory in scan order wins a name collision, matching the
+// listing. EnsureVisible threads one set across every custom home so the
+// first tracked home wins a cross-home collision — the same winner the
+// listing shows — instead of a later, lower-precedence home repointing the
+// link. A name is claimed whichever harnesses keep it: the choice of home
+// is independent of per-harness enablement.
+func makeVisible(p *paths.Paths, collectionDir string, seen map[string]bool) (*Visibility, error) {
 	st, err := state.Load(p.FleetStateFile())
 	if err != nil {
 		return nil, err
+	}
+	if seen == nil {
+		seen = map[string]bool{}
 	}
 	toggleable := linkToggleableSet(p)
 	skills, err := scan.ScanStore(collectionDir)
@@ -47,6 +61,10 @@ func MakeVisible(p *paths.Paths, collectionDir string) (*Visibility, error) {
 	}
 	vis := &Visibility{}
 	for _, s := range skills {
+		if seen[s.Name] {
+			continue
+		}
+		seen[s.Name] = true
 		keep := func(h harness.Harness) bool {
 			return !toggleable[h] || !st.IsDisabled(s.Name, string(h))
 		}
@@ -106,16 +124,20 @@ func PruneHiddenLinks(p *paths.Paths) ([]harness.UnlinkResult, error) {
 // EnsureVisible makes every scanned custom home discoverable: it is
 // MakeVisible applied to the skill index's custom homes (each tracked
 // collection plus the fleet-home fallback, which is where a configured
-// adopt target lands when it is tracked). Sync calls it so customs stay
-// visible without an adopt or pull run. It is idempotent like the
-// primitive underneath, and homes that do not exist on disk are skipped:
-// linking into a phantom home would make every later run report a change.
+// adopt target lands when it is tracked). Homes are visited in precedence
+// order and share one winner set, so a name in more than one home is linked
+// from the first home only — the same winner the listing shows. Sync calls
+// it so customs stay visible without an adopt run. It is idempotent
+// like the primitive underneath, and homes that do not exist on disk are
+// skipped: linking into a phantom home would make every later run report a
+// change.
 func EnsureVisible(p *paths.Paths) (*Visibility, error) {
 	homes, err := skillindex.CustomHomes(p)
 	if err != nil {
 		return nil, err
 	}
 	vis := &Visibility{}
+	seen := map[string]bool{}
 	for _, home := range homes {
 		info, err := os.Stat(home)
 		if err != nil {
@@ -127,7 +149,7 @@ func EnsureVisible(p *paths.Paths) (*Visibility, error) {
 		if !info.IsDir() {
 			continue
 		}
-		one, err := MakeVisible(p, home)
+		one, err := makeVisible(p, home, seen)
 		if err != nil {
 			return nil, err
 		}
@@ -137,7 +159,7 @@ func EnsureVisible(p *paths.Paths) (*Visibility, error) {
 }
 
 // Withdraw unlinks collectionDir's managed links: the inverse of
-// MakeVisible, run on drop. It fails fast on the first harness error.
+// MakeVisible, run on remove-dir. It fails fast on the first harness error.
 func Withdraw(p *paths.Paths, collectionDir string) (*Withdrawal, error) {
 	unlinked, err := harness.RemoveCustomLinks(p, collectionDir)
 	if err != nil {

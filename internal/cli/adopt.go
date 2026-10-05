@@ -28,8 +28,8 @@ func newSkillAdoptCmd(p *paths.Paths) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "adopt <name>",
 		Short: "Move a custom skill from the canonical store into the resolved custom home",
-		Long: "Move a custom skill from the canonical store (~/.agents/skills) into the resolved adopt destination, where it stays versioned.\n\n" +
-			"The destination resolves as: --into <skills-dir> for this run, else the configured adopt target (`fleet config set adopt-target <skills-dir>`), else a numbered choice over the tracked collections plus the fleet-home fallback (~/.config/fleet/skills). With no tracked collections the fallback wins with no prompt.\n\n" +
+		Long: "Move a custom skill from the canonical store (~/.agents/skills) into the resolved adopt destination, where it becomes a tracked custom.\n\n" +
+			"The destination resolves as: --into <skills-dir> for this run, else the configured adopt target (`fleet config set adopt-target <skills-dir>`), else a numbered choice over the tracked dirs plus the fleet-home fallback (~/.config/fleet/skills). With no tracked dirs the fallback wins with no prompt.\n\n" +
 			"The --into directory is a collection dir (not a repo root): it is created on demand and never saved. A choice from the prompt offers a yes/no follow-up (default No) to save it as the adopt target. Without a terminal an ambiguous adopt fails listing the candidates and the --into hint instead of blocking.\n\n" +
 			"Every installed harness (OpenCode, Pi, Codex, Claude Code, Cursor, Bob) gets one managed symlink to the skill in its own skills directory. Managed links point into the resolved home, never into the canonical store — a link into ~/.agents/skills would make the native scanners see the skill twice, so custom skills get none.\n\n" +
 			"Adoption is reversible by hand: move the directory back into ~/.agents/skills and fleet keeps working (doctor reports the leftovers). Adopting an already-adopted skill moves nothing but re-ensures the links.",

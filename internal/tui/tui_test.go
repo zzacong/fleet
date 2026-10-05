@@ -26,17 +26,17 @@ func tuiHome(t *testing.T) *paths.Paths {
 	t.Helper()
 	home := filepath.Join(t.TempDir(), "home")
 	p := paths.New(home)
-	t.Setenv("FLEET_REPO", "")
 	tracked := filepath.Join(t.TempDir(), "tracked")
+	collection := filepath.Join(tracked, "skills")
 	writeSkillDir(t, p.SkillsStore(), "tdd", "Red-green-refactor workflow for tests.")
 	writeSkillDir(t, p.SkillsStore(), "git-helper", "Wraps common git workflows.")
-	writeSkillDir(t, filepath.Join(tracked, "skills"), "my-notes", "Personal note-taking conventions.")
+	writeSkillDir(t, collection, "my-notes", "Personal note-taking conventions.")
 	for _, dir := range []string{p.OpenCodeDir(), p.PiDir(), p.CodexDir(), p.ClaudeDir(), p.CursorDir(), p.BobDir()} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	writeFile(t, p.FleetConfigFile(), `{"skillsRepos": ["`+tracked+`"]}`)
+	writeFile(t, p.FleetConfigFile(), `{"skillsDirs": ["`+collection+`"]}`)
 	writeLock(t, p)
 	return p
 }

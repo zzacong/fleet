@@ -133,11 +133,11 @@ func TestConfigRetiredSinglePointerKeyFailsWithHint(t *testing.T) {
 
 func TestConfigListShowsTrackedListAndTarget(t *testing.T) {
 	p := configHome(t)
-	repoA := filepath.Join(t.TempDir(), "repo-a")
-	repoB := filepath.Join(t.TempDir(), "repo-b")
+	dirA := filepath.Join(t.TempDir(), "collection-a")
+	dirB := filepath.Join(t.TempDir(), "collection-b")
 	target := filepath.Join(t.TempDir(), "customs", "skills")
 	body, _ := json.Marshal(map[string]any{
-		"skillsRepos": []string{repoA, repoB},
+		"skillsDirs":  []string{dirA, dirB},
 		"adoptTarget": target,
 	})
 	if err := os.MkdirAll(filepath.Dir(p.FleetConfigFile()), 0o755); err != nil {
@@ -150,7 +150,7 @@ func TestConfigListShowsTrackedListAndTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	for _, want := range []string{"skills-repos = " + repoA, "skills-repos = " + repoB, "adopt-target = " + target} {
+	for _, want := range []string{"skills-dirs = " + dirA, "skills-dirs = " + dirB, "adopt-target = " + target} {
 		if !strings.Contains(out, want) {
 			t.Errorf("list missing %q in %q", want, out)
 		}
@@ -160,14 +160,14 @@ func TestConfigListShowsTrackedListAndTarget(t *testing.T) {
 		t.Fatalf("list --json: %v", err)
 	}
 	var obj struct {
-		Repos  []string `json:"skillsRepos"`
+		Dirs   []string `json:"skillsDirs"`
 		Target string   `json:"adoptTarget"`
 	}
 	if err := json.Unmarshal([]byte(out), &obj); err != nil {
 		t.Fatalf("list --json not JSON: %v\n%s", err, out)
 	}
-	if len(obj.Repos) != 2 || obj.Repos[0] != repoA || obj.Repos[1] != repoB {
-		t.Errorf("list --json skillsRepos = %q, want order-preserved [%q %q]", obj.Repos, repoA, repoB)
+	if len(obj.Dirs) != 2 || obj.Dirs[0] != dirA || obj.Dirs[1] != dirB {
+		t.Errorf("list --json skillsDirs = %q, want order-preserved [%q %q]", obj.Dirs, dirA, dirB)
 	}
 	if obj.Target != target {
 		t.Errorf("list --json adoptTarget = %q, want %q", obj.Target, target)

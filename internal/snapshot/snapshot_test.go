@@ -144,9 +144,8 @@ func TestSnapshotFleetHomeFrontmatterFallback(t *testing.T) {
 func TestSnapshotExplicitRepoOnly(t *testing.T) {
 	home := t.TempDir()
 	p := paths.New(home)
-	t.Setenv("FLEET_REPO", "")
 	explicit := t.TempDir()
-	writeExplicitRepos(t, p, explicit)
+	writeTrackedDirs(t, p, explicit)
 	writeSkill(t, filepath.Join(explicit, "skills"), "repo-skill", "repo-skill", "repo description")
 	trees := &fakeTrees{}
 	report, _, err := Build(context.Background(), p, trees)
@@ -182,7 +181,7 @@ func TestSnapshotMissingDirsNotError(t *testing.T) {
 	}
 	// Also with an explicit entry whose collection dir is missing
 	explicit := t.TempDir()
-	writeExplicitRepos(t, p, explicit)
+	writeTrackedDirs(t, p, explicit)
 	report, _, err = Build(context.Background(), p, trees)
 	if err != nil {
 		t.Fatalf("Build with missing explicit collection dir should not error: %v", err)
@@ -226,9 +225,8 @@ func TestSnapshotTwoWayCanonicalFleetCollision(t *testing.T) {
 func TestSnapshotTwoWayCanonicalExplicitCollision(t *testing.T) {
 	home := t.TempDir()
 	p := paths.New(home)
-	t.Setenv("FLEET_REPO", "")
 	explicit := t.TempDir()
-	writeExplicitRepos(t, p, explicit)
+	writeTrackedDirs(t, p, explicit)
 	writeSkill(t, p.SkillsStore(), "shared-dir", "shared", "canonical desc")
 	writeSkill(t, filepath.Join(explicit, "skills"), "shared-repo-dir", "shared", "repo desc")
 	// Add a lock entry for canonical that would otherwise make it installed
@@ -268,9 +266,8 @@ func TestSnapshotTwoWayCanonicalExplicitCollision(t *testing.T) {
 func TestSnapshotTwoWayFleetExplicitCollision(t *testing.T) {
 	home := t.TempDir()
 	p := paths.New(home)
-	t.Setenv("FLEET_REPO", "")
 	explicit := t.TempDir()
-	writeExplicitRepos(t, p, explicit)
+	writeTrackedDirs(t, p, explicit)
 	writeSkill(t, p.FleetHomeSkills(), "shared-fleet-dir", "shared", "fleet desc")
 	writeSkill(t, filepath.Join(explicit, "skills"), "shared-repo-dir", "shared", "repo desc")
 	trees := &fakeTrees{}
@@ -293,9 +290,8 @@ func TestSnapshotTwoWayFleetExplicitCollision(t *testing.T) {
 func TestSnapshotThreeWayCollision(t *testing.T) {
 	home := t.TempDir()
 	p := paths.New(home)
-	t.Setenv("FLEET_REPO", "")
 	explicit := t.TempDir()
-	writeExplicitRepos(t, p, explicit)
+	writeTrackedDirs(t, p, explicit)
 	writeSkill(t, p.SkillsStore(), "shared-canonical-dir", "shared", "canonical desc")
 	writeSkill(t, p.FleetHomeSkills(), "shared-fleet-dir", "shared", "fleet desc")
 	writeSkill(t, filepath.Join(explicit, "skills"), "shared-repo-dir", "shared", "repo desc")
@@ -350,9 +346,8 @@ func TestSnapshotWithoutRepoShowsCanonicalPlusFleet(t *testing.T) {
 func TestSnapshotInstalledVsCustomOutdated(t *testing.T) {
 	home := t.TempDir()
 	p := paths.New(home)
-	t.Setenv("FLEET_REPO", "")
 	explicit := t.TempDir()
-	writeExplicitRepos(t, p, explicit)
+	writeTrackedDirs(t, p, explicit)
 	// installed skill in canonical with lock
 	writeSkill(t, p.SkillsStore(), "installed", "installed", "installed desc")
 	lock := `{"version":3,"skills":{"installed":{"source":"owner/repo","sourceType":"github","skillPath":"skills/installed/SKILL.md","skillFolderHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ref":""}} }`
@@ -465,9 +460,8 @@ func TestSnapshotSortingCustomFirst(t *testing.T) {
 func TestSnapshotJSONCustomAndNullOutdated(t *testing.T) {
 	home := t.TempDir()
 	p := paths.New(home)
-	t.Setenv("FLEET_REPO", "")
 	explicit := t.TempDir()
-	writeExplicitRepos(t, p, explicit)
+	writeTrackedDirs(t, p, explicit)
 	writeSkill(t, p.FleetHomeSkills(), "fleet-custom", "fleet-custom", "fleet")
 	writeSkill(t, filepath.Join(explicit, "skills"), "repo-custom", "repo-custom", "repo")
 	trees := &fakeTrees{}
@@ -503,39 +497,35 @@ func TestSnapshotJSONCustomAndNullOutdated(t *testing.T) {
 	}
 }
 
-// writeExplicitRepos records the explicit repo-root list in the fake home's
-// config file, in precedence order.
-func writeExplicitRepos(t *testing.T, p *paths.Paths, roots ...string) {
+// writeTrackedDirs records each fixture root's skills/ collection dir in
+// the fake home's skillsDirs list, in precedence order. The roots are test
+// fixtures; the tracked entries are the collection dirs.
+func writeTrackedDirs(t *testing.T, p *paths.Paths, roots ...string) {
 	t.Helper()
-	t.Setenv("FLEET_REPO", "")
 	f, err := config.Load(p.FleetConfigFile())
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.SetSkillsRepos(roots)
+	collections := make([]string, len(roots))
+	for i, root := range roots {
+		collections[i] = filepath.Join(root, "skills")
+	}
+	f.SetSkillsDirs(collections)
 	if err := config.Save(p.FleetConfigFile(), f); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// checkoutSkills returns the skills/ collection dir of one auto-tracked
-// fleet-home checkout slot.
-func checkoutSkills(p *paths.Paths, name string) string {
-	return filepath.Join(p.FleetReposDir(), name, "skills")
-}
-
 func TestSnapshotExplicitListOrderBeatsCheckout(t *testing.T) {
-	// The first explicit entry wins over a later explicit entry, the
-	// auto-tracked checkouts, the fallback, and the canonical store.
+	// The first tracked dir wins over a later tracked dir, the fallback,
+	// and the canonical store.
 	home := t.TempDir()
 	p := paths.New(home)
-	t.Setenv("FLEET_REPO", "")
 	explicitA := t.TempDir()
 	explicitB := t.TempDir()
-	writeExplicitRepos(t, p, explicitA, explicitB)
+	writeTrackedDirs(t, p, explicitA, explicitB)
 	writeSkill(t, p.SkillsStore(), "canon-dir", "shared", "canonical desc")
 	writeSkill(t, p.FleetHomeSkills(), "fallback-dir", "shared", "fallback desc")
-	writeSkill(t, checkoutSkills(p, "alpha"), "checkout-dir", "shared", "checkout desc")
 	writeSkill(t, filepath.Join(explicitB, "skills"), "explicit-dir", "shared", "explicit-b desc")
 	writeSkill(t, filepath.Join(explicitA, "skills"), "repo-dir", "shared", "explicit-a desc")
 
@@ -565,15 +555,15 @@ func TestSnapshotExplicitListOrderBeatsCheckout(t *testing.T) {
 func TestSnapshotTrackedSetUnionListsEverySource(t *testing.T) {
 	home := t.TempDir()
 	p := paths.New(home)
-	t.Setenv("FLEET_REPO", "")
 	explicitA := t.TempDir()
 	explicitB := t.TempDir()
-	writeExplicitRepos(t, p, explicitA, explicitB)
+	explicitC := t.TempDir()
+	writeTrackedDirs(t, p, explicitA, explicitB, explicitC)
 	writeSkill(t, p.SkillsStore(), "canon-only", "canon-only", "canonical")
 	writeSkill(t, p.FleetHomeSkills(), "fallback-only", "fallback-only", "fallback")
 	writeSkill(t, filepath.Join(explicitA, "skills"), "explicit-a-only", "explicit-a-only", "explicit a")
 	writeSkill(t, filepath.Join(explicitB, "skills"), "explicit-b-only", "explicit-b-only", "explicit b")
-	writeSkill(t, checkoutSkills(p, "zeta"), "checkout-only", "checkout-only", "checkout")
+	writeSkill(t, filepath.Join(explicitC, "skills"), "explicit-c-only", "explicit-c-only", "explicit c")
 
 	trees := &fakeTrees{}
 	report, _, err := Build(context.Background(), p, trees)
@@ -602,35 +592,24 @@ func TestSnapshotTrackedSetUnionListsEverySource(t *testing.T) {
 func TestSnapshotTrackedSetPrecedenceWinnerOnly(t *testing.T) {
 	home := t.TempDir()
 	p := paths.New(home)
-	t.Setenv("FLEET_REPO", "")
 	explicitA := t.TempDir()
 	explicitB := t.TempDir()
-	writeExplicitRepos(t, p, explicitA, explicitB)
+	writeTrackedDirs(t, p, explicitA, explicitB)
 	expA := filepath.Join(explicitA, "skills")
 	expB := filepath.Join(explicitB, "skills")
-	alpha := checkoutSkills(p, "alpha")
-	zeta := checkoutSkills(p, "zeta")
 
-	// One name in every source: the first explicit entry wins.
+	// One name in every source: the first tracked dir wins.
 	writeSkill(t, p.SkillsStore(), "canon-all", "all-four", "canonical desc")
 	writeSkill(t, p.FleetHomeSkills(), "fallback-all", "all-four", "fallback desc")
-	writeSkill(t, alpha, "alpha-all", "all-four", "alpha desc")
-	writeSkill(t, zeta, "zeta-all", "all-four", "zeta desc")
 	writeSkill(t, expB, "expb-all", "all-four", "explicit-b desc")
 	writeSkill(t, expA, "expa-all", "all-four", "explicit-a desc")
-	// Explicit list order beats everything below it.
+	// Tracked list order beats everything below it.
 	writeSkill(t, expB, "expb-order", "list-order", "explicit-b desc")
 	writeSkill(t, expA, "expa-order", "list-order", "explicit-a desc")
-	// Explicit beats checkouts, fallback, and canonical.
+	// Tracked beats fallback and canonical.
 	writeSkill(t, p.SkillsStore(), "canon-exp", "explicit-wins", "canonical desc")
 	writeSkill(t, p.FleetHomeSkills(), "fallback-exp", "explicit-wins", "fallback desc")
-	writeSkill(t, alpha, "alpha-exp", "explicit-wins", "alpha desc")
 	writeSkill(t, expB, "expb-exp", "explicit-wins", "explicit-b desc")
-	// Alphabetical checkout beats fallback and canonical.
-	writeSkill(t, p.SkillsStore(), "canon-co", "checkout-wins", "canonical desc")
-	writeSkill(t, p.FleetHomeSkills(), "fallback-co", "checkout-wins", "fallback desc")
-	writeSkill(t, zeta, "zeta-co", "checkout-wins", "zeta desc")
-	writeSkill(t, alpha, "alpha-co", "checkout-wins", "alpha desc")
 	// Fallback beats canonical.
 	writeSkill(t, p.SkillsStore(), "canon-fb", "fallback-wins", "canonical desc")
 	writeSkill(t, p.FleetHomeSkills(), "fallback-fb", "fallback-wins", "fallback desc")
@@ -656,7 +635,6 @@ func TestSnapshotTrackedSetPrecedenceWinnerOnly(t *testing.T) {
 		"all-four":      "explicit-a desc",
 		"list-order":    "explicit-a desc",
 		"explicit-wins": "explicit-b desc",
-		"checkout-wins": "alpha desc",
 		"fallback-wins": "fallback desc",
 	}
 	if len(report.Skills) != len(want) {
@@ -715,7 +693,6 @@ func TestSnapshotCustomLinkToggleState(t *testing.T) {
 	// state; a stored skill is visible natively either way.
 	home := t.TempDir()
 	p := paths.New(home)
-	t.Setenv("FLEET_REPO", "")
 	for _, dir := range []string{p.OpenCodeDir(), p.PiDir(), p.CodexDir(), p.BobDir(), p.CursorDir()} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
@@ -723,7 +700,7 @@ func TestSnapshotCustomLinkToggleState(t *testing.T) {
 	}
 	writeSkill(t, p.SkillsStore(), "tdd", "tdd", "stored")
 	explicit := t.TempDir()
-	writeExplicitRepos(t, p, explicit)
+	writeTrackedDirs(t, p, explicit)
 	writeSkill(t, filepath.Join(explicit, "skills"), "my-notes", "my-notes", "custom")
 	target := filepath.Join(explicit, "skills", "my-notes")
 

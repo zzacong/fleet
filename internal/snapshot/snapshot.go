@@ -55,15 +55,13 @@ func DefaultTreeClient(p *paths.Paths) outdated.TreeClient {
 }
 
 // Build scans the canonical store, every tracked custom home (the explicit
-// repo list in order, then the auto-tracked fleet-home checkouts
-// alphabetically, via the tracked set), and the unversioned fleet-home
-// fallback, then every installed harness's own config, and classifies each
-// installed skill's update state. Check failures come back as warnings, not
-// errors. Display precedence is explicit-list order, then fleet-home
-// checkouts alphabetically, then the unversioned fallback, then the
-// canonical store. A name present in more than one source appears once, from
-// the highest-precedence source. The other copy is not shown — its existence
-// is doctor drift.
+// skillsDirs list in order, via the tracked set), and the unversioned
+// fleet-home fallback, then every installed harness's own config, and
+// classifies each installed skill's update state. Check failures come back
+// as warnings, not errors. Display precedence is explicit-list order, then
+// the unversioned fallback, then the canonical store. A name present in
+// more than one source appears once, from the highest-precedence source.
+// The other copy is not shown — its existence is doctor drift.
 func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Report, []string, error) {
 	// Every skill source scanned once through the skill index (the
 	// canonical store, every tracked collection in precedence order,
@@ -71,7 +69,7 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 	// build, as before.
 	idx, errs, err := skillindex.Load(p)
 	if err != nil {
-		return nil, nil, fmt.Errorf("resolve tracked repos: %w", err)
+		return nil, nil, fmt.Errorf("resolve tracked dirs: %w", err)
 	}
 	if serr, ok := errs[idx.Store()]; ok {
 		return nil, nil, fmt.Errorf("scan canonical store: %w", serr)
@@ -84,7 +82,7 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 			continue
 		}
 		if serr, ok := errs[home]; ok {
-			return nil, nil, fmt.Errorf("scan tracked repo %s: %w", filepath.Dir(home), serr)
+			return nil, nil, fmt.Errorf("scan tracked dir %s: %w", home, serr)
 		}
 	}
 	// Union with precedence tracked order > fleet-home > canonical: apply

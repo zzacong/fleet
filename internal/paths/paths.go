@@ -113,13 +113,6 @@ func (p *Paths) FleetVersionCheckFile() string {
 	return join(p, ".config", "fleet", "version-check.json")
 }
 
-// FleetReposDir is the fleet-home checkout parent: every immediate child
-// directory is an auto-tracked customs checkout slot (presence on disk,
-// never a config write). Clones landing inside the fleet home stay
-// convention-tracked; clones outside are remembered in the config's
-// explicit repo-root list.
-func (p *Paths) FleetReposDir() string { return join(p, ".config", "fleet", "repos") }
-
 // InsideFleetHome reports whether path sits inside the fleet home dir
 // (~/.config/fleet). The check is lexical on the cleaned path; callers
 // pass expanded absolute paths. Relative paths classify as outside.
@@ -136,4 +129,16 @@ func (p *Paths) InsideFleetHome(path string) bool {
 		return true
 	}
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// IsUnder reports whether path is strictly below dir, lexically on cleaned
+// paths. It is the one containment test shared by link classification
+// (internal/harness), tracked-dir overlap checks (internal/trackedset), and
+// doctor's nesting checks, so the three never drift apart.
+func IsUnder(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

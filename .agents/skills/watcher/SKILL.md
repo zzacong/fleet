@@ -1,8 +1,8 @@
 ---
 name: watcher
 description: Watch every file fleet touches — snapshot and diff fleet state,
-  canonical store, and harness configs. Use when asked to watch what
-  fleet changed.
+  canonical store, harness configs, and tracked collection dirs. Use when
+  asked to watch what fleet changed.
 ---
 
 # Watcher
@@ -27,11 +27,17 @@ State lives in `scripts/watcher/.state/` (gitignored at `.gitignore:17`):
 `snap-*.json` snapshots + `contents/<sha1>` deduped file contents for line
 diffs. Do not commit state.
 
-## Watch targets (13, from `internal/paths/paths.go`)
+## Watch targets (13 fixed + one per tracked collection dir)
 
-Targets mirror fleet's `Paths` — every location fleet derives from an injected
-home root. Only the config file + skills dir per harness are watched (full
-harness dirs are not). Harness targets are derived from `internal/paths`.
+The fixed targets mirror fleet's `Paths` — every location fleet derives from an
+injected home root. Only the config file + skills dir per harness are watched
+(full harness dirs are not). Harness targets are derived from `internal/paths`.
+
+The watcher also reads `~/.config/fleet/config.json` and adds one target per
+`skillsDirs` entry, labelled `collection-1`, `collection-2`, … in list order, so
+an edit inside a tracked collection shows as a diff. A missing tracked dir
+reports as `MISSING` like any other target. A missing or malformed config, or a
+non-array `skillsDirs`, adds no collection targets.
 
 | Label             | Path                                | Kind                                                                                                                     |
 | ----------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -48,6 +54,7 @@ harness dirs are not). Harness targets are derived from `internal/paths`.
 | `cursor-skills`   | `~/.cursor/skills`                  | dir                                                                                                                      |
 | `bob-skills`      | `~/.bob/skills`                     | dir                                                                                                                      |
 | `bob-settings`    | `~/.bob/settings/settings.json`     | file                                                                                                                     |
+| `collection-N`    | each `skillsDirs` entry             | dir — one target per tracked collection dir, in `~/.config/fleet/config.json` list order                                 |
 
 ## Protocol
 

@@ -4,36 +4,19 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"testing"
 
 	"github.com/zzacong/fleet/internal/config"
 	"github.com/zzacong/fleet/internal/paths"
 )
 
-// indexHome builds a fake home with the given explicit repo roots in
-// config and the given fleet-home checkout slots on disk.
-func indexHome(t *testing.T, explicit []string, slots []string) *paths.Paths {
+// indexHome builds a fake home with the given collection dirs recorded in
+// the config's skillsDirs list.
+func indexHome(t *testing.T, collections ...string) *paths.Paths {
 	t.Helper()
-	t.Setenv("FLEET_REPO", "")
 	p := paths.New(filepath.Join(t.TempDir(), "home"))
-	if err := os.MkdirAll(filepath.Dir(p.FleetConfigFile()), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if len(explicit) > 0 {
-		quoted := make([]string, len(explicit))
-		for i, r := range explicit {
-			quoted[i] = `"` + r + `"`
-		}
-		body := `{"skillsRepos": [` + strings.Join(quoted, ", ") + `]}`
-		if err := os.WriteFile(p.FleetConfigFile(), []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, name := range slots {
-		if err := os.MkdirAll(filepath.Join(p.FleetReposDir(), name), 0o755); err != nil {
-			t.Fatal(err)
-		}
+	if len(collections) > 0 {
+		writeSkillsDirs(t, p, collections...)
 	}
 	return p
 }
@@ -62,30 +45,66 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-func TestCustomHomesOrdersTrackedThenFallback(t *testing.T) {
-	home := t.TempDir()
-	outsideB := filepath.Join(home, "explicit-b")
-	outsideA := filepath.Join(home, "explicit-a")
-	p := indexHome(t, []string{outsideB, outsideA}, []string{"zeta", "alpha"})
+// writeSkillsDirs records the explicit collection-dir list in the fake
+// home's config file.
+func writeSkillsDirs(t *testing.T, p *paths.Paths, dirs ...string) {
+	t.Helper()
+	f, err := config.Load(p.FleetConfigFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.SetSkillsDirs(dirs)
+	if err := config.Save(p.FleetConfigFile(), f); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSkillsDirsScannedDirectlyNoSubdirDerivation(t *testing.T) {
+	p := indexHome(t)
+	collection := filepath.Join(t.TempDir(), "collection")
+	// The tracked path is the collection: an immediate child with a
+	// SKILL.md is a skill.
+	writeIndexSkill(t, collection, "alpha", "alpha")
+	// A `skills/` subdir is NOT derived: a skill nested under
+	// collection/skills is invisible.
+	writeIndexSkill(t, filepath.Join(collection, "skills"), "nested", "nested")
+	writeSkillsDirs(t, p, collection)
+
+	idx, errs, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(errs) != 0 {
+		t.Fatalf("Load() errs = %v, want none", errs)
+	}
+	if !idx.IsInstalled("alpha") {
+		t.Errorf("IsInstalled(alpha) = false, want true: immediate child of the collection")
+	}
+	if idx.IsInstalled("nested") {
+		t.Errorf("IsInstalled(nested) = true, want false: no `skills/` derivation")
+	}
+	if got := idx.Skills(collection); len(got) != 1 || got[0].Dir != "alpha" {
+		t.Errorf("Skills(collection) = %+v, want just alpha", got)
+	}
+}
+
+func TestCustomHomesOrdersSkillsDirsThenFallback(t *testing.T) {
+	dirA := filepath.Join(t.TempDir(), "collection-a")
+	dirB := filepath.Join(t.TempDir(), "collection-b")
+	p := indexHome(t, dirA, dirB)
 
 	got, err := CustomHomes(p)
 	if err != nil {
 		t.Fatalf("CustomHomes() error = %v", err)
 	}
-	want := []string{
-		filepath.Join(outsideB, "skills"),
-		filepath.Join(outsideA, "skills"),
-		filepath.Join(p.FleetReposDir(), "alpha", "skills"),
-		filepath.Join(p.FleetReposDir(), "zeta", "skills"),
-		p.FleetHomeSkills(),
-	}
+	want := []string{dirA, dirB, p.FleetHomeSkills()}
 	if !equalStrings(got, want) {
 		t.Fatalf("CustomHomes() = %q, want %q", got, want)
 	}
 }
 
 func TestCustomHomesFallbackOnlyWhenNothingTracked(t *testing.T) {
-	p := indexHome(t, nil, nil)
+	p := indexHome(t)
 
 	got, err := CustomHomes(p)
 	if err != nil {
@@ -96,8 +115,69 @@ func TestCustomHomesFallbackOnlyWhenNothingTracked(t *testing.T) {
 	}
 }
 
+func TestSkillsDirsPrecedeFallbackAndStoreOnNameCollision(t *testing.T) {
+	collection := filepath.Join(t.TempDir(), "collection")
+	p := indexHome(t, collection)
+
+	writeIndexSkill(t, p.SkillsStore(), "canon", "clash")
+	writeIndexSkill(t, p.FleetHomeSkills(), "fleet", "clash")
+	writeIndexSkill(t, collection, "explicit", "clash")
+
+	idx, _, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	hits := idx.Lookup("clash")
+	if len(hits) != 3 {
+		t.Fatalf("Lookup(clash) = %d copies, want 3: %+v", len(hits), hits)
+	}
+	wantHomes := []string{collection, p.FleetHomeSkills(), p.SkillsStore()}
+	for i, want := range wantHomes {
+		if hits[i].Home != want {
+			t.Errorf("Lookup(clash)[%d].Home = %q, want %q", i, hits[i].Home, want)
+		}
+	}
+	if hits[0].Skill.Dir != "explicit" {
+		t.Errorf("winner dir = %q, want explicit (skillsDirs first)", hits[0].Skill.Dir)
+	}
+}
+
+func TestMissingSkillsDirScansEmptyWithoutError(t *testing.T) {
+	p := indexHome(t)
+	writeIndexSkill(t, p.SkillsStore(), "canon", "canon")
+	missing := filepath.Join(t.TempDir(), "gone")
+	writeSkillsDirs(t, p, missing)
+
+	idx, errs, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load() with a missing skillsDirs entry should not error: %v", err)
+	}
+	if len(errs) != 0 {
+		t.Fatalf("Load() errs = %v, want none for a missing collection", errs)
+	}
+	if got := idx.Skills(missing); len(got) != 0 {
+		t.Errorf("Skills(missing) = %+v, want empty", got)
+	}
+	found := false
+	for _, h := range idx.Homes() {
+		if h == missing {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("Homes() = %q, want the missing collection still listed", idx.Homes())
+	}
+	if !idx.Complete() {
+		t.Errorf("Complete() = false, want true: a missing optional skillsDirs entry is not a blocker")
+	}
+	if len(idx.BlockedHomes()) != 0 {
+		t.Errorf("BlockedHomes() = %q, want none", idx.BlockedHomes())
+	}
+}
+
 func TestLoadHomesEndsWithFallbackThenStore(t *testing.T) {
-	p := indexHome(t, nil, []string{"team"})
+	collection := filepath.Join(t.TempDir(), "team")
+	p := indexHome(t, collection)
 	writeIndexSkill(t, p.FleetHomeSkills(), "mine", "mine")
 
 	idx, errs, err := Load(p)
@@ -107,8 +187,7 @@ func TestLoadHomesEndsWithFallbackThenStore(t *testing.T) {
 	if len(errs) != 0 {
 		t.Fatalf("Load() errs = %v, want none", errs)
 	}
-	team := filepath.Join(p.FleetReposDir(), "team", "skills")
-	want := []string{team, p.FleetHomeSkills(), p.SkillsStore()}
+	want := []string{collection, p.FleetHomeSkills(), p.SkillsStore()}
 	if !equalStrings(idx.Homes(), want) {
 		t.Fatalf("Homes() = %q, want %q", idx.Homes(), want)
 	}
@@ -121,10 +200,10 @@ func TestLoadHomesEndsWithFallbackThenStore(t *testing.T) {
 }
 
 func TestOrderedListsEveryCopyPrecedenceFirst(t *testing.T) {
-	p := indexHome(t, nil, []string{"team"})
-	team := filepath.Join(p.FleetReposDir(), "team", "skills")
+	collection := filepath.Join(t.TempDir(), "team")
+	p := indexHome(t, collection)
 	writeIndexSkill(t, p.SkillsStore(), "notes", "notes")
-	writeIndexSkill(t, team, "notes", "notes")
+	writeIndexSkill(t, collection, "notes", "notes")
 
 	idx, _, err := Load(p)
 	if err != nil {
@@ -134,13 +213,13 @@ func TestOrderedListsEveryCopyPrecedenceFirst(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("Ordered() found %d copies, want 2", len(got))
 	}
-	if got[0].Home != team || got[1].Home != p.SkillsStore() {
-		t.Fatalf("Ordered() homes = [%q %q], want team then store", got[0].Home, got[1].Home)
+	if got[0].Home != collection || got[1].Home != p.SkillsStore() {
+		t.Fatalf("Ordered() homes = [%q %q], want collection then store", got[0].Home, got[1].Home)
 	}
 }
 
 func TestLookupMatchesDirBeforeName(t *testing.T) {
-	p := indexHome(t, nil, nil)
+	p := indexHome(t)
 	// Frontmatter name differs from directory: dir "renamed", name "notes".
 	writeIndexSkill(t, p.SkillsStore(), "renamed", "notes")
 	writeIndexSkill(t, p.FleetHomeSkills(), "notes", "other")
@@ -162,18 +241,10 @@ func TestLookupMatchesDirBeforeName(t *testing.T) {
 }
 
 func TestLoadDedupesOverlappingHomes(t *testing.T) {
-	// An explicit repo root at the fleet home itself collects to the
-	// fallback dir: one home, not two.
-	p := indexHome(t, nil, nil)
-	fleetRoot := filepath.Dir(p.FleetHomeSkills())
-	f, err := config.Load(p.FleetConfigFile())
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.SetSkillsRepos([]string{fleetRoot})
-	if err := config.Save(p.FleetConfigFile(), f); err != nil {
-		t.Fatal(err)
-	}
+	// A skillsDirs entry that is the fleet-home fallback itself is one
+	// home, not two.
+	p := indexHome(t)
+	writeSkillsDirs(t, p, p.FleetHomeSkills())
 
 	idx, _, err := Load(p)
 	if err != nil {
@@ -189,15 +260,12 @@ func TestLoadDedupesOverlappingHomes(t *testing.T) {
 }
 
 func TestLoadReportsPerHomeErrors(t *testing.T) {
-	p := indexHome(t, nil, []string{"team"})
 	// A regular file where a collection dir should be: ReadDir fails.
-	blocker := filepath.Join(p.FleetReposDir(), "team", "skills")
-	if err := os.MkdirAll(filepath.Dir(blocker), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	blocker := filepath.Join(t.TempDir(), "blocker")
 	if err := os.WriteFile(blocker, []byte("not a dir"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	p := indexHome(t, blocker)
 
 	idx, errs, err := Load(p)
 	if err != nil {
@@ -222,7 +290,7 @@ func TestLoadReportsPerHomeErrors(t *testing.T) {
 }
 
 func TestCompleteWhenStoreScansAndFallbackMissing(t *testing.T) {
-	p := indexHome(t, nil, nil)
+	p := indexHome(t)
 	writeIndexSkill(t, p.SkillsStore(), "alpha", "alpha")
 
 	idx, errs, err := Load(p)
@@ -238,7 +306,7 @@ func TestCompleteWhenStoreScansAndFallbackMissing(t *testing.T) {
 }
 
 func TestMissingStoreMakesScanIncomplete(t *testing.T) {
-	p := indexHome(t, nil, nil)
+	p := indexHome(t)
 	writeIndexSkill(t, p.FleetHomeSkills(), "custom", "custom")
 
 	idx, _, err := Load(p)
@@ -250,27 +318,13 @@ func TestMissingStoreMakesScanIncomplete(t *testing.T) {
 	}
 }
 
-func TestMissingTrackedRepoRootMakesScanIncomplete(t *testing.T) {
-	missing := filepath.Join(t.TempDir(), "moved-repo")
-	p := indexHome(t, []string{missing}, nil)
-	writeIndexSkill(t, p.SkillsStore(), "alpha", "alpha")
-
-	idx, _, err := Load(p)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if idx.Complete() {
-		t.Fatalf("Complete() = true, want false: tracked repo root %q is missing", missing)
-	}
-}
-
 func TestPerHomeScanErrorMakesScanIncomplete(t *testing.T) {
-	p := indexHome(t, nil, []string{"team"})
-	writeIndexSkill(t, p.SkillsStore(), "alpha", "alpha")
-	blocker := filepath.Join(p.FleetReposDir(), "team", "skills")
+	blocker := filepath.Join(t.TempDir(), "blocker")
 	if err := os.WriteFile(blocker, []byte("not a dir"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	p := indexHome(t, blocker)
+	writeIndexSkill(t, p.SkillsStore(), "alpha", "alpha")
 
 	idx, _, err := Load(p)
 	if err != nil {
@@ -282,13 +336,10 @@ func TestPerHomeScanErrorMakesScanIncomplete(t *testing.T) {
 }
 
 func TestInstalledNamesSpanEveryHome(t *testing.T) {
-	explicitRoot := filepath.Join(t.TempDir(), "explicit-repo")
-	p := indexHome(t, []string{explicitRoot}, []string{"team"})
-	explicit := filepath.Join(explicitRoot, "skills")
-	team := filepath.Join(p.FleetReposDir(), "team", "skills")
+	collection := filepath.Join(t.TempDir(), "collection")
+	p := indexHome(t, collection)
 	writeIndexSkill(t, p.SkillsStore(), "store-dir", "store-name")
-	writeIndexSkill(t, explicit, "explicit-dir", "explicit-name")
-	writeIndexSkill(t, team, "repo-dir", "repo-name")
+	writeIndexSkill(t, collection, "explicit-dir", "explicit-name")
 	writeIndexSkill(t, p.FleetHomeSkills(), "fb-dir", "fb-name")
 
 	idx, _, err := Load(p)
@@ -301,7 +352,6 @@ func TestInstalledNamesSpanEveryHome(t *testing.T) {
 	for _, name := range []string{
 		"store-dir", "store-name",
 		"explicit-dir", "explicit-name",
-		"repo-dir", "repo-name",
 		"fb-dir", "fb-name",
 	} {
 		if !idx.IsInstalled(name) {
@@ -314,7 +364,6 @@ func TestInstalledNamesSpanEveryHome(t *testing.T) {
 	want := []string{
 		"explicit-dir", "explicit-name",
 		"fb-dir", "fb-name",
-		"repo-dir", "repo-name",
 		"store-dir", "store-name",
 	}
 	if !equalStrings(idx.InstalledNames(), want) {
@@ -322,15 +371,13 @@ func TestInstalledNamesSpanEveryHome(t *testing.T) {
 	}
 }
 
-func TestBlockedHomesNameMissingRootAndScanError(t *testing.T) {
-	missing := filepath.Join(t.TempDir(), "moved-repo")
-	p := indexHome(t, []string{missing}, []string{"team"})
-	writeIndexSkill(t, p.SkillsStore(), "alpha", "alpha")
-	// team's collection is a regular file, not a dir: the scan fails.
-	blocker := filepath.Join(p.FleetReposDir(), "team", "skills")
+func TestBlockedHomesNameScanError(t *testing.T) {
+	blocker := filepath.Join(t.TempDir(), "blocker")
 	if err := os.WriteFile(blocker, []byte("not a dir"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	p := indexHome(t, blocker)
+	writeIndexSkill(t, p.SkillsStore(), "alpha", "alpha")
 
 	idx, _, err := Load(p)
 	if err != nil {
@@ -339,7 +386,7 @@ func TestBlockedHomesNameMissingRootAndScanError(t *testing.T) {
 	if idx.Complete() {
 		t.Fatal("Complete() = true, want false")
 	}
-	want := []string{filepath.Join(missing, "skills"), blocker}
+	want := []string{blocker}
 	sort.Strings(want)
 	if !equalStrings(idx.BlockedHomes(), want) {
 		t.Fatalf("BlockedHomes() = %q, want %q", idx.BlockedHomes(), want)
@@ -348,7 +395,7 @@ func TestBlockedHomesNameMissingRootAndScanError(t *testing.T) {
 
 func TestBlockedHomesEmptyWhenCompleteOrOnlyStoreMissing(t *testing.T) {
 	// A complete scan has no blocker.
-	p := indexHome(t, nil, nil)
+	p := indexHome(t)
 	writeIndexSkill(t, p.SkillsStore(), "alpha", "alpha")
 	idx, _, err := Load(p)
 	if err != nil {
@@ -360,7 +407,7 @@ func TestBlockedHomesEmptyWhenCompleteOrOnlyStoreMissing(t *testing.T) {
 
 	// A missing canonical store makes the scan incomplete, but doctor
 	// reports it as a missing directory, not as a blocked home.
-	empty := indexHome(t, nil, nil)
+	empty := indexHome(t)
 	idx2, _, err := Load(empty)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)

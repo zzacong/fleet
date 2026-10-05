@@ -6,33 +6,32 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zzacong/fleet/internal/config"
 	"github.com/zzacong/fleet/internal/paths"
 )
 
-// destinationHome builds a fake home with no legacy repo pointer, the given
-// explicit repo roots in config, and the given fleet-home checkout slots on
-// disk. Store skills are written for adopt-move tests.
-func destinationHome(t *testing.T, explicit []string, slots []string, storeSkills ...string) *paths.Paths {
+// destinationHome builds a fake home with no retired repo pointer, the
+// given tracked roots' skills/ collections in config, and harness dirs
+// installed. Store skills are written for adopt-move tests.
+func destinationHome(t *testing.T, roots []string, storeSkills ...string) *paths.Paths {
 	t.Helper()
 	home := filepath.Join(t.TempDir(), "home")
 	p := paths.New(home)
-	t.Setenv("FLEET_REPO", "")
 	cfgDir := filepath.Dir(p.FleetConfigFile())
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if len(explicit) > 0 {
-		quoted := make([]string, len(explicit))
-		for i, r := range explicit {
-			quoted[i] = `"` + r + `"`
-		}
-		body := `{"skillsRepos": [` + strings.Join(quoted, ", ") + `]}`
-		if err := os.WriteFile(p.FleetConfigFile(), []byte(body), 0o644); err != nil {
+	if len(roots) > 0 {
+		f, err := config.Load(p.FleetConfigFile())
+		if err != nil {
 			t.Fatal(err)
 		}
-	}
-	for _, name := range slots {
-		if err := os.MkdirAll(filepath.Join(p.FleetReposDir(), name), 0o755); err != nil {
+		collections := make([]string, len(roots))
+		for i, root := range roots {
+			collections[i] = filepath.Join(root, "skills")
+		}
+		f.SetSkillsDirs(collections)
+		if err := config.Save(p.FleetConfigFile(), f); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -48,7 +47,7 @@ func destinationHome(t *testing.T, explicit []string, slots []string, storeSkill
 }
 
 func TestAdoptToMovesStoreSkillIntoExplicitTarget(t *testing.T) {
-	p := destinationHome(t, nil, nil, "my-notes")
+	p := destinationHome(t, nil, "my-notes")
 	target := filepath.Join(t.TempDir(), "one-off", "skills")
 
 	rep, err := AdoptTo(p, "my-notes", target)
@@ -75,7 +74,7 @@ func TestAdoptToMovesStoreSkillIntoExplicitTarget(t *testing.T) {
 
 func TestAdoptToProceedsIntoUnscannedTarget(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "tracked")
-	p := destinationHome(t, []string{outside}, nil, "my-notes")
+	p := destinationHome(t, []string{outside}, "my-notes")
 	unscanned := filepath.Join(t.TempDir(), "elsewhere", "skills")
 
 	rep, err := AdoptTo(p, "my-notes", unscanned)
@@ -88,7 +87,7 @@ func TestAdoptToProceedsIntoUnscannedTarget(t *testing.T) {
 }
 
 func TestAdoptToReEnsuresWhenAlreadyThere(t *testing.T) {
-	p := destinationHome(t, nil, nil)
+	p := destinationHome(t, nil)
 	writeSkill(t, p.FleetHomeSkills(), "my-notes")
 
 	rep, err := AdoptTo(p, "my-notes", p.FleetHomeSkills())
@@ -107,7 +106,7 @@ func TestAdoptToReEnsuresDespiteSameHomeDuplicateName(t *testing.T) {
 	// Two directories in one collection declare the same frontmatter name.
 	// That is not double presence across homes, so adopt re-ensures the
 	// directory match instead of refusing.
-	p := destinationHome(t, nil, nil)
+	p := destinationHome(t, nil)
 	writeSkill(t, p.FleetHomeSkills(), "foo")
 	alias := filepath.Join(p.FleetHomeSkills(), "bar", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(alias), 0o755); err != nil {
@@ -129,7 +128,7 @@ func TestAdoptToReEnsuresDespiteSameHomeDuplicateName(t *testing.T) {
 
 func TestAdoptToRefusesDoublePresenceAcrossTrackedSet(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "tracked")
-	p := destinationHome(t, []string{outside}, nil, "my-notes")
+	p := destinationHome(t, []string{outside}, "my-notes")
 	writeSkill(t, filepath.Join(outside, "skills"), "my-notes")
 
 	_, err := AdoptTo(p, "my-notes", p.FleetHomeSkills())

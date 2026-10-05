@@ -613,9 +613,9 @@ func TestLsWithEmptyHomeReportsNoSkills(t *testing.T) {
 func TestLsMarksTrackedCustomsAndPrefersTheStoreOnNameClashes(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
 	p := paths.New(home)
-	t.Setenv("FLEET_REPO", "")
 	explicit := filepath.Join(t.TempDir(), "explicit")
-	cfg, err := json.Marshal(map[string]any{"skillsRepos": []string{explicit}})
+	tracked := filepath.Join(explicit, "skills")
+	cfg, err := json.Marshal(map[string]any{"skillsDirs": []string{tracked}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -625,7 +625,6 @@ func TestLsMarksTrackedCustomsAndPrefersTheStoreOnNameClashes(t *testing.T) {
 	if err := os.WriteFile(p.FleetConfigFile(), cfg, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	tracked := filepath.Join(explicit, "skills")
 
 	// A tracked skill that was never adopted by fleet (hand-placed), and an
 	// adopted skill whose lockfile entry lingers from its pre-adoption
@@ -851,9 +850,9 @@ func TestLsFleetHomeAndCanonicalCollisionPrefersFleet(t *testing.T) {
 func TestLsThreeWayCollisionPrefersExplicit(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
 	p := paths.New(home)
-	t.Setenv("FLEET_REPO", "")
 	explicit := filepath.Join(t.TempDir(), "explicit")
-	cfg, err := json.Marshal(map[string]any{"skillsRepos": []string{explicit}})
+	tracked := filepath.Join(explicit, "skills")
+	cfg, err := json.Marshal(map[string]any{"skillsDirs": []string{tracked}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -863,7 +862,6 @@ func TestLsThreeWayCollisionPrefersExplicit(t *testing.T) {
 	if err := os.WriteFile(p.FleetConfigFile(), cfg, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	tracked := filepath.Join(explicit, "skills")
 	writeNamedSkill := func(store, dir, name, desc string) {
 		path := filepath.Join(store, dir, "SKILL.md")
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -911,9 +909,10 @@ func TestLsThreeWayCollisionPrefersExplicit(t *testing.T) {
 func TestLsListsTrackedSetUnionWithExplicitPrecedence(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
 	p := paths.New(home)
-	t.Setenv("FLEET_REPO", "")
 	explicit := filepath.Join(t.TempDir(), "explicit")
-	cfg, err := json.Marshal(map[string]any{"skillsRepos": []string{explicit}})
+	explicitCollection := filepath.Join(explicit, "skills")
+	checkout := filepath.Join(t.TempDir(), "checkout")
+	cfg, err := json.Marshal(map[string]any{"skillsDirs": []string{explicitCollection, checkout}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -925,12 +924,12 @@ func TestLsListsTrackedSetUnionWithExplicitPrecedence(t *testing.T) {
 	}
 	writeSkillDir(t, p.SkillsStore(), "canon-one", "Canonical one.")
 	writeSkillDir(t, p.FleetHomeSkills(), "fallback-one", "Fallback one.")
-	writeSkillDir(t, filepath.Join(explicit, "skills"), "explicit-one", "Explicit one.")
-	writeSkillDir(t, filepath.Join(p.FleetReposDir(), "alpha", "skills"), "checkout-one", "Checkout one.")
-	// A name in both the canonical store and an explicit repo reports
-	// once, from the explicit repo.
+	writeSkillDir(t, explicitCollection, "explicit-one", "Explicit one.")
+	writeSkillDir(t, checkout, "checkout-one", "Checkout one.")
+	// A name in both the canonical store and a tracked dir reports
+	// once, from the tracked dir.
 	writeSkillDir(t, p.SkillsStore(), "clash", "canonical description")
-	writeNamedSkillCLI(t, filepath.Join(explicit, "skills"), "clash-explicit", "clash", "explicit description")
+	writeNamedSkillCLI(t, explicitCollection, "clash-explicit", "clash", "explicit description")
 	for _, dir := range []string{p.OpenCodeDir()} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
@@ -977,6 +976,68 @@ func TestLsListsTrackedSetUnionWithExplicitPrecedence(t *testing.T) {
 	}
 	if len(report.Skills) != 5 {
 		t.Errorf("skills = %d, want 5 winner-only rows", len(report.Skills))
+	}
+}
+
+func TestLsListsSkillsDirsCollectionDirectly(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	p := paths.New(home)
+	collection := filepath.Join(t.TempDir(), "collection")
+	// The listed dir is the collection: an immediate child with a SKILL.md
+	// is a skill.
+	writeSkillDir(t, collection, "dir-skill", "From a collection dir.")
+	// A legacy `skills/` subdir is not derived from a listed dir.
+	writeSkillDir(t, filepath.Join(collection, "skills"), "nested", "Nested under skills/.")
+	writeSkillsDirsConfig(t, p, collection)
+
+	out, _, err := runLsCapture(t, p, &fakeTrees{}, "--json")
+	if err != nil {
+		t.Fatalf("ls with a skillsDirs collection: error = %v", err)
+	}
+	var report struct {
+		Skills []struct {
+			Name   string `json:"name"`
+			Custom bool   `json:"custom"`
+		} `json:"skills"`
+	}
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("bad JSON: %v\n%s", err, out)
+	}
+	if len(report.Skills) != 1 {
+		t.Fatalf("skills = %+v, want just the collection's immediate child", report.Skills)
+	}
+	if report.Skills[0].Name != "dir-skill" || !report.Skills[0].Custom {
+		t.Errorf("row = %+v, want dir-skill marked custom", report.Skills[0])
+	}
+}
+
+func TestLsMissingSkillsDirDoesNotError(t *testing.T) {
+	p := paths.New(filepath.Join(t.TempDir(), "home"))
+	missing := filepath.Join(t.TempDir(), "gone")
+	writeSkillsDirsConfig(t, p, missing)
+
+	out, _, err := runLsCapture(t, p, &fakeTrees{}, "--json")
+	if err != nil {
+		t.Fatalf("a missing skillsDirs entry must not error the listing: %v", err)
+	}
+	if !strings.Contains(out, `"skills": []`) {
+		t.Errorf("missing collection should scan empty, got:\n%s", out)
+	}
+}
+
+// writeSkillsDirsConfig records the explicit collection-dir list in the
+// fake home's config file.
+func writeSkillsDirsConfig(t *testing.T, p *paths.Paths, dirs ...string) {
+	t.Helper()
+	cfg, err := json.Marshal(map[string]any{"skillsDirs": dirs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(p.FleetConfigFile()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.FleetConfigFile(), cfg, 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -2,11 +2,14 @@
 // (~/.config/fleet/config.json): the persistent pointers to versioned
 // skills homes. The file is JSON, FLEET_HOME-aware, atomic via temp+rename,
 // unknown fields preserved verbatim, canonical formatting. Missing file
-// means nothing is set. The explicit repo-root list (skillsRepos) and the
-// adopt-target collection dir (adoptTarget) are the tracked-set model. The
-// old single repo-root file key (skillsRepo) is superseded: it is preserved
-// verbatim as an unknown field and never interpreted, so old-key-only
-// configs behave as unset. There is no automatic migration in this layer.
+// means nothing is set. The path-tracked collection-dir list (skillsDirs)
+// is the tracked set: an ordered array of absolute dirs scanned directly,
+// with no `skills/` derivation. The adopt-target collection dir
+// (adoptTarget) is unchanged. Two retired keys are preserved verbatim as
+// unknown fields and never interpreted, so old-key-only configs behave as
+// unset: the legacy repo-root list (skillsRepos) and the older single
+// repo-root pointer (skillsRepo). There is no automatic migration in this
+// layer.
 package config
 
 import (
@@ -21,16 +24,17 @@ import (
 
 // File is the parsed config file.
 type File struct {
-	skillsRepos []string
+	skillsDirs  []string
 	adoptTarget string
 	unknown     map[string]json.RawMessage
 }
 
 // Load reads the config file. A missing file is an empty config, not an
 // error. Malformed JSON, a non-string adoptTarget, or a non-array-of-strings
-// skillsRepos is an error. The superseded single-pointer key (skillsRepo),
-// when present, is preserved verbatim as an unknown field and never
-// interpreted: old-key-only configs behave as unset, with no migration.
+// skillsDirs is an error. The retired keys (skillsRepos and the older
+// skillsRepo), when present, are preserved verbatim as unknown fields and
+// never interpreted: old-key-only configs behave as unset, with no
+// migration.
 func Load(path string) (*File, error) {
 	f := &File{
 		unknown: map[string]json.RawMessage{},
@@ -49,12 +53,12 @@ func Load(path string) (*File, error) {
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", filepath.Base(path), err)
 	}
-	if listRaw, ok := raw["skillsRepos"]; ok {
+	if listRaw, ok := raw["skillsDirs"]; ok {
 		var list []string
 		if err := json.Unmarshal(listRaw, &list); err != nil {
-			return nil, fmt.Errorf("%s: \"skillsRepos\" must be an array of strings: %w", path, err)
+			return nil, fmt.Errorf("%s: \"skillsDirs\" must be an array of strings: %w", path, err)
 		}
-		f.skillsRepos = list
+		f.skillsDirs = list
 	}
 	if targetRaw, ok := raw["adoptTarget"]; ok {
 		var target string
@@ -64,7 +68,7 @@ func Load(path string) (*File, error) {
 		f.adoptTarget = target
 	}
 	for k, v := range raw {
-		if k == "skillsRepos" || k == "adoptTarget" {
+		if k == "skillsDirs" || k == "adoptTarget" {
 			continue
 		}
 		f.unknown[k] = v
@@ -93,22 +97,23 @@ func Save(path string, f *File) error {
 	return os.Rename(tmp, path)
 }
 
-// SkillsRepos returns a copy of the explicit non-fleet-home repo-root list,
-// in precedence order. Empty means none.
-func (f *File) SkillsRepos() []string {
-	out := make([]string, len(f.skillsRepos))
-	copy(out, f.skillsRepos)
+// SkillsDirs returns a copy of the explicit collection-dir list, in
+// precedence order. Each entry is scanned directly (its immediate children
+// are skill dirs). Empty means none.
+func (f *File) SkillsDirs() []string {
+	out := make([]string, len(f.skillsDirs))
+	copy(out, f.skillsDirs)
 	return out
 }
 
-// SetSkillsRepos replaces the explicit repo-root list (order significant,
-// caller validates each entry).
-func (f *File) SetSkillsRepos(list []string) {
-	f.skillsRepos = append([]string(nil), list...)
+// SetSkillsDirs replaces the explicit collection-dir list (order
+// significant, caller validates each entry).
+func (f *File) SetSkillsDirs(list []string) {
+	f.skillsDirs = append([]string(nil), list...)
 }
 
-// UnsetSkillsRepos clears the explicit repo-root list.
-func (f *File) UnsetSkillsRepos() { f.skillsRepos = nil }
+// UnsetSkillsDirs clears the explicit collection-dir list.
+func (f *File) UnsetSkillsDirs() { f.skillsDirs = nil }
 
 // AdoptTarget returns the configured adopt-target collection dir, or empty
 // when unset (callers fall back to the fleet-home skills dir).
@@ -132,13 +137,14 @@ func (f *File) Unknown() map[string]json.RawMessage {
 
 // NormalizeKey maps a user-supplied config key to its canonical kebab
 // form, accepting the existing kebab/camel pair convention. It returns ""
-// for unknown keys. Known pairs: skills-repos/skillsRepos,
-// adopt-target/adoptTarget. The superseded single-pointer key
-// (skills-repo/skillsRepo) is unknown: it fails like any other unknown key.
+// for unknown keys. Known pairs: skills-dirs/skillsDirs and
+// adopt-target/adoptTarget. The retired repo keys (skills-repos/skillsRepos
+// and skills-repo/skillsRepo) are unknown: they fail like any other unknown
+// key.
 func NormalizeKey(k string) string {
 	switch k {
-	case "skills-repos", "skillsRepos":
-		return "skills-repos"
+	case "skills-dirs", "skillsDirs":
+		return "skills-dirs"
 	case "adopt-target", "adoptTarget":
 		return "adopt-target"
 	default:
@@ -164,9 +170,9 @@ func ExpandPath(p string) string {
 }
 
 // AbsolutePath expands a leading "~" and requires the result to be
-// absolute, returning the cleaned path. Both config values (the
-// explicit repo-root list and the adopt-target collection dir) honor the
-// same home-expansion and absolute-path rule.
+// absolute, returning the cleaned path. All config path values (the
+// collection-dir list and the adopt-target collection dir) honor the same
+// home-expansion and absolute-path rule.
 func AbsolutePath(input string) (string, error) {
 	expanded := ExpandPath(input)
 	if !filepath.IsAbs(expanded) {
@@ -175,10 +181,10 @@ func AbsolutePath(input string) (string, error) {
 	return filepath.Clean(expanded), nil
 }
 
-// render produces canonical file text: skillsRepos, then adoptTarget when
-// set, then unknown fields in sorted order (including the superseded
-// single-pointer key when some old file still carries it — preserved, never
-// migrated), two-space indent.
+// render produces canonical file text: skillsDirs, then adoptTarget when
+// set, then unknown fields in sorted order (including any retired repo key
+// some old file still carries — preserved, never migrated), two-space
+// indent.
 func (f *File) render() ([]byte, error) {
 	var b strings.Builder
 	b.WriteString("{\n")
@@ -193,21 +199,30 @@ func (f *File) render() ([]byte, error) {
 		b.WriteString("  ")
 		first = false
 	}
-	if len(f.skillsRepos) > 0 {
+	writeList := func(key string, list []string) error {
+		if len(list) == 0 {
+			return nil
+		}
 		sep()
-		b.WriteString("\"skillsRepos\": [")
-		for i, repo := range f.skillsRepos {
+		b.WriteString("\"")
+		b.WriteString(key)
+		b.WriteString("\": [")
+		for i, item := range list {
 			if i > 0 {
 				b.WriteString(",")
 			}
 			b.WriteString("\n    ")
-			vb, err := json.Marshal(repo)
+			vb, err := json.Marshal(item)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			b.Write(vb)
 		}
 		b.WriteString("\n  ]")
+		return nil
+	}
+	if err := writeList("skillsDirs", f.skillsDirs); err != nil {
+		return nil, err
 	}
 	if f.adoptTarget != "" {
 		sep()

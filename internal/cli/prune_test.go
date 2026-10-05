@@ -23,7 +23,6 @@ func runPrune(t *testing.T, p *paths.Paths, args ...string) (string, string, err
 	root.SetArgs(append([]string{"skill", "prune"}, args...))
 	stdoutTTY = func() bool { return false }
 	t.Cleanup(func() { stdoutTTY = func() bool { return false } })
-	t.Setenv("FLEET_REPO", "")
 	err := root.Execute()
 	return out.String(), errOut.String(), err
 }
@@ -206,12 +205,13 @@ func TestPruneStateOnlyLeavesConfigRule(t *testing.T) {
 
 func TestPruneIncompleteScanNamesBlockerAndChangesNothing(t *testing.T) {
 	p := toggleHome(t)
-	missing := filepath.Join(t.TempDir(), "moved-repo")
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	writePruneFile(t, blocker, "not a dir")
 	f, err := config.Load(p.FleetConfigFile())
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.SetSkillsRepos([]string{missing})
+	f.SetSkillsDirs([]string{blocker})
 	if err := config.Save(p.FleetConfigFile(), f); err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestPruneIncompleteScanNamesBlockerAndChangesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prune --yes: %v", err)
 	}
-	if !strings.Contains(out, filepath.Join(missing, "skills")) {
+	if !strings.Contains(out, blocker) {
 		t.Errorf("output does not name the blocking home:\n%s", out)
 	}
 	if got := readFile(t, p.OpenCodeConfig()); got != beforeConfig {

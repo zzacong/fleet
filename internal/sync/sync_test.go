@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zzacong/fleet/internal/config"
 	"github.com/zzacong/fleet/internal/paths"
 	"github.com/zzacong/fleet/internal/state"
 )
@@ -15,7 +16,6 @@ import (
 // present, returning the Paths and the harness names installed.
 func fakeHome(t *testing.T, harnesses ...string) *paths.Paths {
 	t.Helper()
-	t.Setenv("FLEET_REPO", "")
 	p := paths.New(filepath.Join(t.TempDir(), "home"))
 	dirs := map[string]string{
 		"opencode": p.OpenCodeDir(),
@@ -50,6 +50,20 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(body)
+}
+
+// trackDirs records the explicit collection-dir list in the fake home's
+// config file, in precedence order.
+func trackDirs(t *testing.T, p *paths.Paths, dirs ...string) {
+	t.Helper()
+	f, err := config.Load(p.FleetConfigFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.SetSkillsDirs(dirs)
+	if err := config.Save(p.FleetConfigFile(), f); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRunProjectsDisabledSkillsIntoInstalledHarnesses(t *testing.T) {
@@ -120,7 +134,8 @@ func TestRunNeverWritesCustomOffEntriesOnNativeScanners(t *testing.T) {
 	// no config off-entry; a canonical skill disabled for the same
 	// harnesses still projects to config.
 	p := fakeHome(t, "opencode", "pi", "codex", "claude", "cursor", "bob")
-	collection := filepath.Join(p.FleetReposDir(), "team", "skills")
+	collection := filepath.Join(t.TempDir(), "team", "skills")
+	trackDirs(t, p, collection)
 	writeFile(t, filepath.Join(collection, "my-notes", "SKILL.md"), "---\nname: my-notes\ndescription: notes\n---\n")
 	writeFile(t, filepath.Join(p.SkillsStore(), "tdd", "SKILL.md"), "---\nname: tdd\ndescription: tdd\n---\n")
 
@@ -181,7 +196,8 @@ func TestRunRemovesLegacyCustomOffEntry(t *testing.T) {
 	p := fakeHome(t, "opencode")
 	before := `{"permission": {"skill": {"my-notes": "deny"}}}`
 	writeFile(t, p.OpenCodeConfig(), before)
-	collection := filepath.Join(p.FleetReposDir(), "team", "skills")
+	collection := filepath.Join(t.TempDir(), "team", "skills")
+	trackDirs(t, p, collection)
 	writeFile(t, filepath.Join(collection, "my-notes", "SKILL.md"), "---\nname: my-notes\ndescription: notes\n---\n")
 
 	st, _ := state.Load(p.FleetStateFile())
@@ -391,11 +407,12 @@ func TestRunRemovesRedundantLinksAndLeavesTheRest(t *testing.T) {
 }
 
 func TestRunMakesCustomHomesVisible(t *testing.T) {
-	// A convention-tracked checkout and the fleet-home fallback each hold a
+	// A tracked collection dir and the fleet-home fallback each hold a
 	// custom skill. Sync links both skills into every installed harness,
-	// with no adopt or pull run.
+	// with no adopt run.
 	p := fakeHome(t, "opencode", "pi", "codex", "claude", "cursor", "bob")
-	collection := filepath.Join(p.FleetReposDir(), "team", "skills")
+	collection := filepath.Join(t.TempDir(), "team", "skills")
+	trackDirs(t, p, collection)
 	writeFile(t, filepath.Join(collection, "my-notes", "SKILL.md"), "---\nname: my-notes\ndescription: notes\n---\n")
 	writeFile(t, filepath.Join(p.FleetHomeSkills(), "scratch", "SKILL.md"), "---\nname: scratch\ndescription: scratch\n---\n")
 
@@ -433,6 +450,49 @@ func TestRunMakesCustomHomesVisible(t *testing.T) {
 	}
 	if len(reports) != 0 {
 		t.Errorf("second run reported %+v, want nothing", reports)
+	}
+}
+
+func TestRunFirstTrackedHomeWinsCustomLinkCollision(t *testing.T) {
+	// The same skill name in two explicit tracked homes: every harness's
+	// managed link points at the first home — the listing's winner — not
+	// the later, lower-precedence one, and a second sync has nothing left
+	// to say.
+	p := fakeHome(t, "opencode", "pi", "codex", "claude", "cursor", "bob")
+	first, second := t.TempDir(), t.TempDir()
+	firstCollection := filepath.Join(first, "skills")
+	secondCollection := filepath.Join(second, "skills")
+	trackDirs(t, p, firstCollection, secondCollection)
+	writeFile(t, filepath.Join(firstCollection, "dup", "SKILL.md"), "---\nname: dup\ndescription: first\n---\n")
+	writeFile(t, filepath.Join(secondCollection, "dup", "SKILL.md"), "---\nname: dup\ndescription: second\n---\n")
+
+	reports, err := Run(p)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	want := filepath.Join(first, "skills", "dup")
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.ClaudeSkills(), p.CursorSkills(), p.BobSkills()} {
+		if got, err := os.Readlink(filepath.Join(dir, "dup")); err != nil || got != want {
+			t.Errorf("link in %s = %q, %v; want the first tracked home %q", dir, got, err, want)
+		}
+	}
+	for _, r := range reports {
+		for _, l := range r.Linked {
+			if l.Name == "dup" && l.Target != want {
+				t.Errorf("%s reported dup target %q, want %q", r.Harness, l.Target, want)
+			}
+		}
+	}
+
+	// Idempotent: a second sync reports no link changes.
+	reports, err = Run(p)
+	if err != nil {
+		t.Fatalf("second Run() error = %v", err)
+	}
+	for _, r := range reports {
+		if len(r.Linked) != 0 {
+			t.Errorf("second sync linked %v, want none", r.Linked)
+		}
 	}
 }
 
@@ -695,12 +755,15 @@ func TestRunProjectsDisableWhenScanIncomplete(t *testing.T) {
 	}
 }
 
-func TestRunProjectsDisableWhenTrackedRepoIsMissing(t *testing.T) {
-	// A tracked repo root recorded in config but missing from disk makes
-	// the scan incomplete even though the store exists.
+func TestRunProjectsDisableWhenTrackedDirScanFails(t *testing.T) {
+	// A tracked dir that fails to scan makes the scan incomplete even
+	// though the store exists: "installed nowhere" cannot be trusted, so
+	// sync projects the disable.
 	p := fakeHome(t, "pi")
 	scanComplete(t, p)
-	writeFile(t, p.FleetConfigFile(), `{"skillsRepos": ["`+filepath.Join(p.Home, "gone")+`"]}`)
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	writeFile(t, blocker, "not a dir")
+	trackDirs(t, p, blocker)
 	writeFile(t, p.PiSettings(), "{}\n")
 
 	st, _ := state.Load(p.FleetStateFile())

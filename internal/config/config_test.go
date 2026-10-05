@@ -14,8 +14,8 @@ func TestMissingFileIsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(f.SkillsRepos()) != 0 {
-		t.Errorf("SkillsRepos() = %q, want empty", f.SkillsRepos())
+	if len(f.SkillsDirs()) != 0 {
+		t.Errorf("SkillsDirs() = %q, want empty", f.SkillsDirs())
 	}
 	if f.AdoptTarget() != "" {
 		t.Errorf("AdoptTarget() = %q, want empty", f.AdoptTarget())
@@ -28,13 +28,10 @@ func TestMissingFileIsEmpty(t *testing.T) {
 func TestSaveThenLoadRoundTrips(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".config", "fleet", "config.json")
-	repo := filepath.Join(dir, "repo")
-	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	collection := filepath.Join(dir, "collection")
 	f, _ := Load(path)
-	f.SetSkillsRepos([]string{repo})
-	f.SetAdoptTarget(filepath.Join(repo, "skills"))
+	f.SetSkillsDirs([]string{collection})
+	f.SetAdoptTarget(filepath.Join(dir, "target"))
 	if err := Save(path, f); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -42,14 +39,14 @@ func TestSaveThenLoadRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(got.SkillsRepos()) != 1 || got.SkillsRepos()[0] != repo {
-		t.Errorf("SkillsRepos() = %q, want %q", got.SkillsRepos(), []string{repo})
+	if len(got.SkillsDirs()) != 1 || got.SkillsDirs()[0] != collection {
+		t.Errorf("SkillsDirs() = %q, want %q", got.SkillsDirs(), []string{collection})
 	}
-	if got.AdoptTarget() != filepath.Join(repo, "skills") {
-		t.Errorf("AdoptTarget() = %q, want %q", got.AdoptTarget(), filepath.Join(repo, "skills"))
+	if got.AdoptTarget() != filepath.Join(dir, "target") {
+		t.Errorf("AdoptTarget() = %q, want %q", got.AdoptTarget(), filepath.Join(dir, "target"))
 	}
 	body, _ := os.ReadFile(path)
-	want := "{\n  \"skillsRepos\": [\n    \"" + repo + "\"\n  ],\n  \"adoptTarget\": \"" + filepath.Join(repo, "skills") + "\"\n}\n"
+	want := "{\n  \"skillsDirs\": [\n    \"" + collection + "\"\n  ],\n  \"adoptTarget\": \"" + filepath.Join(dir, "target") + "\"\n}\n"
 	if string(body) != want {
 		t.Errorf("file =\n%s\nwant\n%s", body, want)
 	}
@@ -58,7 +55,7 @@ func TestSaveThenLoadRoundTrips(t *testing.T) {
 func TestUnknownFieldsSurviveRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	src := `{
-  "skillsRepos": ["/repo/one"],
+  "skillsDirs": ["/dirs/one"],
   "future": 123,
   "alpha": "x"
 }`
@@ -70,7 +67,7 @@ func TestUnknownFieldsSurviveRoundTrip(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 	// mutate known field, preserve unknown
-	f.SetSkillsRepos([]string{"/repo/two"})
+	f.SetSkillsDirs([]string{"/dirs/two"})
 	if err := Save(path, f); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -85,28 +82,15 @@ func TestUnknownFieldsSurviveRoundTrip(t *testing.T) {
 	if _, ok := out["alpha"]; !ok {
 		t.Error("round-trip lost unknown key alpha")
 	}
-	if string(body) != "{\n  \"skillsRepos\": [\n    \"/repo/two\"\n  ],\n  \"alpha\": \"x\",\n  \"future\": 123\n}\n" {
+	if string(body) != "{\n  \"skillsDirs\": [\n    \"/dirs/two\"\n  ],\n  \"alpha\": \"x\",\n  \"future\": 123\n}\n" {
 		t.Errorf("canonical ordering wrong:\n%s", body)
-	}
-	// unset should keep unknowns but remove skillsRepos
-	f2, _ := Load(path)
-	f2.UnsetSkillsRepos()
-	if err := Save(path, f2); err != nil {
-		t.Fatal(err)
-	}
-	body, _ = os.ReadFile(path)
-	if strings.Contains(string(body), "skillsRepos") {
-		t.Errorf("unset should remove skillsRepos, got %s", body)
-	}
-	if !strings.Contains(string(body), "\"alpha\"") || !strings.Contains(string(body), "\"future\"") {
-		t.Errorf("unset lost unknown fields: %s", body)
 	}
 }
 
 func TestSaveIsAtomic(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	f, _ := Load(path)
-	f.SetSkillsRepos([]string{"/repo"})
+	f.SetSkillsDirs([]string{"/dirs/one"})
 	if err := Save(path, f); err != nil {
 		t.Fatal(err)
 	}
@@ -124,8 +108,8 @@ func TestSaveIsAtomic(t *testing.T) {
 	}
 }
 
-// TestSupersededSinglePointerKeyBehavesAsUnset is the one place the
-// retired file key (skillsRepo) still appears in fixtures: an old-key-only
+// TestSupersededSinglePointerKeyBehavesAsUnset is the one place the older
+// retired file key (skillsRepo) appears in fixtures: an old-key-only
 // config loads without error, behaves as unset (empty list, empty target),
 // and round-trips the key verbatim — preserved, never migrated, never
 // interpreted. No command reads it.
@@ -138,8 +122,8 @@ func TestSupersededSinglePointerKeyBehavesAsUnset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(f.SkillsRepos()) != 0 {
-		t.Errorf("SkillsRepos() = %q, want empty (old key behaves as unset)", f.SkillsRepos())
+	if len(f.SkillsDirs()) != 0 {
+		t.Errorf("SkillsDirs() = %q, want empty (old key behaves as unset)", f.SkillsDirs())
 	}
 	if f.AdoptTarget() != "" {
 		t.Errorf("AdoptTarget() = %q, want empty (old key behaves as unset)", f.AdoptTarget())
@@ -163,8 +147,8 @@ func TestSupersededSinglePointerKeyBehavesAsUnset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() with non-string old key error = %v (old key must never fail loading)", err)
 	}
-	if len(f.SkillsRepos()) != 0 || f.AdoptTarget() != "" {
-		t.Errorf("non-string old key behaves as set: repos=%q target=%q", f.SkillsRepos(), f.AdoptTarget())
+	if len(f.SkillsDirs()) != 0 || f.AdoptTarget() != "" {
+		t.Errorf("non-string old key behaves as set: dirs=%q target=%q", f.SkillsDirs(), f.AdoptTarget())
 	}
 	// The retired key is unknown to key normalization too.
 	if got := NormalizeKey("skills-repo"); got != "" {
@@ -175,14 +159,56 @@ func TestSupersededSinglePointerKeyBehavesAsUnset(t *testing.T) {
 	}
 }
 
+// TestRetiredReposKeyPreservedAsUnknown is the same contract for the
+// later-retired repo-root list: never read, preserved verbatim, and even a
+// malformed value is not an error.
+func TestRetiredReposKeyPreservedAsUnknown(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"skillsRepos": ["/repo/one", "/repo/two"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(f.SkillsDirs()) != 0 {
+		t.Errorf("SkillsDirs() = %q, want empty (retired key behaves as unset)", f.SkillsDirs())
+	}
+	if _, ok := f.Unknown()["skillsRepos"]; !ok {
+		t.Errorf("retired key should be preserved verbatim as unknown, got %v", f.Unknown())
+	}
+	if err := Save(path, f); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	body, _ := os.ReadFile(path)
+	if string(body) != "{\n  \"skillsRepos\": [\"/repo/one\", \"/repo/two\"]\n}\n" {
+		t.Errorf("retired key was migrated or dropped, want verbatim preservation:\n%s", body)
+	}
+	// Malformed retired values are ignored, not an error.
+	if err := os.WriteFile(path, []byte(`{"skillsRepos": 123}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err != nil {
+		t.Fatalf("Load() with malformed retired key error = %v (must never fail loading)", err)
+	}
+	if got := NormalizeKey("skills-repos"); got != "" {
+		t.Errorf("NormalizeKey(skills-repos) = %q, want unknown", got)
+	}
+	if got := NormalizeKey("skillsRepos"); got != "" {
+		t.Errorf("NormalizeKey(skillsRepos) = %q, want unknown", got)
+	}
+}
+
 func TestNormalizeKeyAcceptsKebabAndCamelPairs(t *testing.T) {
 	cases := []struct {
 		in, want string
 	}{
 		{"skills-repo", ""},
 		{"skillsRepo", ""},
-		{"skills-repos", "skills-repos"},
-		{"skillsRepos", "skills-repos"},
+		{"skills-repos", ""},
+		{"skillsRepos", ""},
+		{"skills-dirs", "skills-dirs"},
+		{"skillsDirs", "skills-dirs"},
 		{"adopt-target", "adopt-target"},
 		{"adoptTarget", "adopt-target"},
 		{"nope", ""},
@@ -230,13 +256,13 @@ func TestExpandPathAndAbsoluteValidation(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsBadNewKeyTypes(t *testing.T) {
+func TestLoadRejectsBadKnownKeyTypes(t *testing.T) {
 	cases := []struct {
 		name string
 		body string
 	}{
-		{"skillsRepos not an array", `{"skillsRepos": "/repo/one"}`},
-		{"skillsRepos with non-string entry", `{"skillsRepos": ["/repo/one", 123]}`},
+		{"skillsDirs not an array", `{"skillsDirs": "/dirs/one"}`},
+		{"skillsDirs with non-string entry", `{"skillsDirs": ["/dirs/one", 123]}`},
 		{"adoptTarget not a string", `{"adoptTarget": 123}`},
 	}
 	for _, c := range cases {
@@ -252,11 +278,11 @@ func TestLoadRejectsBadNewKeyTypes(t *testing.T) {
 	}
 }
 
-func TestNewKeysPreserveUnknownsAndUnset(t *testing.T) {
+func TestKnownKeysPreserveUnknownsAndUnset(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	src := `{
-  "skillsRepos": ["/repo/a"],
-  "adoptTarget": "/repo/one/skills",
+  "skillsDirs": ["/dirs/a"],
+  "adoptTarget": "/dirs/one/skills",
   "future": 123,
   "legacy": "kept"
 }`
@@ -267,19 +293,19 @@ func TestNewKeysPreserveUnknownsAndUnset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	f.SetSkillsRepos([]string{"/repo/b"})
+	f.SetSkillsDirs([]string{"/dirs/b"})
 	f.UnsetAdoptTarget()
 	if err := Save(path, f); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 	body, _ := os.ReadFile(path)
-	want := "{\n  \"skillsRepos\": [\n    \"/repo/b\"\n  ],\n  \"future\": 123,\n  \"legacy\": \"kept\"\n}\n"
+	want := "{\n  \"skillsDirs\": [\n    \"/dirs/b\"\n  ],\n  \"future\": 123,\n  \"legacy\": \"kept\"\n}\n"
 	if string(body) != want {
 		t.Errorf("file =\n%s\nwant\n%s", body, want)
 	}
 	// clearing the list omits the key but keeps unknowns
 	f2, _ := Load(path)
-	f2.UnsetSkillsRepos()
+	f2.UnsetSkillsDirs()
 	if err := Save(path, f2); err != nil {
 		t.Fatal(err)
 	}
@@ -298,33 +324,112 @@ func TestEmptyFileIsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(f.SkillsRepos()) != 0 || f.AdoptTarget() != "" {
+	if len(f.SkillsDirs()) != 0 || f.AdoptTarget() != "" {
 		t.Errorf("empty file should be empty config")
 	}
 }
 
-func TestSkillsReposRoundTrip(t *testing.T) {
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestSkillsDirsRoundTripPreservesOrderAndUnknowns(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	f, _ := Load(path)
-	f.SetSkillsRepos([]string{"/repo/b", "/repo/a"})
-	f.SetAdoptTarget("/repo/one/skills")
+	src := `{
+  "skillsRepos": ["/repo/legacy"],
+  "future": 123
+}`
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(f.SkillsDirs()) != 0 {
+		t.Fatalf("SkillsDirs() = %q, want empty for an absent key", f.SkillsDirs())
+	}
+	f.SetSkillsDirs([]string{"/dirs/b", "/dirs/a"})
 	if err := Save(path, f); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
+
 	got, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	wantList := []string{"/repo/b", "/repo/a"}
-	if len(got.SkillsRepos()) != 2 || got.SkillsRepos()[0] != wantList[0] || got.SkillsRepos()[1] != wantList[1] {
-		t.Errorf("SkillsRepos() = %q, want order-preserved %q", got.SkillsRepos(), wantList)
+	if want := []string{"/dirs/b", "/dirs/a"}; !sameStrings(got.SkillsDirs(), want) {
+		t.Errorf("SkillsDirs() = %q, want order-preserved %q", got.SkillsDirs(), want)
 	}
-	if got.AdoptTarget() != "/repo/one/skills" {
-		t.Errorf("AdoptTarget() = %q, want %q", got.AdoptTarget(), "/repo/one/skills")
+	// The retired repo-root list is preserved verbatim as an unknown field.
+	if _, ok := got.Unknown()["skillsRepos"]; !ok {
+		t.Errorf("retired skillsRepos lost: %v", got.Unknown())
+	}
+	if _, ok := got.Unknown()["future"]; !ok {
+		t.Errorf("round-trip lost unknown key future: %v", got.Unknown())
 	}
 	body, _ := os.ReadFile(path)
-	want := "{\n  \"skillsRepos\": [\n    \"/repo/b\",\n    \"/repo/a\"\n  ],\n  \"adoptTarget\": \"/repo/one/skills\"\n}\n"
+	want := "{\n  \"skillsDirs\": [\n    \"/dirs/b\",\n    \"/dirs/a\"\n  ],\n  \"future\": 123,\n  \"skillsRepos\": [\"/repo/legacy\"]\n}\n"
 	if string(body) != want {
 		t.Errorf("file =\n%s\nwant\n%s", body, want)
+	}
+}
+
+func TestSkillsDirsEmptyMeansNoneAndUnsetOmitsKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	f, _ := Load(path)
+	f.SetSkillsDirs(nil)
+	if len(f.SkillsDirs()) != 0 {
+		t.Errorf("SkillsDirs() = %q, want empty", f.SkillsDirs())
+	}
+	f.SetSkillsDirs([]string{"/dirs/one"})
+	f.UnsetSkillsDirs()
+	if len(f.SkillsDirs()) != 0 {
+		t.Errorf("UnsetSkillsDirs() left %q", f.SkillsDirs())
+	}
+	if err := Save(path, f); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	body, _ := os.ReadFile(path)
+	if strings.Contains(string(body), "skillsDirs") {
+		t.Errorf("empty skillsDirs should not render the key:\n%s", body)
+	}
+}
+
+func TestLoadRejectsMalformedSkillsDirs(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"not an array", `{"skillsDirs": "/dirs/one"}`},
+		{"non-string entry", `{"skillsDirs": ["/dirs/one", 123]}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(path, []byte(c.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(path); err == nil {
+				t.Errorf("Load(%s) should fail", c.body)
+			}
+		})
+	}
+}
+
+func TestNormalizeKeyIncludesSkillsDirs(t *testing.T) {
+	if got := NormalizeKey("skills-dirs"); got != "skills-dirs" {
+		t.Errorf("NormalizeKey(skills-dirs) = %q, want skills-dirs", got)
+	}
+	if got := NormalizeKey("skillsDirs"); got != "skills-dirs" {
+		t.Errorf("NormalizeKey(skillsDirs) = %q, want skills-dirs", got)
 	}
 }

@@ -233,10 +233,7 @@ func TestDoctorFlagsAdoptionFollowups(t *testing.T) {
 	p := doctorHome(t)
 	tracked := filepath.Join(t.TempDir(), "tracked")
 	trackedCollection := filepath.Join(tracked, "skills")
-	if err := os.MkdirAll(filepath.Join(tracked, ".git"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"]}`)
+	writeAdoptConfig(t, p, `{"skillsDirs": ["`+trackedCollection+`"]}`)
 	writeSkillDir(t, trackedCollection, "tdd", "Red-green-refactor workflow.")
 	lock := `{"skills": {"tdd": {"source": "mattpocock/skills", "sourceType": "github", "skillFolderHash": "abc123"}}}`
 	if err := os.WriteFile(p.SkillLock(), []byte(lock), 0o644); err != nil {
@@ -439,16 +436,10 @@ func TestDoctorBatchOptionsNeverCrossHarnesses(t *testing.T) {
 	}
 }
 
-func TestDoctorReportsTrackedSetWarnings(t *testing.T) {
+func TestDoctorReportsUnscannedAdoptTarget(t *testing.T) {
 	p := doctorHome(t)
-	t.Setenv("FLEET_REPO", "")
-	plain := filepath.Join(t.TempDir(), "plain") // no .git inside
-	if err := os.MkdirAll(plain, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	target := filepath.Join(t.TempDir(), "elsewhere", "skills")
 	cfg, err := json.Marshal(map[string]any{
-		"skillsRepos": []string{plain},
 		"adoptTarget": target,
 	})
 	if err != nil {
@@ -466,10 +457,7 @@ func TestDoctorReportsTrackedSetWarnings(t *testing.T) {
 	if !strings.Contains(out, "unscanned adopt target (1)") || !strings.Contains(out, target) {
 		t.Errorf("output missing the unscanned adopt target section:\n%s", out)
 	}
-	if !strings.Contains(out, "non-git explicit repos (1)") || !strings.Contains(out, plain) {
-		t.Errorf("output missing the non-git explicit repo section:\n%s", out)
-	}
-	if !strings.Contains(out, "1 unscanned adopt target, 1 non-git explicit repo") {
+	if !strings.Contains(out, "1 unscanned adopt target") {
 		t.Errorf("output missing the count summary:\n%s", out)
 	}
 }
@@ -572,14 +560,12 @@ func TestDoctorDriftGroupsByHarnessAndDirection(t *testing.T) {
 	// cause and fix print once per group, not once per finding.
 	p := doctorHome(t)
 	repo := filepath.Join(t.TempDir(), "customs")
-	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeAdoptConfig(t, p, `{"skillsRepos": ["`+repo+`"]}`)
-	writeSkillDir(t, filepath.Join(repo, "skills"), "my-notes", "Notes.")
-	writeSkillDir(t, filepath.Join(repo, "skills"), "my-docs", "Docs.")
+	collection := filepath.Join(repo, "skills")
+	writeAdoptConfig(t, p, `{"skillsDirs": ["`+collection+`"]}`)
+	writeSkillDir(t, collection, "my-notes", "Notes.")
+	writeSkillDir(t, collection, "my-docs", "Docs.")
 	// my-docs is disabled on opencode, but its managed link is still there.
-	makeLink(t, filepath.Join(repo, "skills", "my-docs"), filepath.Join(p.OpenCodeSkills(), "my-docs"))
+	makeLink(t, filepath.Join(collection, "my-docs"), filepath.Join(p.OpenCodeSkills(), "my-docs"))
 	st, err := state.Load(p.FleetStateFile())
 	if err != nil {
 		t.Fatal(err)
@@ -627,16 +613,13 @@ func TestDoctorDoublePresenceGroupsByHarnessAndHomes(t *testing.T) {
 	p := doctorHome(t)
 	first := filepath.Join(p.Home, "repos-a")
 	second := filepath.Join(p.Home, "repos-b")
-	for _, repo := range []string{first, second} {
-		if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	writeAdoptConfig(t, p, `{"skillsRepos": ["`+first+`", "`+second+`"]}`)
-	writeSkillDir(t, filepath.Join(first, "skills"), "babysit-pr", "Reviews PRs.")
-	writeSkillDir(t, filepath.Join(second, "skills"), "babysit-pr", "Reviews PRs.")
-	writeSkillDir(t, filepath.Join(first, "skills"), "choose-flow", "Picks a flow.")
-	writeSkillDir(t, filepath.Join(second, "skills"), "choose-flow", "Picks a flow.")
+	firstCollection := filepath.Join(first, "skills")
+	secondCollection := filepath.Join(second, "skills")
+	writeAdoptConfig(t, p, `{"skillsDirs": ["`+firstCollection+`", "`+secondCollection+`"]}`)
+	writeSkillDir(t, firstCollection, "babysit-pr", "Reviews PRs.")
+	writeSkillDir(t, secondCollection, "babysit-pr", "Reviews PRs.")
+	writeSkillDir(t, firstCollection, "choose-flow", "Picks a flow.")
+	writeSkillDir(t, secondCollection, "choose-flow", "Picks a flow.")
 
 	out := runDoctor(t, p, "")
 
@@ -743,14 +726,11 @@ func TestDoctorGroupsLinkAndManualSections(t *testing.T) {
 // names under it, instead of one long sentence each.
 func TestDoctorGroupsStaleLockByHome(t *testing.T) {
 	p := doctorHome(t)
-	tracked := filepath.Join(p.Home, "repos")
-	if err := os.MkdirAll(filepath.Join(tracked, ".git"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"]}`)
+	tracked := filepath.Join(p.Home, "repos", "skills")
+	writeSkillsDirsConfig(t, p, tracked)
 	names := []string{"lock-a", "lock-b", "lock-c"}
 	for _, name := range names {
-		writeSkillDir(t, filepath.Join(tracked, "skills"), name, "Does "+name+".")
+		writeSkillDir(t, tracked, name, "Does "+name+".")
 	}
 	writeSkillDir(t, p.FleetHomeSkills(), "lock-d", "Does lock-d.")
 	lock := `{"skills": {`
@@ -771,7 +751,7 @@ func TestDoctorGroupsStaleLockByHome(t *testing.T) {
 		t.Errorf("stale-lock header missing:\n%s", out)
 	}
 	// One line per home, shortened to ~, names hanging under it.
-	if !strings.Contains(out, "the explicit repo  "+shortenHome(p.Home, filepath.Join(tracked, "skills"))) {
+	if !strings.Contains(out, "the tracked dir  "+shortenHome(p.Home, tracked)) {
 		t.Errorf("tracked home line missing:\n%s", out)
 	}
 	if !strings.Contains(out, "lock-a, lock-b, lock-c\n") {
@@ -806,5 +786,46 @@ func TestShortenHome(t *testing.T) {
 		if got := shortenHome(c.home, c.in); got != c.want {
 			t.Errorf("shortenHome(%q, %q) = %q, want %q", c.home, c.in, got, c.want)
 		}
+	}
+}
+
+func TestDoctorReportsTrackedSetProblems(t *testing.T) {
+	// A hand-edited skillsDirs list with a missing entry, an empty entry,
+	// and a repeated entry: each is its own section in the report.
+	p := doctorHome(t)
+	missing := filepath.Join(t.TempDir(), "gone")
+	empty := filepath.Join(t.TempDir(), "empty")
+	if err := os.MkdirAll(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	duplicated := filepath.Join(t.TempDir(), "duplicated")
+	writeSkillDir(t, duplicated, "helper", "Helper.")
+	body, err := json.Marshal(map[string]any{
+		"skillsDirs": []string{missing, empty, duplicated, duplicated},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeAdoptConfig(t, p, string(body))
+
+	out := runDoctor(t, p, "")
+
+	if !strings.Contains(out, "missing tracked dirs (1)") {
+		t.Errorf("output missing the missing-tracked-dir section:\n%s", out)
+	}
+	if !strings.Contains(out, missing) {
+		t.Errorf("output missing the missing dir path:\n%s", out)
+	}
+	if !strings.Contains(out, "empty tracked dirs (1)") {
+		t.Errorf("output missing the empty-tracked-dir section:\n%s", out)
+	}
+	if !strings.Contains(out, "overlapping tracked dirs (1)") {
+		t.Errorf("output missing the overlapping-tracked-dir section:\n%s", out)
+	}
+	if !strings.Contains(out, "more than once") {
+		t.Errorf("output missing the duplicate explanation:\n%s", out)
+	}
+	if !strings.Contains(out, "1 missing tracked dir, 1 empty tracked dir, 1 overlapping tracked dir") {
+		t.Errorf("output missing the count summary:\n%s", out)
 	}
 }
