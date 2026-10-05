@@ -52,10 +52,6 @@ func unknownKeyError(key string) error {
 	}
 }
 
-func expandPath(p string) string {
-	return config.ExpandPath(p)
-}
-
 func newConfigGetCmd(p *paths.Paths) *cobra.Command {
 	return &cobra.Command{
 		Use:       "get <key>",
