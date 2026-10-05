@@ -254,6 +254,31 @@ func TestUpdateDoesNotReportDormantDisableAsLost(t *testing.T) {
 	}
 }
 
+func TestUpdateVerifiesCustomDisableByLinkNotConfig(t *testing.T) {
+	// A custom skill's disable on a native-scanning link harness lives in
+	// the removed managed link, not the harness config. The report must
+	// read the link's absence as the disable instead of calling it lost
+	// because no config off-entry exists. Claude keeps its config lever.
+	p, collection := adoptHome(t)
+	writeSkillDir(t, collection, "my-notes", "Personal notes.")
+	if _, _, err := runSync(t, p); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	runToggle(t, p, "off", "my-notes")
+	swapRunner(t, skillscli.RunnerFunc(func(skillscli.Invocation) (skillscli.Result, error) {
+		return skillscli.Result{}, nil
+	}))
+
+	out := runUpdate(t, p)
+
+	if strings.Contains(out, "did not stay disabled") {
+		t.Errorf("a custom link disable was reported as lost:\n%s", out)
+	}
+	if !strings.Contains(out, `verified disabled: "my-notes" for opencode, pi, codex, claude`) {
+		t.Errorf("output missing the custom link disable as held:\n%s", out)
+	}
+}
+
 func TestUpdateShowsRawOutputWhenTheWrappedRunFails(t *testing.T) {
 	p := updateHome(t)
 	swapRunner(t, skillscli.RunnerFunc(func(skillscli.Invocation) (skillscli.Result, error) {
