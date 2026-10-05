@@ -949,36 +949,38 @@ func trackedDirFindings(dir string) []Finding {
 	return nil
 }
 
-// trackedSetOverlapFindings reports duplicate and nested entries: for each
-// entry, every earlier entry it repeats or overlaps is one finding.
-// Duplicates are exact-path repeats; nesting is a strict descendant in
-// either direction. Both make precedence ambiguous and only a hand edit can
-// produce them.
+// trackedSetOverlapFindings reports duplicate and nested entries: exact-path
+// repeats, and nesting as a strict descendant in either direction. Both make
+// precedence ambiguous and only a hand edit can produce them. Each distinct
+// relationship is reported once, so a path listed three times yields one
+// duplicate finding, not three, and a nested pair repeated across copies
+// yields one nesting finding.
 func trackedSetOverlapFindings(tracked []string) []Finding {
 	var findings []Finding
+	seen := map[string]bool{}
+	add := func(path, message string) {
+		key := path + "\x00" + message
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		findings = append(findings, Finding{
+			Kind:    KindTrackedSetOverlap,
+			Path:    path,
+			Message: message,
+		})
+	}
 	for i, dir := range tracked {
 		clean := filepath.Clean(dir)
 		for j := 0; j < i; j++ {
 			prev := filepath.Clean(tracked[j])
 			switch {
 			case prev == clean:
-				findings = append(findings, Finding{
-					Kind:    KindTrackedSetOverlap,
-					Path:    clean,
-					Message: fmt.Sprintf("tracked dir %s is listed more than once — remove the duplicate from the skillsDirs list by hand", clean),
-				})
-			case under(clean, prev):
-				findings = append(findings, Finding{
-					Kind:    KindTrackedSetOverlap,
-					Path:    clean,
-					Message: fmt.Sprintf("tracked dir %s is nested inside tracked dir %s — precedence between overlapping collections is ambiguous; remove one from the skillsDirs list by hand", clean, prev),
-				})
-			case under(prev, clean):
-				findings = append(findings, Finding{
-					Kind:    KindTrackedSetOverlap,
-					Path:    clean,
-					Message: fmt.Sprintf("tracked dir %s contains tracked dir %s — precedence between overlapping collections is ambiguous; remove one from the skillsDirs list by hand", clean, prev),
-				})
+				add(clean, fmt.Sprintf("tracked dir %s is listed more than once — remove the duplicate from the skillsDirs list by hand", clean))
+			case paths.IsUnder(clean, prev):
+				add(clean, fmt.Sprintf("tracked dir %s is nested inside tracked dir %s — precedence between overlapping collections is ambiguous; remove one from the skillsDirs list by hand", clean, prev))
+			case paths.IsUnder(prev, clean):
+				add(clean, fmt.Sprintf("tracked dir %s contains tracked dir %s — precedence between overlapping collections is ambiguous; remove one from the skillsDirs list by hand", clean, prev))
 			}
 		}
 	}

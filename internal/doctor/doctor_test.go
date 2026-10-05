@@ -1527,6 +1527,30 @@ func TestAnalyzeFlagsDuplicateTrackedDir(t *testing.T) {
 	}
 }
 
+func TestAnalyzeReportsDuplicateTrackedDirOnce(t *testing.T) {
+	// The same dir listed three times is one mistake: doctor must not print
+	// the identical finding once per pair.
+	p := fakeHome(t)
+	storeSkill(t, p, "tdd")
+	dir := filepath.Join(t.TempDir(), "dup")
+	collectionSkill(t, dir, "helper")
+	writeSkillsDirs(t, p, dir, dir, dir)
+
+	rep, err := Analyze(p)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	count := 0
+	for _, f := range rep.Findings {
+		if f.Kind == KindTrackedSetOverlap {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("KindTrackedSetOverlap findings = %d, want 1 (findings = %+v)", count, rep.Findings)
+	}
+}
+
 func TestAnalyzeFlagsNestedTrackedDirs(t *testing.T) {
 	// One tracked collection inside another makes precedence ambiguous;
 	// report it for the hand-edit that caused it.
