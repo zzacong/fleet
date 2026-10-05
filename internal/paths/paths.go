@@ -130,3 +130,15 @@ func (p *Paths) InsideFleetHome(path string) bool {
 	}
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
+
+// IsUnder reports whether path is strictly below dir, lexically on cleaned
+// paths. It is the one containment test shared by link classification
+// (internal/harness), tracked-dir overlap checks (internal/trackedset), and
+// doctor's nesting checks, so the three never drift apart.
+func IsUnder(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}

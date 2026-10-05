@@ -547,7 +547,7 @@ func resolveLink(link string) (string, error) {
 // links name the store literally, so a link whose written target sits in
 // the store double-covers the skill even if the skill is gone.
 func pathInside(path, dir string) bool {
-	if under(path, dir) {
+	if paths.IsUnder(path, dir) {
 		return true
 	}
 	evaled, err := filepath.EvalSymlinks(path)
@@ -558,16 +558,7 @@ func pathInside(path, dir string) bool {
 	if evaledDir, err := filepath.EvalSymlinks(dir); err == nil {
 		evalDir = evaledDir
 	}
-	return under(evaled, evalDir)
-}
-
-// under reports whether path is strictly below dir, lexically.
-func under(path, dir string) bool {
-	rel, err := filepath.Rel(dir, path)
-	if err != nil {
-		return false
-	}
-	return rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return paths.IsUnder(evaled, evalDir)
 }
 
 // pathExists reports whether path exists, following symlinks.

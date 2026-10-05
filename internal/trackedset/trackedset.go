@@ -175,10 +175,10 @@ func resolveDirArg(arg string) (string, error) {
 func checkNested(clean string, existing []string) error {
 	for _, dir := range existing {
 		d := filepath.Clean(dir)
-		if isInside(clean, d) {
+		if paths.IsUnder(clean, d) {
 			return fmt.Errorf("add-dir: %q is inside tracked dir %q", clean, d)
 		}
-		if isInside(d, clean) {
+		if paths.IsUnder(d, clean) {
 			return fmt.Errorf("add-dir: %q contains tracked dir %q", clean, d)
 		}
 	}
@@ -218,16 +218,6 @@ func checkNameCollisions(p *paths.Paths, clean string, incoming []scan.Skill, ex
 		return nil
 	}
 	return fmt.Errorf("add-dir: %q collides with already tracked skills: %s", clean, strings.Join(collisions, ", "))
-}
-
-// isInside reports whether path is a strict descendant of dir, lexically on
-// cleaned paths.
-func isInside(path, dir string) bool {
-	rel, err := filepath.Rel(dir, path)
-	if err != nil {
-		return false
-	}
-	return rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // List returns the explicit skillsDirs collection dirs in precedence
