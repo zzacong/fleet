@@ -788,7 +788,7 @@ func TestAnalyzeFlagsStaleLockEntryForAdoptedSkill(t *testing.T) {
 	if f.Kind != KindStaleLock || f.Skill != "git-helper" || f.Harness != "" {
 		t.Errorf("finding = %+v, want the stale lock for git-helper", f)
 	}
-	if f.Home != filepath.Join(repo, "skills") || f.HomeLabel != "the explicit repo" {
+	if f.Home != filepath.Join(repo, "skills") || f.HomeLabel != "the tracked dir" {
 		t.Errorf("home = %q label = %q, want the tracked collection and its label", f.Home, f.HomeLabel)
 	}
 	if !strings.Contains(f.Message, p.SkillLock()) || !strings.Contains(f.Message, filepath.Join(repo, "skills", "git-helper")) {

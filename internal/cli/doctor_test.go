@@ -726,14 +726,11 @@ func TestDoctorGroupsLinkAndManualSections(t *testing.T) {
 // names under it, instead of one long sentence each.
 func TestDoctorGroupsStaleLockByHome(t *testing.T) {
 	p := doctorHome(t)
-	tracked := filepath.Join(p.Home, "repos")
-	if err := os.MkdirAll(filepath.Join(tracked, ".git"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeAdoptConfig(t, p, `{"skillsRepos": ["`+tracked+`"]}`)
+	tracked := filepath.Join(p.Home, "repos", "skills")
+	writeSkillsDirsConfig(t, p, tracked)
 	names := []string{"lock-a", "lock-b", "lock-c"}
 	for _, name := range names {
-		writeSkillDir(t, filepath.Join(tracked, "skills"), name, "Does "+name+".")
+		writeSkillDir(t, tracked, name, "Does "+name+".")
 	}
 	writeSkillDir(t, p.FleetHomeSkills(), "lock-d", "Does lock-d.")
 	lock := `{"skills": {`
@@ -754,7 +751,7 @@ func TestDoctorGroupsStaleLockByHome(t *testing.T) {
 		t.Errorf("stale-lock header missing:\n%s", out)
 	}
 	// One line per home, shortened to ~, names hanging under it.
-	if !strings.Contains(out, "the explicit repo  "+shortenHome(p.Home, filepath.Join(tracked, "skills"))) {
+	if !strings.Contains(out, "the tracked dir  "+shortenHome(p.Home, tracked)) {
 		t.Errorf("tracked home line missing:\n%s", out)
 	}
 	if !strings.Contains(out, "lock-a, lock-b, lock-c\n") {
