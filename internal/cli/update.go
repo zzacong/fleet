@@ -220,9 +220,12 @@ func updatedSkillNames(before, after map[string]scan.Provenance) []string {
 
 // verifyDisables re-reads each writable harness's config after sync and
 // reports the state file's disables that hold: the skill is not loading,
-// which is what "disabled" promised. A disable that still doesn't hold
-// means interference sync already flagged — say so plainly instead of
-// counting it as held.
+// which is what "disabled" promised. A canonical-store disable holds when
+// the harness config carries its off rule. A custom skill on a
+// native-scanning link harness has no config rule: its managed link is the
+// lever, so the disable holds when that link is gone. A disable that still
+// doesn't hold means interference sync already flagged — say so plainly
+// instead of counting it as held.
 func verifyDisables(out io.Writer, p *paths.Paths, skills []scan.Skill) error {
 	st, err := state.Load(p.FleetStateFile())
 	if err != nil {
@@ -262,17 +265,31 @@ func verifyDisables(out io.Writer, p *paths.Paths, skills []scan.Skill) error {
 		if err != nil {
 			return fmt.Errorf("read %s config: %w", h, err)
 		}
+		// A custom skill's lever on a native-scanning link harness is its
+		// managed link, so its disable is the link's absence, not a config
+		// off-entry. Read still reports the config state (always on for a
+		// custom), so the link is what gets verified here.
+		linkCustom := harness.LinkToggleable(a)
+		linked := linkedSet(read.Linked)
 		for _, name := range disabled {
 			if complete && !idx.IsInstalled(name) {
 				continue // dormant: no installed skill to verify
 			}
-			switch read.States[name] {
-			case harness.StateOff, harness.StateAbsent:
-				holds[name] = append(holds[name], h)
-			default:
-				if _, err := fmt.Fprintf(out, "%s%s %q for %s did not stay disabled\n", pal.dim("update: "), pal.broken("verified:"), name, pal.info(h)); err != nil {
-					return err
+			held := false
+			if linkCustom && idx.IsCustom(name) {
+				held = !linked[name]
+			} else {
+				switch read.States[name] {
+				case harness.StateOff, harness.StateAbsent:
+					held = true
 				}
+			}
+			if held {
+				holds[name] = append(holds[name], h)
+				continue
+			}
+			if _, err := fmt.Fprintf(out, "%s%s %q for %s did not stay disabled\n", pal.dim("update: "), pal.broken("verified:"), name, pal.info(h)); err != nil {
+				return err
 			}
 		}
 	}
@@ -283,6 +300,15 @@ func verifyDisables(out io.Writer, p *paths.Paths, skills []scan.Skill) error {
 		}
 	}
 	return nil
+}
+
+// linkedSet indexes a ReadResult's link names for membership.
+func linkedSet(linked []string) map[string]bool {
+	set := make(map[string]bool, len(linked))
+	for _, name := range linked {
+		set[name] = true
+	}
+	return set
 }
 
 // sortedStrings returns the map's keys in sorted order, for a stable
