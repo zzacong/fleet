@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.4](https://github.com/zzacong/fleet/compare/v0.3.3...v0.3.4) (2026-10-05)
+
+
+### Features
+
+* **cli:** group the remaining doctor sections by cause ([#25](https://github.com/zzacong/fleet/issues/25)) ([4038fbf](https://github.com/zzacong/fleet/commit/4038fbf939ba54dd238c4f85f674e312b8bd899b))
+* **cli:** register custom skill dirs by path with add-dir/remove-dir ([#27](https://github.com/zzacong/fleet/issues/27)) ([bb2d755](https://github.com/zzacong/fleet/commit/bb2d755ef9608b5a52871f1f3915ea974e0f0c55))
+* **cli:** stop doctor double presence repeating one paragraph per skill ([#24](https://github.com/zzacong/fleet/issues/24)) ([335f33d](https://github.com/zzacong/fleet/commit/335f33d55389311b5cc8ac6095cd11e830247cbc))
+* **cli:** stop doctor state drift repeating one sentence per skill ([#22](https://github.com/zzacong/fleet/issues/22)) ([27d5f91](https://github.com/zzacong/fleet/commit/27d5f91db5f7f4f1fc487a2fd12980faf0eb826a))
+
+
+### Bug Fixes
+
+* **cli:** verify custom link disables against the managed link ([#28](https://github.com/zzacong/fleet/issues/28)) ([7be3490](https://github.com/zzacong/fleet/commit/7be34903000facdbf060d2e2d53e7d1214cfc391))
+
 ## [0.3.3](https://github.com/zzacong/fleet/compare/v0.3.2...v0.3.3) (2026-10-04)
 
 
