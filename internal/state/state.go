@@ -301,3 +301,11 @@ func (f *File) SetEnabled(name, harness string) {
 		delete(f.skills, name)
 	}
 }
+
+// RemoveSkill drops every entry the state holds for skill, across all
+// harnesses and unknown fields alike. Unlike SetEnabled it does not keep
+// values fleet doesn't recognize: archive retires the whole skill, so
+// nothing may keep referring to its name.
+func (f *File) RemoveSkill(name string) {
+	delete(f.skills, name)
+}
