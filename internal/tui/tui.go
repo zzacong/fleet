@@ -96,7 +96,9 @@ type model struct {
 	updateTarget string
 	helpOpen     bool
 	notice       notice
-	quiet        bool // suppress the hero banner
+	archiveAsk   *archiveAsk // an archive awaiting y; nil when no prompt is up
+	inlineErr    inlineError // a refusal drawn under its row
+	quiet        bool        // suppress the hero banner
 
 	width, height int
 	seq           int // guards against late snapshot messages
@@ -516,6 +518,16 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	m.notice = notice{} // notices last until the next keypress
+	m.inlineErr = inlineError{}
+
+	if ask := m.archiveAsk; ask != nil {
+		m.archiveAsk = nil
+		if key == "y" {
+			return m.archive(ask)
+		}
+		m.notice = notice{text: "archive cancelled", kind: noticeInfo}
+		return m, nil
+	}
 
 	if m.filterFocus {
 		switch key {
@@ -542,11 +554,11 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// While the update-all runs, the keys that would race it — another
-	// update, a refresh, a staged apply — wait for idle. Navigation, the
-	// filter, staging, help, and quit still work.
+	// update, a refresh, a staged apply, an archive — wait for idle.
+	// Navigation, the filter, staging, help, and quit still work.
 	if m.phase == phaseUpdating {
 		switch key {
-		case "u", "U", "r", "enter":
+		case "u", "U", "r", "enter", "A":
 			return m, nil
 		}
 	}
@@ -585,6 +597,8 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		} else {
 			return m, startUpdateOne(&m, m.selectedName())
 		}
+	case "A":
+		return m.askArchive()
 	case "r":
 		return m, startRefresh(&m, "refreshed", reloadFresh)
 	case "?":
