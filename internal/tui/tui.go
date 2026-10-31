@@ -92,13 +92,13 @@ type model struct {
 	filterFocus bool
 	staged      map[cellKey]bool // value is the staged target: on or off
 
-	phase        phase // refreshing while a reload runs
-	updateTarget string
-	helpOpen     bool
-	notice       notice
-	archiveAsk   *archiveAsk // an archive awaiting y; nil when no prompt is up
-	inlineErr    inlineError // a refusal drawn under its row
-	quiet        bool        // suppress the hero banner
+	phase          phase // refreshing while a reload runs
+	updateTarget   string
+	helpOpen       bool
+	notice         notice
+	pendingArchive *pendingArchive // an archive awaiting y; nil when no prompt is up
+	inlineErr      inlineError     // a refusal drawn under its row
+	quiet          bool            // suppress the hero banner
 
 	width, height int
 	seq           int // guards against late snapshot messages
@@ -520,8 +520,8 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	m.notice = notice{} // notices last until the next keypress
 	m.inlineErr = inlineError{}
 
-	if ask := m.archiveAsk; ask != nil {
-		m.archiveAsk = nil
+	if ask := m.pendingArchive; ask != nil {
+		m.pendingArchive = nil
 		if key == "y" {
 			return m.archive(ask)
 		}

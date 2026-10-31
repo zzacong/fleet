@@ -19,6 +19,46 @@ import (
 // CanProject implements Adapter: skillOverrides is a config lever.
 func (a *ClaudeAdapter) CanProject() bool { return true }
 
+// claudeOverrides is one parsed settings.json: the source text, its document
+// (for rendering an edit back), the root object, and the skillOverrides
+// object, which is nil when the key is absent. Project and RemoveOff share
+// this loader so both reject the same malformed shapes.
+type claudeOverrides struct {
+	src  string
+	doc  *jsonc.Document
+	root *jsonc.Object
+	obj  *jsonc.Object
+}
+
+// loadClaudeOverrides reads and parses settings.json, requiring a JSON
+// object at the root and one under skillOverrides when that key is present.
+func loadClaudeOverrides(path string) (*claudeOverrides, error) {
+	src, err := readConfig(path)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := parseStrictJSONConfig(src)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", filepath.Base(path), err)
+	}
+	root := doc.RootObject()
+	if root == nil {
+		return nil, fmt.Errorf("%s must contain a JSON object", filepath.Base(path))
+	}
+	obj := root.Obj("skillOverrides")
+	if root.Has("skillOverrides") && obj == nil {
+		return nil, fmt.Errorf("%s: \"skillOverrides\" must be an object", filepath.Base(path))
+	}
+	return &claudeOverrides{src: src, doc: doc, root: root, obj: obj}, nil
+}
+
+// CheckOverrideConfig parses the Claude settings without changing them, so
+// archive can refuse a malformed file before it moves any skill.
+func (a *ClaudeAdapter) CheckOverrideConfig() error {
+	_, err := loadClaudeOverrides(a.home.ClaudeSettings())
+	return err
+}
+
 // Project implements Adapter.
 func (a *ClaudeAdapter) Project(writes []SkillWrite) (WriteReport, error) {
 	rep := WriteReport{}
@@ -31,23 +71,11 @@ func (a *ClaudeAdapter) Project(writes []SkillWrite) (WriteReport, error) {
 		return WriteReport{}, err
 	}
 
-	src, err := readConfig(a.home.ClaudeSettings())
+	cfg, err := loadClaudeOverrides(a.home.ClaudeSettings())
 	if err != nil {
 		return WriteReport{}, err
 	}
-	doc, err := parseStrictJSONConfig(src)
-	if err != nil {
-		return WriteReport{}, fmt.Errorf("parse %s: %w", filepath.Base(a.home.ClaudeSettings()), err)
-	}
-	root := doc.RootObject()
-	if root == nil {
-		return WriteReport{}, fmt.Errorf("%s must contain a JSON object", filepath.Base(a.home.ClaudeSettings()))
-	}
-
-	overrides := root.Obj("skillOverrides")
-	if root.Has("skillOverrides") && overrides == nil {
-		return WriteReport{}, fmt.Errorf("%s: \"skillOverrides\" must be an object", filepath.Base(a.home.ClaudeSettings()))
-	}
+	src, root, overrides := cfg.src, cfg.root, cfg.obj
 
 	// Names to mark "off" when the skillOverrides object has to be created
 	// fresh.
@@ -126,7 +154,7 @@ func (a *ClaudeAdapter) Project(writes []SkillWrite) (WriteReport, error) {
 	flagUnmanagedClaude(overrides, writes, &rep)
 
 	if !allPreview(writes) {
-		if err := writeIfConfigChanged(a.home.ClaudeSettings(), src, renderConfig(src, doc)); err != nil {
+		if err := writeIfConfigChanged(a.home.ClaudeSettings(), src, renderConfig(src, cfg.doc)); err != nil {
 			return WriteReport{}, err
 		}
 	}
@@ -137,36 +165,25 @@ func (a *ClaudeAdapter) Project(writes []SkillWrite) (WriteReport, error) {
 // "off" marker, dropping the skillOverrides object once nothing is left in
 // it. Any other value, and any other entry, stays. Project only writes
 // "off" for names still in state, so a skill being archived needs this.
+// Call CheckOverrideConfig first when a move precedes this write: a
+// malformed file then fails before anything moves.
 func (a *ClaudeAdapter) RemoveOff(name string) error {
-	src, err := readConfig(a.home.ClaudeSettings())
+	cfg, err := loadClaudeOverrides(a.home.ClaudeSettings())
 	if err != nil {
 		return err
 	}
-	doc, err := parseStrictJSONConfig(src)
-	if err != nil {
-		return fmt.Errorf("parse %s: %w", filepath.Base(a.home.ClaudeSettings()), err)
-	}
-	root := doc.RootObject()
-	if root == nil {
-		return fmt.Errorf("%s must contain a JSON object", filepath.Base(a.home.ClaudeSettings()))
-	}
-
-	overrides := root.Obj("skillOverrides")
-	if root.Has("skillOverrides") && overrides == nil {
-		return fmt.Errorf("%s: \"skillOverrides\" must be an object", filepath.Base(a.home.ClaudeSettings()))
-	}
-	if overrides == nil {
+	if cfg.obj == nil {
 		return nil
 	}
-	if value, ok := overrides.String(name); !ok || value != "off" {
+	if value, ok := cfg.obj.String(name); !ok || value != "off" {
 		return nil
 	}
 
-	overrides.Delete(name)
-	if len(overrides.Keys()) == 0 {
-		root.Delete("skillOverrides")
+	cfg.obj.Delete(name)
+	if len(cfg.obj.Keys()) == 0 {
+		cfg.root.Delete("skillOverrides")
 	}
-	return writeIfConfigChanged(a.home.ClaudeSettings(), src, renderConfig(src, doc))
+	return writeIfConfigChanged(a.home.ClaudeSettings(), cfg.src, renderConfig(cfg.src, cfg.doc))
 }
 
 // flagUnmanagedClaude reports "off" overrides for skills no write covers.

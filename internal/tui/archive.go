@@ -7,7 +7,6 @@ package tui
 
 import (
 	"fmt"
-	"path/filepath"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -16,9 +15,9 @@ import (
 	fleetsync "github.com/zzacong/fleet/internal/sync"
 )
 
-// archiveAsk is an archive waiting on y: the custom copy the row showed when
-// A was pressed, so the confirmed move is the copy on screen.
-type archiveAsk struct {
+// pendingArchive is an archive waiting on y: the custom copy the row showed
+// when A was pressed, so the confirmed move is the copy on screen.
+type pendingArchive struct {
 	name string
 	hit  skillindex.Hit
 }
@@ -40,35 +39,43 @@ func (m model) askArchive() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if !m.isCustom(name) {
-		m.notice = notice{text: fmt.Sprintf("%q is installed — archive moves only custom skills; remove it with the skills CLI", name), kind: noticeInfo}
+		canon, ok, err := customs.CanonicalMatch(m.p, name)
+		if err != nil {
+			m.notice = notice{text: "archive failed: " + err.Error(), kind: noticeErr}
+			return m, nil
+		}
+		if !ok {
+			m.notice = notice{text: fmt.Sprintf("archive: %q not found among custom skills", name), kind: noticeInfo}
+			return m, nil
+		}
+		m.notice = notice{text: customs.InstalledError(name, canon).Error(), kind: noticeInfo}
 		return m, nil
 	}
-	copies, err := customs.CustomCopies(m.p, name)
+	hit, ok, err := customs.LiveCopy(m.p, name)
 	if err != nil {
 		m.notice = notice{text: "archive failed: " + err.Error(), kind: noticeErr}
 		return m, nil
 	}
-	if len(copies) == 0 {
+	if !ok {
 		m.notice = notice{text: fmt.Sprintf("archive: %q not found among custom skills", name), kind: noticeErr}
 		return m, nil
 	}
-	hit := copies[0]
-	m.archiveAsk = &archiveAsk{name: name, hit: hit}
-	m.notice = notice{text: fmt.Sprintf("archive %s? y confirms, any other key cancels", filepath.Join(hit.Home, name)), kind: noticeInfo}
+	m.pendingArchive = &pendingArchive{name: name, hit: hit}
+	m.notice = notice{text: fmt.Sprintf("archive %s? y confirms, any other key cancels", hit.Path()), kind: noticeInfo}
 	return m, nil
 }
 
 // archive runs the confirmed move: the core verb, then sync, the two steps
 // the CLI verb takes. A refusal leaves the matrix as it was and shows under
 // the row. A move that landed reports its unlinks and sync, then refreshes.
-func (m model) archive(ask *archiveAsk) (tea.Model, tea.Cmd) {
+func (m model) archive(ask *pendingArchive) (tea.Model, tea.Cmd) {
 	arc, err := customs.Archive(m.p, ask.hit)
 	if err != nil {
 		m.inlineErr = inlineError{skill: ask.name, text: err.Error()}
 		m.scrollToCursor()
 		return m, nil
 	}
-	text := fmt.Sprintf("archived %q to %s · %d link%s removed", ask.name, arc.To, len(arc.Unlinked), plural(len(arc.Unlinked)))
+	text := fmt.Sprintf("archived %q to %s · %d link%s unlinked", ask.name, arc.To, len(arc.Unlinked), plural(len(arc.Unlinked)))
 	reports, err := fleetsync.Run(m.p)
 	if err != nil {
 		m.notice = notice{text: text + " · sync failed: " + err.Error(), kind: noticeErr}

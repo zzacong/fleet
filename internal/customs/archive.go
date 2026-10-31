@@ -14,9 +14,9 @@ import (
 	"github.com/zzacong/fleet/internal/state"
 )
 
-// Archival is what one archive run did. To is the skill's new location;
+// ArchiveResult is what one archive run did. To is the skill's new location;
 // Unlinked lists the managed links removed this run.
-type Archival struct {
+type ArchiveResult struct {
 	To       string
 	Unlinked []harness.UnlinkResult
 }
@@ -66,7 +66,29 @@ func CanonicalMatch(p *paths.Paths, names ...string) (skillindex.Hit, bool, erro
 // name matches the canonical skill canon: archiving would expose canon in
 // every harness.
 func ShadowError(name string, canon skillindex.Hit) error {
-	return fmt.Errorf("archive: %q shadows canonical skill %q at %s; archiving it would expose the installed copy in every harness", name, canon.Skill.Dir, filepath.Join(canon.Home, canon.Skill.Dir))
+	return fmt.Errorf("archive: %q shadows canonical skill %q at %s; archiving it would expose the installed copy in every harness", name, canon.Skill.Dir, canon.Path())
+}
+
+// InstalledError is the refusal for archiving a skill the skills CLI owns:
+// it names the canonical skill so the user knows which one to remove.
+func InstalledError(name string, canon skillindex.Hit) error {
+	return fmt.Errorf("archive: %q is installed as canonical skill %q at %s; archive moves only custom skills, so remove it with the skills CLI", name, canon.Skill.Dir, canon.Path())
+}
+
+// LiveCopy returns the custom copy a row for name displays: the highest-
+// precedence custom copy matched by directory or frontmatter name. false
+// when no custom copy matches. The TUI uses this so A archives the copy on
+// screen; the CLI resolves through CustomCopies instead so it can refuse an
+// ambiguous name.
+func LiveCopy(p *paths.Paths, name string) (skillindex.Hit, bool, error) {
+	copies, err := CustomCopies(p, name)
+	if err != nil {
+		return skillindex.Hit{}, false, err
+	}
+	if len(copies) == 0 {
+		return skillindex.Hit{}, false, nil
+	}
+	return copies[0], true, nil
 }
 
 // loadScanned loads the skill index and fails when any home cannot be
@@ -89,11 +111,12 @@ func loadScanned(p *paths.Paths) (*skillindex.Index, error) {
 // archived/), unlinks its managed link from every installed harness, drops
 // its state entries, and clears Claude's "off" skillOverrides entry for it.
 // It refuses a copy whose name shadows a canonical skill or whose target
-// already exists in archived/, before anything changes. The state is loaded
-// before anything changes and the move runs before any unlink, so a failed
-// move leaves links and state as they were. Sync is the caller's to run. The
-// archive is one-way.
-func Archive(p *paths.Paths, hit skillindex.Hit) (*Archival, error) {
+// already exists in archived/, before anything changes. Every step that can
+// fail on existing data — the state load and the Claude settings parse —
+// runs before the move, and a failed move removes any archived/ folder this
+// run created, so a refusal or a failed move leaves links and state as they
+// were. Sync is the caller's to run. The archive is one-way.
+func Archive(p *paths.Paths, hit skillindex.Hit) (*ArchiveResult, error) {
 	name := hit.Skill.Dir
 	st, err := state.Load(p.FleetStateFile())
 	if err != nil {
@@ -108,6 +131,11 @@ func Archive(p *paths.Paths, hit skillindex.Hit) (*Archival, error) {
 		return nil, ShadowError(name, canon)
 	}
 
+	claude := harness.NewClaude(p)
+	if err := claude.CheckOverrideConfig(); err != nil {
+		return nil, err
+	}
+
 	archivedDir := filepath.Join(filepath.Dir(hit.Home), "archived")
 	to := filepath.Join(archivedDir, name)
 	if _, err := os.Lstat(to); err == nil {
@@ -115,11 +143,16 @@ func Archive(p *paths.Paths, hit skillindex.Hit) (*Archival, error) {
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
+	_, statErr := os.Stat(archivedDir)
+	createdArchived := os.IsNotExist(statErr)
 
 	if err := os.MkdirAll(archivedDir, 0o755); err != nil {
 		return nil, err
 	}
-	if err := moveDir(filepath.Join(hit.Home, name), to); err != nil {
+	if err := moveDir(hit.Path(), to); err != nil {
+		if createdArchived {
+			_ = os.Remove(archivedDir) // empty unless this run's MkdirAll was the only one
+		}
 		return nil, fmt.Errorf("archive %s: %w", name, err)
 	}
 
@@ -127,7 +160,7 @@ func Archive(p *paths.Paths, hit skillindex.Hit) (*Archival, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := harness.NewClaude(p).RemoveOff(name); err != nil {
+	if err := claude.RemoveOff(name); err != nil {
 		return nil, err
 	}
 
@@ -135,7 +168,7 @@ func Archive(p *paths.Paths, hit skillindex.Hit) (*Archival, error) {
 	if err := state.Save(p.FleetStateFile(), st); err != nil {
 		return nil, err
 	}
-	return &Archival{To: to, Unlinked: unlinked}, nil
+	return &ArchiveResult{To: to, Unlinked: unlinked}, nil
 }
 
 // unlinkSkill removes name's managed link from every installed harness that

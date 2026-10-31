@@ -28,6 +28,12 @@ type Hit struct {
 	Home  string
 }
 
+// Path is the copy's location on disk: its collection dir plus the skill's
+// directory name.
+func (h Hit) Path() string {
+	return filepath.Join(h.Home, h.Skill.Dir)
+}
+
 // Index is the scanned union of every skill source. Homes are
 // precedence-first: every explicit skillsDirs collection, then the
 // fleet-home fallback, then the canonical store.

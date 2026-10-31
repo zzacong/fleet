@@ -341,6 +341,50 @@ func TestArchiveFailedMoveLeavesLinksAndStateAlone(t *testing.T) {
 	}
 }
 
+// An unparseable Claude settings file fails the archive before the move, so
+// the half-archived state story 23 forbids never happens.
+func TestArchiveUnparseableClaudeSettingsChangesNothing(t *testing.T) {
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	writeSkillDir(t, collection, "alpha", "Alpha.")
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+	runToggle(t, p, "off", "alpha", "--harness", "claude")
+	if err := os.WriteFile(p.ClaudeSettings(), []byte(`{"skillOverrides": `), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTree(t, p.Home, filepath.Dir(collection))
+
+	if _, err := runArchive(t, p, "alpha"); err == nil {
+		t.Fatal("archive with unparseable claude settings should fail")
+	}
+	assertTreeUnchanged(t, before, snapshotTree(t, p.Home, filepath.Dir(collection)))
+}
+
+// A move that fails after archived/ was created takes that folder with it,
+// so a retry starts from the same state as the first attempt.
+func TestArchiveFailedMoveRemovesArchivedFolderItCreated(t *testing.T) {
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	writeSkillDir(t, collection, "alpha", "Alpha.")
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+	// A read-only collection dir still allows archived/ to be created
+	// beside it, but not the move that empties it.
+	if err := os.Chmod(collection, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(collection, 0o755) })
+	before := snapshotTree(t, p.Home, filepath.Dir(collection))
+
+	if _, err := runArchive(t, p, "alpha"); err == nil {
+		t.Fatal("archive out of a read-only collection should fail")
+	}
+	assertTreeUnchanged(t, before, snapshotTree(t, p.Home, filepath.Dir(collection)))
+}
+
 func TestArchiveNamesSkillByFrontmatterNameAndArchivesUnderDirName(t *testing.T) {
 	p := harnessHome(t)
 	collection := filepath.Join(t.TempDir(), "customs")

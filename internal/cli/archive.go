@@ -6,7 +6,6 @@ package cli
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -21,7 +20,7 @@ func newSkillArchiveCmd(p *paths.Paths) *cobra.Command {
 		Use:   "archive <name>",
 		Short: "Archive a custom skill and unlink it from every harness",
 		Long: "Move a custom skill's folder into an `archived/` folder beside its collection dir, unlink its managed links from every installed harness, and drop its enablement entries, Claude's included.\n\n" +
-			"`<name>` is the skill's directory name. A skill in the fleet-home fallback archives into the fleet home's `archived/`. Archive is one-way: restoring a skill is a manual move back.\n\n" +
+			"`<name>` is the skill's directory name or its frontmatter name. A skill in the fleet-home fallback archives into the fleet home's `archived/`. Archive is one-way: restoring a skill is a manual move back. A refusal or a failed move changes nothing, so a retry starts from the same state.\n\n" +
 			"After the move, sync runs as on every command. Fleet consults no git binary, so committing the move is yours.",
 		Example: "  fleet skill archive my-notes",
 		Args:    cobra.ExactArgs(1),
@@ -65,7 +64,7 @@ func resolveCustomCopy(p *paths.Paths, name string) (skillindex.Hit, error) {
 		return skillindex.Hit{}, err
 	}
 	if installed && len(copies) == 0 {
-		return skillindex.Hit{}, fmt.Errorf("archive: %q is installed as canonical skill %q at %s; archive moves only custom skills, so remove it with the skills CLI", name, canon.Skill.Dir, filepath.Join(canon.Home, canon.Skill.Dir))
+		return skillindex.Hit{}, customs.InstalledError(name, canon)
 	}
 	if installed {
 		return skillindex.Hit{}, customs.ShadowError(name, canon)
@@ -78,7 +77,7 @@ func resolveCustomCopy(p *paths.Paths, name string) (skillindex.Hit, error) {
 	}
 	lines := make([]string, 0, len(copies))
 	for _, c := range copies {
-		lines = append(lines, "- "+filepath.Join(c.Home, c.Skill.Dir))
+		lines = append(lines, "- "+c.Path())
 	}
 	return skillindex.Hit{}, fmt.Errorf("archive: %q matches %d custom copies; archive one by hand:\n%s", name, len(copies), strings.Join(lines, "\n"))
 }
