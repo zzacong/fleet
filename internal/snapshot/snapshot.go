@@ -10,6 +10,7 @@ package snapshot
 import (
 	"context"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"sort"
 
@@ -50,39 +51,157 @@ type Report struct {
 // DefaultTreeClient builds the update-check client: the real GitHub API
 // behind the persistent TTL cache in fleet's config dir. Callers keep a
 // variable so tests can swap in a scripted stub.
-func DefaultTreeClient(p *paths.Paths) outdated.TreeClient {
+func DefaultTreeClient(p *paths.Paths) outdated.CachedTreeClient {
 	return outdated.NewCachingClient(outdated.NewHTTPClient(""), filepath.Join(p.FleetConfigDir(), "tree-cache.json"))
 }
 
-// Build scans the canonical store, every tracked custom home (the explicit
-// skillsDirs list in order, via the tracked set), and the unversioned
-// fleet-home fallback, then every installed harness's own config, and
-// classifies each installed skill's update state. Check failures come back
-// as warnings, not errors. Display precedence is explicit-list order, then
-// the unversioned fallback, then the canonical store. A name present in
-// more than one source appears once, from the highest-precedence source.
-// The other copy is not shown — its existence is doctor drift.
+// draft is a snapshot whose update badges are not yet filled in. entries is
+// the update-check input keyed by skill directory; dirOf maps each row's
+// name back to its directory, since a badge is decided per directory.
+type draft struct {
+	report  *Report
+	entries map[string]outdated.Entry
+	dirOf   map[string]string
+}
+
+// setBadges fills every row's update badge from statuses, keyed by skill
+// directory. A directory with no status stays unknown.
+func (d *draft) setBadges(statuses map[string]outdated.Status) {
+	for i := range d.report.Skills {
+		d.report.Skills[i].Outdated = outdatedPtr(statuses[d.dirOf[d.report.Skills[i].Name]])
+	}
+}
+
+// Build is the synchronous snapshot: every update check finishes before it
+// returns, so the badges are final. The ls verb uses it. Check failures come
+// back as warnings, not errors.
 func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Report, []string, error) {
+	d, err := readDraft(p)
+	if err != nil {
+		return nil, nil, err
+	}
+	check := outdated.Check(ctx, client, d.entries)
+	d.setBadges(check.Statuses)
+	return d.report, check.Warnings, nil
+}
+
+// Loaded is a snapshot whose update badges may still be pending. Report
+// holds every badge the cache could answer; Checks holds the repo trees it
+// could not. Warnings are update problems known without a network call.
+type Loaded struct {
+	Report   *Report
+	Checks   *Checks
+	Warnings []string
+}
+
+// Load builds the snapshot without waiting on GitHub. Badges the cache can
+// answer are filled in right away; every other repo tree is left in Checks
+// for the caller to run in the background. force skips the cache, so every
+// repo is pending: the manual refresh.
+func Load(p *paths.Paths, client outdated.CachedTreeClient, force bool) (*Loaded, error) {
+	d, err := readDraft(p)
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[string]string, len(d.dirOf))
+	for name, dir := range d.dirOf {
+		names[dir] = name
+	}
+	checks := &Checks{client: client, entries: d.entries, names: names, force: force}
+
+	groups, warnings := outdated.Plan(d.entries)
+	statuses := map[string]outdated.Status{}
+	for _, g := range groups {
+		if !force {
+			if resp, ok := client.Fresh(g.Owner, g.Repo, g.Ref); ok {
+				got, w := outdated.Classify(g, d.entries, resp)
+				maps.Copy(statuses, got)
+				warnings = append(warnings, w...)
+				continue
+			}
+		}
+		checks.groups = append(checks.groups, g)
+		for _, key := range g.Keys {
+			checks.pending = append(checks.pending, names[key])
+		}
+	}
+	d.setBadges(statuses)
+	sort.Strings(checks.pending)
+	sort.Strings(warnings)
+	return &Loaded{Report: d.report, Checks: checks, Warnings: warnings}, nil
+}
+
+// Checks is the update work a Load left behind: one repo tree per group the
+// cache could not answer. Run each group in turn; the caller owns the order
+// and decides when to stop.
+type Checks struct {
+	client  outdated.CachedTreeClient
+	entries map[string]outdated.Entry
+	names   map[string]string // skill directory -> row name
+	groups  []outdated.Group
+	pending []string // row names still waiting on a Run, sorted
+	force   bool     // re-fetch every tree, ignoring the cache's TTL
+}
+
+// Len is the number of repo trees left to fetch.
+func (c *Checks) Len() int { return len(c.groups) }
+
+// Pending lists the skill names whose badge is waiting on a Run, sorted.
+func (c *Checks) Pending() []string { return c.pending }
+
+// Result is one repo tree's badges. Outdated has an entry for every skill
+// the group decides, nil for the ones that stayed unknown.
+type Result struct {
+	Outdated map[string]*bool
+	Warnings []string
+}
+
+// Run fetches group i and classifies its members. It is safe to call from a
+// background command: the cache serializes its own state, and the checks
+// read only what Load set.
+func (c *Checks) Run(ctx context.Context, i int) Result {
+	g := c.groups[i]
+	fetch := func(ctx context.Context, owner, repo, ref string) (outdated.TreeResponse, error) {
+		if c.force {
+			return c.client.Revalidate(ctx, owner, repo, ref)
+		}
+		return c.client.FetchTree(ctx, owner, repo, ref, "")
+	}
+	statuses, warnings := outdated.CheckGroup(ctx, fetch, g, c.entries)
+	res := Result{Outdated: make(map[string]*bool, len(g.Keys)), Warnings: warnings}
+	for _, key := range g.Keys {
+		res.Outdated[c.names[key]] = outdatedPtr(statuses[key])
+	}
+	return res
+}
+
+// readDraft reads the canonical store, every tracked custom home, the fleet-home
+// fallback, and every installed harness's config. It returns the rows in
+// display order, without update badges. Display precedence is explicit-list
+// order, then the unversioned fallback, then the canonical store. A name
+// present in more than one source appears once, from the highest-precedence
+// source. The other copy is not shown — its existence is doctor drift.
+func readDraft(p *paths.Paths) (*draft, error) {
 	// Every skill source scanned once through the skill index (the
 	// canonical store, every tracked collection in precedence order,
 	// then the fleet-home fallback). Per-home scan failures fail the
 	// build, as before.
 	idx, errs, err := skillindex.Load(p)
 	if err != nil {
-		return nil, nil, fmt.Errorf("resolve tracked dirs: %w", err)
+		return nil, fmt.Errorf("resolve tracked dirs: %w", err)
 	}
 	if serr, ok := errs[idx.Store()]; ok {
-		return nil, nil, fmt.Errorf("scan canonical store: %w", serr)
+		return nil, fmt.Errorf("scan canonical store: %w", serr)
 	}
 	if serr, ok := errs[idx.Fallback()]; ok {
-		return nil, nil, fmt.Errorf("scan fleet home: %w", serr)
+		return nil, fmt.Errorf("scan fleet home: %w", serr)
 	}
 	for _, home := range idx.CustomHomes() {
 		if home == idx.Fallback() {
 			continue
 		}
 		if serr, ok := errs[home]; ok {
-			return nil, nil, fmt.Errorf("scan tracked dir %s: %w", home, serr)
+			return nil, fmt.Errorf("scan tracked dir %s: %w", home, serr)
 		}
 	}
 	// Union with precedence tracked order > fleet-home > canonical: apply
@@ -114,7 +233,7 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 	sort.Slice(skills, func(i, j int) bool { return skills[i].Dir < skills[j].Dir })
 	lock, err := scan.ReadLockfile(p.SkillLock())
 	if err != nil {
-		return nil, nil, fmt.Errorf("read skills lockfile: %w", err)
+		return nil, fmt.Errorf("read skills lockfile: %w", err)
 	}
 
 	installed := harness.Installed(p)
@@ -129,7 +248,7 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 	for i, a := range installed {
 		read, err := a.Read(names)
 		if err != nil {
-			return nil, nil, fmt.Errorf("read %s config: %w", a.Harness(), err)
+			return nil, fmt.Errorf("read %s config: %w", a.Harness(), err)
 		}
 		reads[i] = read
 		// A link-toggleable harness reaches a custom skill only through
@@ -150,8 +269,7 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 		harnessNames[i] = string(a.Harness())
 	}
 
-	// One update check for every skill in the store, grouped inside the
-	// checker: installed skills carry their lockfile provenance, customs
+	// Checkable installed skills carry their lockfile provenance; customs
 	// stay the zero entry (unknown by definition, no API call). Tracked-set
 	// and fleet-home customs are zero entries — a lingering lock entry from a
 	// pre-adoption install must not make fleet check (or misreport) a
@@ -174,10 +292,11 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 			entries[s.Dir] = outdated.Entry{}
 		}
 	}
-	check := outdated.Check(ctx, client, entries)
 
+	dirOf := make(map[string]string, len(skills))
 	rows := make([]SkillRow, len(skills))
 	for i, s := range skills {
+		dirOf[s.Name] = s.Dir
 		states := make(map[string]string, len(installed))
 		for j := range installed {
 			state := reads[j].States[s.Name]
@@ -198,7 +317,6 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 			Name:        s.Name,
 			Description: s.Description,
 			States:      states,
-			Outdated:    outdatedPtr(check.Statuses[s.Dir]),
 		}
 		if customHomeNames[s.Name] {
 			// Custom by definition: it lives in a custom home, unversioned
@@ -229,7 +347,11 @@ func Build(ctx context.Context, p *paths.Paths, client outdated.TreeClient) (*Re
 		return rows[i].Name < rows[j].Name
 	})
 
-	return &Report{Harnesses: harnessNames, Skills: rows}, check.Warnings, nil
+	return &draft{
+		report:  &Report{Harnesses: harnessNames, Skills: rows},
+		entries: entries,
+		dirOf:   dirOf,
+	}, nil
 }
 
 // outdatedPtr renders the tri-state for JSON: outdated true, current

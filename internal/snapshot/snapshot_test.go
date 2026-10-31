@@ -31,10 +31,22 @@ func writeSkill(t *testing.T, store, dir, name, description string) {
 	}
 }
 
+// fakeTrees scripts GitHub. fresh holds the trees the cache can answer
+// without the network, keyed like trees.
 type fakeTrees struct {
 	calls []string
 	trees map[string]outdated.TreeResponse
 	errs  map[string]error
+	fresh map[string]outdated.TreeResponse
+}
+
+func (f *fakeTrees) Fresh(owner, repo, ref string) (outdated.TreeResponse, bool) {
+	resp, ok := f.fresh[owner+"/"+repo+"@"+ref]
+	return resp, ok
+}
+
+func (f *fakeTrees) Revalidate(ctx context.Context, owner, repo, ref string) (outdated.TreeResponse, error) {
+	return f.FetchTree(ctx, owner, repo, ref, "")
 }
 
 func (f *fakeTrees) FetchTree(_ context.Context, owner, repo, ref, _ string) (outdated.TreeResponse, error) {
@@ -766,4 +778,67 @@ func TestSnapshotCustomLinkToggleState(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestLoadLeavesColdReposForTheBackground: a load never touches the network.
+// A repo the cache cannot answer stays pending until its Run, and once the
+// cache holds it the next load has nothing left to check.
+func TestLoadLeavesColdReposForTheBackground(t *testing.T) {
+	p := paths.New(t.TempDir())
+	writeSkill(t, p.SkillsStore(), "installed", "installed", "installed desc")
+	lock := `{"version":3,"skills":{"installed":{"source":"owner/repo","sourceType":"github","skillPath":"skills/installed/SKILL.md","skillFolderHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}}`
+	if err := os.MkdirAll(p.AgentsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.SkillLock(), []byte(lock), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	trees := &fakeTrees{}
+	trees.scriptTree("owner/repo@",
+		outdated.TreeEntry{Path: "skills/installed", Type: "tree", SHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+	)
+
+	loaded, err := Load(p, trees, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(trees.calls) != 0 {
+		t.Fatalf("load reached the network: %v", trees.calls)
+	}
+	if got := rowBadge(t, loaded.Report, "installed"); got != nil {
+		t.Errorf("cold badge = %v, want pending (nil) until its check runs", *got)
+	}
+	if loaded.Checks.Len() != 1 || len(loaded.Checks.Pending()) != 1 {
+		t.Fatalf("checks: len %d pending %v, want one repo waiting on one skill", loaded.Checks.Len(), loaded.Checks.Pending())
+	}
+
+	res := loaded.Checks.Run(context.Background(), 0)
+	if got := res.Outdated["installed"]; got == nil || *got {
+		t.Errorf("checked badge = %v, want current", got)
+	}
+
+	// The cache now answers, so a second load leaves nothing to check.
+	trees.fresh = map[string]outdated.TreeResponse{"owner/repo@": trees.trees["owner/repo@"]}
+	loaded, err = Load(p, trees, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Checks.Len() != 0 {
+		t.Errorf("warm load left %d checks", loaded.Checks.Len())
+	}
+	if got := rowBadge(t, loaded.Report, "installed"); got == nil || *got {
+		t.Errorf("warm badge = %v, want current from the cache", got)
+	}
+}
+
+// rowBadge returns the named row's badge; a missing row fails the test.
+func rowBadge(t *testing.T, report *Report, name string) *bool {
+	t.Helper()
+	for _, r := range report.Skills {
+		if r.Name == name {
+			return r.Outdated
+		}
+	}
+	t.Fatalf("no row named %q", name)
+	return nil
 }

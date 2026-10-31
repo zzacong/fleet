@@ -96,7 +96,7 @@ func (m model) applyUpdate(msg updateMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.notice = notice{text: msg.summary, kind: noticeGood}
-	return m, startRefresh(&m, "")
+	return m, startRefresh(&m, "", reloadCached)
 }
 
 // updateFailure renders a failed run the way the CLI surfaces one: the
