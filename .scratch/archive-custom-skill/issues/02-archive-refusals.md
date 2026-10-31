@@ -4,11 +4,11 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Archiving an unknown name fails and says the skill was not found
-- [ ] Archiving an installed skill fails, names the canonical skill, and points at the `skills` CLI
-- [ ] Archiving a custom skill whose name matches a canonical skill fails and names that canonical skill
-- [ ] Archiving when `archived/` already holds that name fails and tells the user to rename or remove the existing folder
-- [ ] Archiving a name that matches several custom copies fails and lists each path
-- [ ] Every refusal leaves the folder, links, and state file exactly as they were
+- [x] Archiving an unknown name fails and says the skill was not found
+- [x] Archiving an installed skill fails, names the canonical skill, and points at the `skills` CLI
+- [x] Archiving a custom skill whose name matches a canonical skill fails and names that canonical skill
+- [x] Archiving when `archived/` already holds that name fails and tells the user to rename or remove the existing folder
+- [x] Archiving a name that matches several custom copies fails and lists each path
+- [x] Every refusal leaves the folder, links, and state file exactly as they were

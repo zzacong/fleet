@@ -4,12 +4,12 @@
 
 **Blocked by:** 02, 03
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `A` on a custom row shows a confirmation prompt and changes nothing until confirmed
-- [ ] Confirming archives the copy the row displays and refreshes the list
-- [ ] Cancelling the prompt leaves everything unchanged
-- [ ] `A` on an installed row shows a notice and does nothing
-- [ ] A refusal from the core shows inline on the row
-- [ ] Typing `A` in the filter box adds the letter to the filter
-- [ ] The help overlay lists `A`
+- [x] `A` on a custom row shows a confirmation prompt and changes nothing until confirmed
+- [x] Confirming archives the copy the row displays and refreshes the list
+- [x] Cancelling the prompt leaves everything unchanged
+- [x] `A` on an installed row shows a notice and does nothing
+- [x] A refusal from the core shows inline on the row
+- [x] Typing `A` in the filter box adds the letter to the filter
+- [x] The help overlay lists `A`

@@ -4,9 +4,9 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] After archiving a skill that Claude had disabled, its `skillOverrides` entry is gone from the Claude settings file
-- [ ] An override with a value other than fleet's `off` marker for that name is left in place
-- [ ] Other entries in `skillOverrides` are unchanged
-- [ ] When removing the entry leaves `skillOverrides` empty, the object is removed as well
+- [x] After archiving a skill that Claude had disabled, its `skillOverrides` entry is gone from the Claude settings file
+- [x] An override with a value other than fleet's `off` marker for that name is left in place
+- [x] Other entries in `skillOverrides` are unchanged
+- [x] When removing the entry leaves `skillOverrides` empty, the object is removed as well

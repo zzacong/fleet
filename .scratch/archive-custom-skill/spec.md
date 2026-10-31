@@ -1,6 +1,6 @@
 # archive-custom-skill
 
-Status: ready-for-agent
+Status: resolved
 
 Archive a custom skill: move it out of its collection dir into a sibling `archived/` folder, and unlink it everywhere so it disappears from every harness. One-way in v1.
 

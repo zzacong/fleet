@@ -4,8 +4,8 @@
 
 **Blocked by:** 02, 03, 04
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The archive verb appears alongside `add-dir` and `remove-dir` in the CLI documentation
-- [ ] The `A` key appears wherever the other TUI keys are documented
-- [ ] The docs state that archive is one-way and that the archived folder is ignored by `ls` and doctor
+- [x] The archive verb appears alongside `add-dir` and `remove-dir` in the CLI documentation
+- [x] The `A` key appears wherever the other TUI keys are documented
+- [x] The docs state that archive is one-way and that the archived folder is ignored by `ls` and doctor
