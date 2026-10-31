@@ -26,14 +26,9 @@ type Archival struct {
 // an installed skill yields none. It fails when any home cannot be scanned,
 // because a missing copy could then be hiding among the unreadable ones.
 func CustomCopies(p *paths.Paths, name string) ([]skillindex.Hit, error) {
-	idx, errs, err := skillindex.Load(p)
+	idx, err := loadScanned(p)
 	if err != nil {
 		return nil, err
-	}
-	for _, home := range idx.Homes() {
-		if err, ok := errs[home]; ok {
-			return nil, fmt.Errorf("scan %s: %w", home, err)
-		}
 	}
 	var out []skillindex.Hit
 	for _, h := range idx.Ordered(name) {
@@ -44,12 +39,55 @@ func CustomCopies(p *paths.Paths, name string) ([]skillindex.Hit, error) {
 	return out, nil
 }
 
+// CanonicalMatch returns the canonical store skill that any of names matches
+// by directory or frontmatter name, and false when the store holds none. It
+// fails when any home cannot be scanned, since a missing match could then be
+// hiding among the unreadable ones.
+func CanonicalMatch(p *paths.Paths, names ...string) (skillindex.Hit, bool, error) {
+	idx, err := loadScanned(p)
+	if err != nil {
+		return skillindex.Hit{}, false, err
+	}
+	for _, name := range names {
+		for _, h := range idx.Lookup(name) {
+			if h.Home == idx.Store() {
+				return h, true, nil
+			}
+		}
+	}
+	return skillindex.Hit{}, false, nil
+}
+
+// ShadowError is the refusal for archiving a custom copy named name whose
+// name matches the canonical skill canon: archiving would expose canon in
+// every harness.
+func ShadowError(name string, canon skillindex.Hit) error {
+	return fmt.Errorf("archive: %q shadows canonical skill %q at %s; archiving it would expose the installed copy in every harness", name, canon.Skill.Dir, filepath.Join(canon.Home, canon.Skill.Dir))
+}
+
+// loadScanned loads the skill index and fails when any home cannot be
+// scanned, so callers never answer from a partial view.
+func loadScanned(p *paths.Paths) (*skillindex.Index, error) {
+	idx, errs, err := skillindex.Load(p)
+	if err != nil {
+		return nil, err
+	}
+	for _, home := range idx.Homes() {
+		if err, ok := errs[home]; ok {
+			return nil, fmt.Errorf("scan %s: %w", home, err)
+		}
+	}
+	return idx, nil
+}
+
 // Archive moves one custom skill copy into the archived/ folder beside its
 // collection dir (the fleet-home fallback's goes to the fleet home's
 // archived/), unlinks its managed link from every installed harness, and
-// drops its state entries. The state is loaded before anything changes and
-// the move runs before any unlink, so a failed move leaves links and state
-// as they were. Sync is the caller's to run. The archive is one-way.
+// drops its state entries. It refuses a copy whose name shadows a canonical
+// skill or whose target already exists in archived/, before anything
+// changes. The state is loaded before anything changes and the move runs
+// before any unlink, so a failed move leaves links and state as they were.
+// Sync is the caller's to run. The archive is one-way.
 func Archive(p *paths.Paths, hit skillindex.Hit) (*Archival, error) {
 	name := hit.Skill.Dir
 	st, err := state.Load(p.FleetStateFile())
@@ -57,8 +95,22 @@ func Archive(p *paths.Paths, hit skillindex.Hit) (*Archival, error) {
 		return nil, err
 	}
 
+	canon, shadowed, err := CanonicalMatch(p, name, hit.Skill.Name)
+	if err != nil {
+		return nil, err
+	}
+	if shadowed {
+		return nil, ShadowError(name, canon)
+	}
+
 	archivedDir := filepath.Join(filepath.Dir(hit.Home), "archived")
 	to := filepath.Join(archivedDir, name)
+	if _, err := os.Lstat(to); err == nil {
+		return nil, fmt.Errorf("archive: %q already exists at %s; rename or remove the existing archived folder first", name, to)
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+
 	if err := os.MkdirAll(archivedDir, 0o755); err != nil {
 		return nil, err
 	}

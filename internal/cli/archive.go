@@ -49,17 +49,30 @@ func newSkillArchiveCmd(p *paths.Paths) *cobra.Command {
 	}
 }
 
-// resolveCustomCopy returns the one custom copy named name. A name with no
-// custom copy is an error, and so is one with several: archive must never
-// pick a copy the user didn't name, so the error lists every path.
+// resolveCustomCopy returns the one custom copy named name. A name that
+// matches a canonical skill is refused before the copy count: an installed
+// skill belongs to the skills CLI, and a shadowing copy must not be archived.
+// Then a name with no custom copy is an error, and so is one with several:
+// archive must never pick a copy the user didn't name, so the error lists
+// every path.
 func resolveCustomCopy(p *paths.Paths, name string) (skillindex.Hit, error) {
 	copies, err := customs.CustomCopies(p, name)
 	if err != nil {
 		return skillindex.Hit{}, err
 	}
+	canon, installed, err := customs.CanonicalMatch(p, name)
+	if err != nil {
+		return skillindex.Hit{}, err
+	}
+	if installed && len(copies) == 0 {
+		return skillindex.Hit{}, fmt.Errorf("archive: %q is installed as canonical skill %q at %s; archive moves only custom skills, so remove it with the skills CLI", name, canon.Skill.Dir, filepath.Join(canon.Home, canon.Skill.Dir))
+	}
+	if installed {
+		return skillindex.Hit{}, customs.ShadowError(name, canon)
+	}
 	switch len(copies) {
 	case 0:
-		return skillindex.Hit{}, fmt.Errorf("archive: %q is not a custom skill in a tracked dir", name)
+		return skillindex.Hit{}, fmt.Errorf("archive: %q not found among custom skills", name)
 	case 1:
 		return copies[0], nil
 	}
