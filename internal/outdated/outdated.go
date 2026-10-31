@@ -14,6 +14,7 @@ package outdated
 
 import (
 	"context"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -90,75 +91,117 @@ type TreeClient interface {
 	FetchTree(ctx context.Context, owner, repo, ref, ifNoneMatch string) (TreeResponse, error)
 }
 
-// Check classifies every entry: one FetchTree per distinct (source, ref)
-// group, then each member is compared by its own folder hash. Entries that
-// cannot be compared without guessing are unknown and never reach the
-// client. Failures degrade to unknown with a warning.
-func Check(ctx context.Context, client TreeClient, entries map[string]Entry) Report {
-	statuses := make(map[string]Status, len(entries))
-	warnings := map[string]bool{}
+// Group is one repo tree a check must fetch: every checkable entry that
+// shares a source and ref, so the whole group costs one API call.
+type Group struct {
+	Source string
+	Owner  string
+	Repo   string
+	Ref    string
+	// Keys are the entry keys this tree decides.
+	Keys []string
+}
 
-	// Group checkable entries by source and ref: two skills from the same
-	// repo share one tree; different refs need different trees.
-	type group struct {
-		owner, repo string
-		keys        []string
-	}
-	groups := map[string]*group{}
-	var order []string // deterministic group order
+// Fetch returns one repo's tree at a ref. Check hands it the client's
+// FetchTree; the TUI hands it the cache's revalidating fetch.
+type Fetch func(ctx context.Context, owner, repo, ref string) (TreeResponse, error)
+
+// Plan groups the checkable entries and warns about the ones that cannot be
+// checked. Entries outside every group are unknown by definition and never
+// reach a client.
+func Plan(entries map[string]Entry) ([]Group, []string) {
+	var groups []Group
+	var warnings []string
+	index := map[string]int{} // source + ref -> position in groups
 
 	for _, key := range sortedKeys(entries) {
 		e := entries[key]
-		statuses[key] = StatusUnknown
-
 		if e.SourceType != "github" {
 			continue // git, local, well-known, custom: not checkable, by design
 		}
 		if !isTreeSHA(e.Hash) || e.SkillPath == "" {
-			warnings["cannot check "+key+": the lockfile entry has no comparable skillFolderHash or skillPath (reinstall the skill to populate it)"] = true
+			warnings = append(warnings, "cannot check "+key+": the lockfile entry has no comparable skillFolderHash or skillPath (reinstall the skill to populate it)")
 			continue
 		}
 		owner, repo, err := parseOwnerRepo(e.Source)
 		if err != nil {
-			warnings["cannot check "+key+": "+err.Error()] = true
+			warnings = append(warnings, "cannot check "+key+": "+err.Error())
 			continue
 		}
 		gk := e.Source + "\x00" + e.Ref
-		g, ok := groups[gk]
+		i, ok := index[gk]
 		if !ok {
-			g = &group{owner: owner, repo: repo}
-			groups[gk] = g
-			order = append(order, gk)
+			groups = append(groups, Group{Source: e.Source, Owner: owner, Repo: repo, Ref: e.Ref})
+			i = len(groups) - 1
+			index[gk] = i
 		}
-		g.keys = append(g.keys, key)
+		groups[i].Keys = append(groups[i].Keys, key)
 	}
+	return groups, warnings
+}
 
-	for _, gk := range order {
-		g := groups[gk]
-		e := entries[g.keys[0]]
-		resp, err := client.FetchTree(ctx, g.owner, g.repo, e.Ref, "")
-		if err != nil {
-			warnings["update check for "+e.Source+" failed: "+err.Error()] = true
-			continue // members keep StatusUnknown
+// Classify compares each member of g with the tree it was fetched as. A
+// member whose folder is missing from the tree stays unknown, never a guess;
+// a truncated tree adds a warning.
+func Classify(g Group, entries map[string]Entry, resp TreeResponse) (map[string]Status, []string) {
+	statuses := make(map[string]Status, len(g.Keys))
+	var warnings []string
+	if resp.Truncated {
+		warnings = append(warnings, "GitHub returned a truncated tree for "+g.Source+"; skills missing from it are reported as unknown")
+	}
+	for _, key := range g.Keys {
+		statuses[key] = StatusUnknown
+		folder := folderPath(entries[key].SkillPath)
+		remote := folderHash(resp, folder)
+		if remote == "" {
+			continue // folder absent from the tree (or the tree was truncated): unknown, not a guess
 		}
-		if resp.Truncated {
-			warnings["GitHub returned a truncated tree for "+e.Source+"; skills missing from it are reported as unknown"] = true
-		}
-		for _, key := range g.keys {
-			folder := folderPath(entries[key].SkillPath)
-			remote := folderHash(resp, folder)
-			if remote == "" {
-				continue // folder absent from the tree (or the tree was truncated): unknown, not a guess
-			}
-			if remote == entries[key].Hash {
-				statuses[key] = StatusCurrent
-			} else {
-				statuses[key] = StatusOutdated
-			}
+		if remote == entries[key].Hash {
+			statuses[key] = StatusCurrent
+		} else {
+			statuses[key] = StatusOutdated
 		}
 	}
+	return statuses, warnings
+}
 
-	return Report{Statuses: statuses, Warnings: sortedUnique(warnings)}
+// CheckGroup fetches g's tree through fetch and classifies its members. A
+// failed fetch leaves every member unknown and warns once.
+func CheckGroup(ctx context.Context, fetch Fetch, g Group, entries map[string]Entry) (map[string]Status, []string) {
+	resp, err := fetch(ctx, g.Owner, g.Repo, g.Ref)
+	if err != nil {
+		statuses := make(map[string]Status, len(g.Keys))
+		for _, key := range g.Keys {
+			statuses[key] = StatusUnknown
+		}
+		return statuses, []string{"update check for " + g.Source + " failed: " + err.Error()}
+	}
+	return Classify(g, entries, resp)
+}
+
+// Check classifies every entry in one synchronous pass: one FetchTree per
+// distinct (source, ref) group. Failures degrade to unknown with a warning.
+func Check(ctx context.Context, client TreeClient, entries map[string]Entry) Report {
+	groups, warnings := Plan(entries)
+	statuses := make(map[string]Status, len(entries))
+	for key := range entries {
+		statuses[key] = StatusUnknown
+	}
+	fetch := func(ctx context.Context, owner, repo, ref string) (TreeResponse, error) {
+		return client.FetchTree(ctx, owner, repo, ref, "")
+	}
+	seen := map[string]bool{}
+	for _, w := range warnings {
+		seen[w] = true
+	}
+	for _, g := range groups {
+		got, w := CheckGroup(ctx, fetch, g, entries)
+		maps.Copy(statuses, got)
+		for _, msg := range w {
+			seen[msg] = true
+		}
+	}
+	return Report{Statuses: statuses, Warnings: sortedUnique(seen)}
 }
 
 // folderPath strips the SKILL.md file name from a lockfile skillPath,
