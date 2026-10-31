@@ -103,11 +103,11 @@ func Load(p *paths.Paths, client outdated.CachedTreeClient, force bool) (*Loaded
 	if err != nil {
 		return nil, err
 	}
-	names := make(map[string]string, len(d.dirOf))
+	nameByDir := make(map[string]string, len(d.dirOf))
 	for name, dir := range d.dirOf {
-		names[dir] = name
+		nameByDir[dir] = name
 	}
-	checks := &Checks{client: client, entries: d.entries, names: names, force: force}
+	checks := &Checks{client: client, entries: d.entries, nameByDir: nameByDir, force: force}
 
 	groups, warnings := outdated.Plan(d.entries)
 	statuses := map[string]outdated.Status{}
@@ -122,7 +122,7 @@ func Load(p *paths.Paths, client outdated.CachedTreeClient, force bool) (*Loaded
 		}
 		checks.groups = append(checks.groups, g)
 		for _, key := range g.Keys {
-			checks.pending = append(checks.pending, names[key])
+			checks.pending = append(checks.pending, nameByDir[key])
 		}
 	}
 	d.setBadges(statuses)
@@ -135,12 +135,12 @@ func Load(p *paths.Paths, client outdated.CachedTreeClient, force bool) (*Loaded
 // cache could not answer. Run each group in turn; the caller owns the order
 // and decides when to stop.
 type Checks struct {
-	client  outdated.CachedTreeClient
-	entries map[string]outdated.Entry
-	names   map[string]string // skill directory -> row name
-	groups  []outdated.Group
-	pending []string // row names still waiting on a Run, sorted
-	force   bool     // re-fetch every tree, ignoring the cache's TTL
+	client    outdated.CachedTreeClient
+	entries   map[string]outdated.Entry
+	nameByDir map[string]string // skill directory -> row name
+	groups    []outdated.Group
+	pending   []string // row names still waiting on a Run, sorted
+	force     bool     // re-fetch every tree, ignoring the cache's TTL
 }
 
 // Len is the number of repo trees left to fetch.
@@ -170,7 +170,7 @@ func (c *Checks) Run(ctx context.Context, i int) Result {
 	statuses, warnings := outdated.CheckGroup(ctx, fetch, g, c.entries)
 	res := Result{Outdated: make(map[string]*bool, len(g.Keys)), Warnings: warnings}
 	for _, key := range g.Keys {
-		res.Outdated[c.names[key]] = outdatedPtr(statuses[key])
+		res.Outdated[c.nameByDir[key]] = outdatedPtr(statuses[key])
 	}
 	return res
 }
