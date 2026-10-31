@@ -37,7 +37,7 @@ Cells read `●` on, `○` off, `-` absent. Columns for Cursor and Bob render fa
 
 `u` is the one-key update-all: it runs the same wrapped `skills update -g -y` the [update verb](#fleet-skill-update) runs, then sync, then reloads the matrix so the new badges and states show. `U` does the same for the selected skill only (`skills update -g -y <skill>`). A busy line takes over while either runs, the outcome notice reports fleet's own post-run state — the store scan and lockfile, never the skills CLI's prose — and a failed run shows the CLI's captured output raw.
 
-The matrix opens at once and never waits on GitHub. Badges the cache can answer show right away; the rest show `…` while their check runs in the background, and the status line reads `checking updates…` until the last one lands. `r` re-checks every repo.
+The matrix opens at once and never waits on GitHub. Badges the cache can answer show right away; the rest show `…` while their check runs in the background, and the status line reads `checking updates…` until the last one lands. `r` re-checks every repo, so each badge shows `…` until its check lands.
 
 The hero banner appears on launch only. `fleet --quiet` (or `-q`) keeps the matrix without it. With piped output fleet never enters the TUI: it prints the same listing as `fleet skill ls` instead, so `fleet | grep tdd` does what you mean.
 
