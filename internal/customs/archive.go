@@ -82,12 +82,13 @@ func loadScanned(p *paths.Paths) (*skillindex.Index, error) {
 
 // Archive moves one custom skill copy into the archived/ folder beside its
 // collection dir (the fleet-home fallback's goes to the fleet home's
-// archived/), unlinks its managed link from every installed harness, and
-// drops its state entries. It refuses a copy whose name shadows a canonical
-// skill or whose target already exists in archived/, before anything
-// changes. The state is loaded before anything changes and the move runs
-// before any unlink, so a failed move leaves links and state as they were.
-// Sync is the caller's to run. The archive is one-way.
+// archived/), unlinks its managed link from every installed harness, drops
+// its state entries, and clears Claude's "off" skillOverrides entry for it.
+// It refuses a copy whose name shadows a canonical skill or whose target
+// already exists in archived/, before anything changes. The state is loaded
+// before anything changes and the move runs before any unlink, so a failed
+// move leaves links and state as they were. Sync is the caller's to run. The
+// archive is one-way.
 func Archive(p *paths.Paths, hit skillindex.Hit) (*Archival, error) {
 	name := hit.Skill.Dir
 	st, err := state.Load(p.FleetStateFile())
@@ -120,6 +121,9 @@ func Archive(p *paths.Paths, hit skillindex.Hit) (*Archival, error) {
 
 	unlinked, err := unlinkSkill(p, name, hit.Home)
 	if err != nil {
+		return nil, err
+	}
+	if err := harness.NewClaude(p).RemoveOff(name); err != nil {
 		return nil, err
 	}
 

@@ -1,9 +1,10 @@
 // The claude code write side: skillOverrides entries in
 // ~/.claude/settings.json (strict JSON). Disabling writes
 // "<name>: "off""; enabling removes fleet's entry, dropping the whole
-// skillOverrides object when nothing is left in it. Link presence decides
-// whether claude can even see a skill; links are never written here —
-// an absent skill has nothing to disable, so it is left alone.
+// skillOverrides object when nothing is left in it. RemoveOff drops fleet's
+// entry for a skill that has left state, which Project never clears. Link
+// presence decides whether claude can even see a skill; links are never
+// written here — an absent skill has nothing to disable, so it is left alone.
 
 package harness
 
@@ -130,6 +131,42 @@ func (a *ClaudeAdapter) Project(writes []SkillWrite) (WriteReport, error) {
 		}
 	}
 	return rep, nil
+}
+
+// RemoveOff deletes name's skillOverrides entry when its value is fleet's
+// "off" marker, dropping the skillOverrides object once nothing is left in
+// it. Any other value, and any other entry, stays. Project only writes
+// "off" for names still in state, so a skill being archived needs this.
+func (a *ClaudeAdapter) RemoveOff(name string) error {
+	src, err := readConfig(a.home.ClaudeSettings())
+	if err != nil {
+		return err
+	}
+	doc, err := parseStrictJSONConfig(src)
+	if err != nil {
+		return fmt.Errorf("parse %s: %w", filepath.Base(a.home.ClaudeSettings()), err)
+	}
+	root := doc.RootObject()
+	if root == nil {
+		return fmt.Errorf("%s must contain a JSON object", filepath.Base(a.home.ClaudeSettings()))
+	}
+
+	overrides := root.Obj("skillOverrides")
+	if root.Has("skillOverrides") && overrides == nil {
+		return fmt.Errorf("%s: \"skillOverrides\" must be an object", filepath.Base(a.home.ClaudeSettings()))
+	}
+	if overrides == nil {
+		return nil
+	}
+	if value, ok := overrides.String(name); !ok || value != "off" {
+		return nil
+	}
+
+	overrides.Delete(name)
+	if len(overrides.Keys()) == 0 {
+		root.Delete("skillOverrides")
+	}
+	return writeIfConfigChanged(a.home.ClaudeSettings(), src, renderConfig(src, doc))
 }
 
 // flagUnmanagedClaude reports "off" overrides for skills no write covers.

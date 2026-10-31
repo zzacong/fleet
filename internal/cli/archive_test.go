@@ -2,7 +2,9 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -89,6 +91,67 @@ func TestArchiveMovesSkillUnlinksEveryHarnessAndDropsState(t *testing.T) {
 	if ls := runLs(t, p); strings.Contains(ls, "alpha") {
 		t.Errorf("ls still lists the archived skill:\n%s", ls)
 	}
+}
+
+func TestArchiveClearsClaudeOffOverrideAndDropsEmptyObject(t *testing.T) {
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	writeSkillDir(t, collection, "alpha", "Alpha.")
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+	if err := os.WriteFile(p.ClaudeSettings(), []byte(`{"model": "sonnet"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runToggle(t, p, "off", "alpha", "--harness", "claude")
+
+	if _, err := runArchive(t, p, "alpha"); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+
+	settings := readClaudeSettings(t, p)
+	if _, ok := settings["skillOverrides"]; ok {
+		t.Errorf("skillOverrides survived with only the archived entry: %s", settings["skillOverrides"])
+	}
+	if string(settings["model"]) != `"sonnet"` {
+		t.Errorf("unrelated setting changed: model = %s", settings["model"])
+	}
+}
+
+func TestArchiveKeepsOtherClaudeOverridesAndValues(t *testing.T) {
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	writeSkillDir(t, collection, "alpha", "Alpha.")
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+	fixture := `{"skillOverrides": {"alpha": "user-invocable-only", "gamma": "off"}}`
+	if err := os.WriteFile(p.ClaudeSettings(), []byte(fixture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := runArchive(t, p, "alpha"); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+
+	var overrides map[string]string
+	if err := json.Unmarshal(readClaudeSettings(t, p)["skillOverrides"], &overrides); err != nil {
+		t.Fatalf("skillOverrides: %v", err)
+	}
+	want := map[string]string{"alpha": "user-invocable-only", "gamma": "off"}
+	if !maps.Equal(overrides, want) {
+		t.Errorf("skillOverrides = %v, want %v", overrides, want)
+	}
+}
+
+// readClaudeSettings decodes ~/.claude/settings.json into its top-level keys.
+func readClaudeSettings(t *testing.T, p *paths.Paths) map[string]json.RawMessage {
+	t.Helper()
+	var settings map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(readFile(t, p.ClaudeSettings())), &settings); err != nil {
+		t.Fatalf("claude settings: %v", err)
+	}
+	return settings
 }
 
 func TestArchiveFallbackSkillGoesToFleetHomeArchived(t *testing.T) {
