@@ -244,7 +244,7 @@ remove-dir: codex: unlinked "my-notes" → ~/Developer/projects/agent-skills/ski
 fleet skill archive <name>
 ```
 
-Moves a custom skill out of its collection dir into an `archived/` folder beside that dir, unlinks its managed link from every installed harness, drops its enablement entries, and syncs. `<name>` is the skill's directory name:
+Moves a custom skill out of its collection dir into an `archived/` folder beside that dir, unlinks its managed link from every installed harness, drops its enablement entries, and syncs. `<name>` is the skill's directory name, or its frontmatter name:
 
 ```sh
 $ fleet skill archive my-notes
@@ -259,7 +259,7 @@ archive: codex: unlinked "my-notes" → ~/Developer/projects/agent-skills/skills
 - **Ignored by `ls` and doctor.** The archived folder is not scanned, so archived skills never appear in `ls` and never show up in doctor as missing or unlinked.
 - **Claude's override.** Fleet's `skillOverrides` entry for the skill is removed from Claude Code's config only when it holds fleet's `off` marker. Any other value stays, so a future skill with the same name is not silently disabled.
 - **Refusals.** Every refusal leaves the disk and the state file untouched. See the error table for the messages. Archive refuses a name with no custom copy, an installed skill, a custom copy that shadows a canonical skill, a name already in `archived/`, and, in the CLI only, a name that matches more than one custom copy. The ambiguity error lists each path, since archive never picks a copy you didn't name.
-- A failed move leaves links and state as they were.
+- **Nothing partial.** Archive parses the state file and Claude's settings before it moves anything. A refusal, an unreadable Claude settings file, or a failed move leaves the folder, the links, and the state exactly as they were — a failed move also removes the `archived/` folder it created.
 - The TUI's `A` key runs the same move on the copy the row shows, so it has no ambiguity refusal.
 
 ## fleet skill doctor
@@ -569,7 +569,7 @@ Sync runs on every fleet command and after every wrapped `skills` call, and [`fl
 | `add-dir` nested                         | `add-dir: "<path>" is inside tracked dir "<dir>"` (or `contains tracked dir "<dir>"`)                                                 | 1    |
 | `add-dir` name collision                 | `add-dir: "<path>" collides with already tracked skills: <name> (in <home>), …`                                                       | 1    |
 | `remove-dir` untracked                   | `remove-dir: "<path>" is not tracked: tracked dirs:` + one `- <path>` line each (or `no dirs are tracked`)                            | 1    |
-| `archive` not found                      | `archive: "<name>" not found among custom skills`                                                                                     | 1    |
+| `archive` not found                      | `archive: "<name>" not found among custom skills; pass the skill's directory name`                                                    | 1    |
 | `archive` installed                      | `archive: "<name>" is installed as canonical skill "<dir>" at <path>; …` (remove it with the skills CLI)                              | 1    |
 | `archive` shadows canonical              | `archive: "<name>" shadows canonical skill "<dir>" at <path>; archiving it would expose the installed copy in every harness`          | 1    |
 | `archive` already archived               | `archive: "<name>" already exists at <path>; rename or remove the existing archived folder first`                                     | 1    |

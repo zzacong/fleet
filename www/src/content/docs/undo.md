@@ -69,7 +69,7 @@ After it runs, the skills in that dir are no longer discovered or linked, but th
 
 ## Restore an archived skill
 
-`fleet skill archive <name>` is one-way: it moves the skill's folder into the `archived/` folder beside its collection dir (the fleet home's `archived/` for a fallback skill), removes its links, and drops its enablement entries. Restoring is a manual move back into the collection dir. Sync links the skill again on the next fleet command, and it comes back enabled, since archive dropped its disable:
+`fleet skill archive <name>` is one-way: it moves the skill's folder into the `archived/` folder beside its collection dir (the fleet home's `archived/` for a fallback skill), removes its links, and drops its enablement entries. A refusal or a failed move changes nothing, so a retry starts from the same state. Restoring is a manual move back into the collection dir. Sync links the skill again on the next fleet command, and it comes back enabled, since archive dropped its disable:
 
 ```sh
 mv ~/Developer/projects/agent-skills/archived/my-notes ~/Developer/projects/agent-skills/skills/my-notes
