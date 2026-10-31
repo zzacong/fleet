@@ -72,7 +72,7 @@ func resolveCustomCopy(p *paths.Paths, name string) (skillindex.Hit, error) {
 	}
 	switch len(copies) {
 	case 0:
-		return skillindex.Hit{}, fmt.Errorf("archive: %q not found among custom skills", name)
+		return skillindex.Hit{}, fmt.Errorf("archive: %q not found among custom skills; pass the skill's directory name", name)
 	case 1:
 		return copies[0], nil
 	}

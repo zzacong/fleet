@@ -340,3 +340,30 @@ func TestArchiveFailedMoveLeavesLinksAndStateAlone(t *testing.T) {
 		t.Errorf("failed archive changed the state file:\nbefore:\n%s\nafter:\n%s", stateBefore, got)
 	}
 }
+
+func TestArchiveNamesSkillByFrontmatterNameAndArchivesUnderDirName(t *testing.T) {
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	dir := filepath.Join(collection, "alpha-dir")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: alpha-notes\ndescription: Alpha.\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+
+	if _, err := runArchive(t, p, "alpha-notes"); err != nil {
+		t.Fatalf("archive by frontmatter name: %v", err)
+	}
+
+	archived := filepath.Join(filepath.Dir(collection), "archived", "alpha-dir")
+	if _, serr := os.Stat(filepath.Join(archived, "SKILL.md")); serr != nil {
+		t.Errorf("skill not moved to %s: %v", archived, serr)
+	}
+	if _, serr := os.Lstat(dir); !os.IsNotExist(serr) {
+		t.Errorf("skill still in the collection: %v", serr)
+	}
+}

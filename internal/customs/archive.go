@@ -21,19 +21,23 @@ type Archival struct {
 	Unlinked []harness.UnlinkResult
 }
 
-// CustomCopies returns every custom-home copy of the skill directory name,
-// precedence-first. The canonical store never counts as a custom copy, so
-// an installed skill yields none. It fails when any home cannot be scanned,
-// because a missing copy could then be hiding among the unreadable ones.
+// CustomCopies returns every custom-home copy that name matches by directory
+// or frontmatter name, precedence-first, so the first copy is the one the
+// snapshot shows for that name. The canonical store never counts as a custom
+// copy, so an installed skill yields none. It fails when any home cannot be
+// scanned, because a missing copy could then be hiding among the unreadable
+// ones.
 func CustomCopies(p *paths.Paths, name string) ([]skillindex.Hit, error) {
 	idx, err := loadScanned(p)
 	if err != nil {
 		return nil, err
 	}
 	var out []skillindex.Hit
-	for _, h := range idx.Ordered(name) {
-		if h.Home != idx.Store() {
-			out = append(out, h)
+	for _, home := range idx.CustomHomes() {
+		for _, s := range idx.Skills(home) {
+			if s.Dir == name || s.Name == name {
+				out = append(out, skillindex.Hit{Skill: s, Home: home})
+			}
 		}
 	}
 	return out, nil
