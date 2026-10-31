@@ -67,6 +67,16 @@ fleet skill remove-dir ~/Developer/projects/agent-skills/skills   # stop trackin
 
 After it runs, the skills in that dir are no longer discovered or linked, but they still sit exactly where they did on disk. Run `add-dir` again to bring them back. A path that is tracked but already hand-deleted still unlists cleanly, since `remove-dir` never stats the target.
 
+## Restore an archived skill
+
+`fleet skill archive <name>` is one-way: it moves the skill's folder into the `archived/` folder beside its collection dir (the fleet home's `archived/` for a fallback skill), removes its links, and drops its enablement entries. Restoring is a manual move back into the collection dir. Sync links the skill again on the next fleet command, and it comes back enabled, since archive dropped its disable:
+
+```sh
+mv ~/Developer/projects/agent-skills/archived/my-notes ~/Developer/projects/agent-skills/skills/my-notes
+```
+
+Once it is back, `fleet skill off my-notes` disables it again if you want it off.
+
 ## Reset fleet's state
 
 The state file is `~/.config/fleet/state.json` ([schema](state-file.md)). Deleting it resets fleet's memory:
