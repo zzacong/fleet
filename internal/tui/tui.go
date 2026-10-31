@@ -11,6 +11,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -211,31 +212,44 @@ func prepare(p *paths.Paths, quiet bool) (model, error) {
 		return model{}, err
 	}
 	m := newModel(p, loaded.Report, quiet)
-	m.adoptChecks(loaded.Checks)
+	m.adoptChecks(loaded.Checks, loaded.Warnings)
 	if s := syncNotice(reports); s != "" {
 		m.notice = notice{text: s, kind: noticeInfo}
 	}
-	m.showWarnings(loaded.Warnings)
+	m.flushWarnings()
 	return m, nil
 }
 
-// adoptChecks swaps in the update work a load left behind and marks its
-// skills as waiting on a result.
-func (m *model) adoptChecks(checks *snapshot.Checks) {
+// adoptChecks swaps in the update work a load left behind, marks its skills
+// as waiting on a result, and queues the load's own warnings to surface once
+// those checks finish.
+func (m *model) adoptChecks(checks *snapshot.Checks, warnings []string) {
 	m.checks = checks
-	m.checkWarnings = nil
 	m.checking = make(map[string]bool, len(checks.Pending()))
 	for _, name := range checks.Pending() {
 		m.checking[name] = true
 	}
+	m.checkWarnings = slices.Clone(warnings)
 }
 
-// showWarnings puts update problems the load already knew on the notice
-// line, joined to whatever is already there.
-func (m *model) showWarnings(warnings []string) {
-	if len(warnings) > 0 {
-		m.appendNotice(strings.Join(warnings, " · "), noticeErr)
+// dropChecks abandons the pending update work after a failed reload: its
+// results can never land, so the skills stop waiting on them.
+func (m *model) dropChecks() {
+	m.checks = nil
+	m.checking = nil
+	m.checkWarnings = nil
+}
+
+// flushWarnings puts the queued update problems on the notice line once no
+// skill is still waiting on a check. Repeated lines collapse into one.
+func (m *model) flushWarnings() {
+	if len(m.checking) > 0 || len(m.checkWarnings) == 0 {
+		return
 	}
+	lines := slices.Clone(m.checkWarnings)
+	slices.Sort(lines)
+	m.appendNotice(strings.Join(slices.Compact(lines), " · "), noticeErr)
+	m.checkWarnings = nil
 }
 
 // appendNotice adds line to the notice line, joined to any notice already
@@ -386,14 +400,15 @@ func (m model) applySnapshot(msg snapshotMsg) (tea.Model, tea.Cmd) {
 			text += " (cells not re-read: " + err.Error() + ")"
 		}
 		m.notice = notice{text: text, kind: noticeErr}
+		m.dropChecks()
 		return m, nil
 	}
 	m.setSnapshot(msg.loaded.Report)
-	m.adoptChecks(msg.loaded.Checks)
+	m.adoptChecks(msg.loaded.Checks, msg.loaded.Warnings)
 	if msg.notice != "" {
 		m.notice = notice{text: msg.notice, kind: noticeGood}
 	}
-	m.showWarnings(msg.loaded.Warnings)
+	m.flushWarnings()
 	return m, m.checkCmd(0)
 }
 
@@ -415,10 +430,7 @@ func (m model) applyCheck(msg checkMsg) (tea.Model, tea.Cmd) {
 	if next := m.checkCmd(msg.index + 1); next != nil {
 		return m, next
 	}
-	if len(m.checkWarnings) > 0 {
-		m.appendNotice(strings.Join(m.checkWarnings, " · "), noticeErr)
-		m.checkWarnings = nil
-	}
+	m.flushWarnings()
 	return m, nil
 }
 

@@ -928,3 +928,46 @@ func TestLaunchDoesNotWaitOnGitHub(t *testing.T) {
 		t.Error("cold repos not marked pending for the background check")
 	}
 }
+
+// TestFailedReloadStopsWaitingOnChecks: a reload that fails can never land
+// its checks, so the skills it left pending stop waiting instead of showing
+// the pending glyph until the next successful reload.
+func TestFailedReloadStopsWaitingOnChecks(t *testing.T) {
+	m := newTestModel(t, tuiHome(t))
+	m.seq = 4
+	m.phase = phaseRefreshing
+	m.checking = map[string]bool{m.rows[0].Name: true}
+
+	failed, _ := m.Update(snapshotMsg{seq: 4, err: errors.New("boom")})
+	if got := failed.(model); len(got.checking) != 0 {
+		t.Errorf("checking after a failed reload = %v, want none", got.checking)
+	}
+}
+
+// TestWarningsWaitForTheChecks: a load's own warnings stay off the notice
+// line while any skill is still checking, and land once the last check does,
+// with repeated lines collapsed.
+func TestWarningsWaitForTheChecks(t *testing.T) {
+	m := newTestModel(t, tuiHome(t))
+	if len(m.rows) < 2 {
+		t.Fatal("fixture needs two skills")
+	}
+	first, second := m.rows[0].Name, m.rows[1].Name
+	m.seq = 1
+	m.checking = map[string]bool{first: true, second: true}
+	m.checkWarnings = []string{"cannot check x", "update check failed", "update check failed"}
+
+	mid, _ := m.Update(checkMsg{seq: 1, result: snapshot.Result{Outdated: map[string]*bool{first: nil}}})
+	if got := mid.(model); strings.Contains(got.notice.text, "cannot check x") {
+		t.Fatalf("warnings surfaced while %q was still checking: %q", second, got.notice.text)
+	}
+
+	done, _ := mid.Update(checkMsg{seq: 1, result: snapshot.Result{Outdated: map[string]*bool{second: nil}}})
+	got := done.(model)
+	if !strings.Contains(got.notice.text, "cannot check x") {
+		t.Errorf("warnings never surfaced: %q", got.notice.text)
+	}
+	if n := strings.Count(got.notice.text, "update check failed"); n != 1 {
+		t.Errorf("repeated warning shown %d times, want once: %q", n, got.notice.text)
+	}
+}
