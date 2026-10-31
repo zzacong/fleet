@@ -11,13 +11,14 @@ toggle.Apply ─────┴────► sync.Run ──► harness.Adapte
                          ├─► redundant-link removal (canonical-store links only; tracked-collection/fallback links never removed)
                          └─► flags for entries it doesn't own
 
-read side:  snapshot.Build ──► scan (canonical + tracked dirs + fallback, precedence skillsDirs order > fallback > canonical)
+read side:  snapshot.Build / snapshot.Load ──► scan (canonical + tracked dirs + fallback, precedence skillsDirs order > fallback > canonical)
                           ├──► scan lockfile (provenance)
                           ├──► harness.Adapter.Read (per installed harness)
-                          └──► outdated.Check (GitHub, cached)
+                          └──► update badges: Build runs outdated.Check (GitHub, cached) synchronously;
+                               Load answers from the cache and hands the rest to the TUI as Checks
                        ▲
-     fleet skill ls ───┤
-     bare fleet (TUI) ─┘
+     fleet skill ls ───┤  (Build)
+     bare fleet (TUI) ─┘  (Load, then background checks)
 ```
 
 ## Package map
