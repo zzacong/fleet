@@ -971,3 +971,18 @@ func TestWarningsWaitForTheChecks(t *testing.T) {
 		t.Errorf("repeated warning shown %d times, want once: %q", n, got.notice.text)
 	}
 }
+
+// TestReleaseCheckKeepsTheStatusLineChecking: the Releases footer check counts
+// as a running check, so the status line stays up until it lands.
+func TestReleaseCheckKeepsTheStatusLineChecking(t *testing.T) {
+	m := newTestModel(t, tuiHome(t))
+	m.releasing = true
+	if v := m.View().Content; !strings.Contains(v, "checking updates…") {
+		t.Fatalf("status line not checking while the release check runs:\n%s", v)
+	}
+
+	landed, _ := m.Update(releaseMsg{})
+	if v := landed.(model).View().Content; strings.Contains(v, "checking updates…") {
+		t.Errorf("status line still checking after the release check landed:\n%s", v)
+	}
+}

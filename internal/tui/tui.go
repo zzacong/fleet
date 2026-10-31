@@ -107,6 +107,9 @@ type model struct {
 	checks        *snapshot.Checks
 	checking      map[string]bool
 	checkWarnings []string
+	// releasing is true until the Releases footer check lands; it keeps the
+	// status line saying checks are running.
+	releasing bool
 }
 
 // newModel builds the model from an already-loaded snapshot. Columns come
@@ -213,6 +216,7 @@ func prepare(p *paths.Paths, quiet bool) (model, error) {
 	}
 	m := newModel(p, loaded.Report, quiet)
 	m.adoptChecks(loaded.Checks, loaded.Warnings)
+	m.releasing = true
 	if s := syncNotice(reports); s != "" {
 		m.notice = notice{text: s, kind: noticeInfo}
 	}
@@ -372,6 +376,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applyCheck(msg)
 
 	case releaseMsg:
+		m.releasing = false
 		if msg.line != "" {
 			m.appendNotice(msg.line, noticeInfo)
 		}

@@ -240,7 +240,7 @@ func (m model) statusLine() string {
 	}
 	line := styBold.Render("fleet") + styDim.Render(" · ") +
 		fmt.Sprintf("%d skills · %d installed · %d custom · %d outdated", len(m.rows), installed, custom, outdated)
-	if n := len(m.checking); n > 0 {
+	if len(m.checking) > 0 || m.releasing {
 		line += styDim.Render(" · checking updates…")
 	}
 	if n := len(m.staged); n > 0 {
