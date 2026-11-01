@@ -28,7 +28,7 @@ func newSkillDoctorCmd(p *paths.Paths) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Report what's wrong: drift, redundant links, broken links, unknown entries, manual edits",
-		Long: "Inspect every installed harness, the canonical store, and the tracked custom homes, and report what is wrong: " +
+		Long: "Inspect every managed harness, the canonical store, and the tracked custom homes, and report what is wrong: " +
 			"redundant per-agent links, broken symlinks, unknown entries in skills dirs, " +
 			"a skill name present in more than one source, stale lockfile entries for adopted skills, " +
 			"an adopt target outside the scanned homes, " +

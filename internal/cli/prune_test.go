@@ -258,3 +258,27 @@ func TestPruneHelpMentionsFlagsAndExample(t *testing.T) {
 		}
 	}
 }
+
+func TestPruneHarnessClearsStateForUninstalledHarness(t *testing.T) {
+	// Prune's state pass covers every harness the user has not hidden, so a
+	// leftover entry for a harness that is no longer installed is still
+	// fleet's record to clear.
+	p := paths.New(filepath.Join(t.TempDir(), "home"))
+	for _, dir := range []string{p.OpenCodeDir(), p.SkillsStore()} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	disablePrune(t, p, "ghost", "claude")
+
+	if _, _, err := runPrune(t, p, "--harness", "claude", "--yes"); err != nil {
+		t.Fatalf("prune --harness claude: %v", err)
+	}
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.IsDisabled("ghost", "claude") {
+		t.Error("prune left the state entry for the uninstalled claude")
+	}
+}

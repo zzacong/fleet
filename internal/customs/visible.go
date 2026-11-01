@@ -1,5 +1,5 @@
 // Custom-skill visibility: the one fan-out that makes a collection dir
-// discoverable in every installed harness. Every harness reaches a custom
+// discoverable in every managed harness. Every harness reaches a custom
 // skill through a managed symlink per skill the collection holds. Adopt
 // and re-ensure all call in here instead of repeating the scan + link tail.
 package customs
@@ -29,7 +29,7 @@ type Withdrawal struct {
 	Unlinked []harness.UnlinkResult
 }
 
-// MakeVisible links every skill collectionDir holds for every installed
+// MakeVisible links every skill collectionDir holds for every managed
 // harness, so customs are discoverable immediately. A skill the state
 // disables on a link-toggleable harness is left unlinked: for those the
 // link is the only disable lever, so its absence is the disable.
@@ -104,7 +104,11 @@ func PruneHiddenLinks(p *paths.Paths) ([]harness.UnlinkResult, error) {
 		return nil, err
 	}
 	var out []harness.UnlinkResult
-	for _, a := range harness.Installed(p) {
+	managed, err := harness.Managed(p)
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range managed {
 		if !harness.LinkToggleable(a) {
 			continue
 		}

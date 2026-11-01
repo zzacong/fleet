@@ -48,8 +48,18 @@ type Projected struct {
 // branch. Every other no-lever toggle is skipped: there is nothing to
 // record or write, and callers surface that limitation themselves. It
 // returns how many toggles were recorded, what the direct "on" writes
-// changed, and sync's reports.
+// changed, and sync's reports. A toggle naming a hidden harness is refused
+// before anything is written.
 func Apply(p *paths.Paths, toggles []Toggle) (int, []Projected, []fleetsync.Report, error) {
+	for _, t := range toggles {
+		if err := harness.RefuseHidden(p, t.Harness); err != nil {
+			return 0, nil, nil, err
+		}
+	}
+	managed, err := harness.Managed(p)
+	if err != nil {
+		return 0, nil, nil, err
+	}
 	st, err := state.Load(p.FleetStateFile())
 	if err != nil {
 		return 0, nil, nil, err
@@ -93,7 +103,7 @@ func Apply(p *paths.Paths, toggles []Toggle) (int, []Projected, []fleetsync.Repo
 	}
 
 	var projected []Projected
-	for _, a := range harness.Installed(p) {
+	for _, a := range managed {
 		writes := onWrites[string(a.Harness())]
 		if len(writes) == 0 {
 			continue

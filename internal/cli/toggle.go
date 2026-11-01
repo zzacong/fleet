@@ -36,12 +36,12 @@ func newSkillToggleCmd(p *paths.Paths, on bool) *cobra.Command {
 
 	verb := "off"
 	short := "Disable a skill for one harness or all installed ones"
-	long := "Disable a skill for the given harnesses (--harness, repeatable) or for every installed harness, writing each harness's own native off setting.\n\n" +
+	long := "Disable a skill for the given harnesses (--harness, repeatable) or for every managed harness, writing each harness's own native off setting.\n\n" +
 		"The state file records the toggle; sync projects it. The skill's files stay in the canonical store."
 	if on {
 		verb = "on"
 		short = "Enable a skill for one harness or all installed ones"
-		long = "Enable a skill for the given harnesses (--harness, repeatable) or for every installed harness, removing fleet's disable entries.\n\n" +
+		long = "Enable a skill for the given harnesses (--harness, repeatable) or for every managed harness, removing fleet's disable entries.\n\n" +
 			"The state file records the toggle; sync projects it."
 	}
 
@@ -122,12 +122,13 @@ func newSkillToggleCmd(p *paths.Paths, on bool) *cobra.Command {
 }
 
 // resolveTargets validates --harness values and returns the adapters they
-// name; without the flag, every installed harness is targeted.
+// name; without the flag, every managed harness is targeted. A named hidden
+// harness is refused with the unhide hint.
 func resolveTargets(p *paths.Paths, harnessFlags []string) ([]harness.Adapter, error) {
 	all := harness.All(p)
 
 	if len(harnessFlags) == 0 {
-		return harness.Installed(p), nil
+		return harness.Managed(p)
 	}
 
 	seen := map[string]bool{}
@@ -149,6 +150,9 @@ func resolveTargets(p *paths.Paths, harnessFlags []string) ([]harness.Adapter, e
 		}
 		if !match.Installed() {
 			return nil, fmt.Errorf("%s is not installed on this machine", flag)
+		}
+		if err := harness.RefuseHidden(p, flag); err != nil {
+			return nil, err
 		}
 		targets = append(targets, match)
 	}

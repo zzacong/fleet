@@ -73,7 +73,7 @@ type notice struct {
 type model struct {
 	p *paths.Paths
 
-	// The matrix columns: one per installed harness, in harness.All's
+	// The matrix columns: one per managed harness, in the report's
 	// order — the same order the snapshot's states are keyed by.
 	adapters  []harness.Adapter
 	harnesses []string
@@ -114,9 +114,9 @@ type model struct {
 	releasing bool
 }
 
-// newModel builds the model from an already-loaded snapshot. Columns come
-// from the adapters, not from the report: the TUI needs each harness's
-// write capability, and the order must match the snapshot's state keys.
+// newModel builds the model from an already-loaded snapshot. Columns follow
+// the report's harness names (the managed set, in the order the state keys
+// use); each name's adapter supplies the write capability.
 func newModel(p *paths.Paths, report *snapshot.Report, quiet bool) model {
 	ti := textinput.New()
 	ti.Placeholder = "filter"
@@ -131,21 +131,28 @@ func newModel(p *paths.Paths, report *snapshot.Report, quiet bool) model {
 		width:  80,
 		height: 24,
 	}
-	m.rebuildColumns()
+	m.rebuildColumns(report.Harnesses)
 	return m
 }
 
-// rebuildColumns derives the matrix columns from the installed adapters.
-func (m *model) rebuildColumns() {
+// rebuildColumns derives the matrix columns from the report's harness names,
+// keeping the report's order. Only names the report lists become columns, so
+// a harness fleet does not manage never gets one.
+func (m *model) rebuildColumns(names []string) {
 	m.adapters = nil
 	m.harnesses = nil
 	m.writable = map[string]bool{}
 	m.linkToggle = map[string]bool{}
-	for _, a := range harness.Installed(m.p) {
+	all := harness.All(m.p)
+	for _, name := range names {
+		a, ok := harness.ByName(all, name)
+		if !ok {
+			continue
+		}
 		m.adapters = append(m.adapters, a)
-		m.harnesses = append(m.harnesses, string(a.Harness()))
-		m.writable[string(a.Harness())] = a.CanProject()
-		m.linkToggle[string(a.Harness())] = harness.LinkToggleable(a)
+		m.harnesses = append(m.harnesses, name)
+		m.writable[name] = a.CanProject()
+		m.linkToggle[name] = harness.LinkToggleable(a)
 	}
 	if m.col >= len(m.harnesses) {
 		m.col = 0
@@ -446,7 +453,7 @@ func (m model) applyCheck(msg checkMsg) (tea.Model, tea.Cmd) {
 func (m *model) setSnapshot(report *snapshot.Report) {
 	prev := m.selectedName()
 	m.rows = report.Skills
-	m.rebuildColumns()
+	m.rebuildColumns(report.Harnesses)
 	m.selectByName(prev)
 	m.pruneStaged()
 	m.scrollToCursor()

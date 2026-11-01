@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
+	"github.com/zzacong/fleet/internal/config"
 	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/paths"
 )
@@ -16,9 +18,9 @@ import (
 func newHarnessCmd(p *paths.Paths) *cobra.Command {
 	harnessCmd := &cobra.Command{
 		Use:   "harness",
-		Short: "Inspect the harnesses fleet manages",
+		Short: "Inspect and hide the harnesses fleet manages",
 	}
-	harnessCmd.AddCommand(newHarnessLsCmd(p))
+	harnessCmd.AddCommand(newHarnessLsCmd(p), newHarnessHideCmd(p), newHarnessUnhideCmd(p))
 	return harnessCmd
 }
 
@@ -28,12 +30,15 @@ func newHarnessLsCmd(p *paths.Paths) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ls",
 		Short: "List the supported harnesses and which are installed",
-		Long: "List the six harnesses fleet supports, marking each installed (its config directory exists) or not, with the directory itself and whether fleet can write a per-skill off switch into its config.\n" +
+		Long: "List the six harnesses fleet supports, marking each installed (its config directory exists), whether it is hidden, and whether fleet can write a per-skill off switch into its config.\n" +
 			"\nRead-only: unlike most fleet commands, no sync runs — listing what is installed must not converge anything. Cursor and Bob have no config off switch; a custom skill is disabled there by removing its managed link, which the toggle verbs do instead.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
-			rows := buildHarnessRows(p)
+			rows, err := buildHarnessRows(p)
+			if err != nil {
+				return err
+			}
 			if asJSON {
 				return printHarnessJSON(out, rows)
 			}
@@ -45,26 +50,103 @@ func newHarnessLsCmd(p *paths.Paths) *cobra.Command {
 	return cmd
 }
 
+// newHarnessHideCmd hides an installed harness from fleet.
+func newHarnessHideCmd(p *paths.Paths) *cobra.Command {
+	return &cobra.Command{
+		Use:   "hide <harness>",
+		Short: "Hide an installed harness from fleet",
+		Long:  "Hide an installed harness on this machine. Fleet stops showing it and writes nothing into it: no links, toggles, doctor findings, or prune. Existing links and state entries stay on disk; unhide brings them back. Only a supported, installed harness can be hidden.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return setHarnessHidden(cmd.OutOrStdout(), p, args[0], true)
+		},
+	}
+}
+
+// newHarnessUnhideCmd brings a hidden harness back under fleet's management.
+func newHarnessUnhideCmd(p *paths.Paths) *cobra.Command {
+	return &cobra.Command{
+		Use:   "unhide <harness>",
+		Short: "Bring a hidden harness back under fleet's management",
+		Long:  "Clear a harness's hidden mark and sync, which restores its links and state projections on this machine.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return setHarnessHidden(cmd.OutOrStdout(), p, args[0], false)
+		},
+	}
+}
+
+// setHarnessHidden records or clears a hidden harness in the fleet config.
+// Hiding writes nothing into any harness, so it never syncs. It refuses a
+// name that is not a supported harness, or one that is not installed, so a
+// typo never leaves a dead key behind; an already-hidden harness is reported
+// as such first. Unhiding syncs, which restores the harness in the same run.
+func setHarnessHidden(out io.Writer, p *paths.Paths, name string, hide bool) error {
+	f, err := config.Load(p.FleetConfigFile())
+	if err != nil {
+		return err
+	}
+	if !hide {
+		if !f.Unhide(name) {
+			_, err := fmt.Fprintf(out, "%s is not hidden\n", name)
+			return err
+		}
+		if err := config.Save(p.FleetConfigFile(), f); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(out, "%s is managed again\n", name); err != nil {
+			return err
+		}
+		return runSyncTo(out, p)
+	}
+
+	if slices.Contains(f.HiddenHarnesses(), name) {
+		_, err := fmt.Fprintf(out, "%s is already hidden\n", name)
+		return err
+	}
+	adapters := harness.All(p)
+	target, ok := harness.ByName(adapters, name)
+	if !ok {
+		return fmt.Errorf("unknown harness %q (want one of: %s)", name, harnessList(adapters))
+	}
+	if !target.Installed() {
+		return fmt.Errorf("%s is not installed on this machine", name)
+	}
+	f.Hide(name)
+	if err := config.Save(p.FleetConfigFile(), f); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(out, "%s is now hidden; fleet ignores it until `fleet harness unhide %s`\n", name, name)
+	return err
+}
+
 // harnessRow is one supported harness's status on this machine. The
-// adapter supplies everything; nothing is guessed from paths.
+// adapter supplies detection and capability; the hidden mark comes from the
+// fleet config.
 type harnessRow struct {
 	Name      string `json:"name"`
 	Installed bool   `json:"installed"`
+	Hidden    bool   `json:"hidden"`
 	ConfigDir string `json:"configDir"`
 	CanOff    bool   `json:"canDisable"`
 }
 
-func buildHarnessRows(p *paths.Paths) []harnessRow {
+func buildHarnessRows(p *paths.Paths) ([]harnessRow, error) {
+	hidden, err := harness.HiddenNames(p)
+	if err != nil {
+		return nil, err
+	}
 	var rows []harnessRow
 	for _, a := range harness.All(p) {
 		rows = append(rows, harnessRow{
 			Name:      string(a.Harness()),
 			Installed: a.Installed(),
+			Hidden:    slices.Contains(hidden, string(a.Harness())),
 			ConfigDir: a.Dir(),
 			CanOff:    a.CanProject(),
 		})
 	}
-	return rows
+	return rows, nil
 }
 
 func printHarnessJSON(out io.Writer, rows []harnessRow) error {
@@ -90,11 +172,11 @@ func printHarnessTable(out io.Writer, rows []harnessRow, header bool) error {
 	}
 
 	tw := tabwriter.NewWriter(out, 2, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "NAME\tINSTALLED\tCONFIG DIR\tOFF SWITCH"); err != nil {
+	if _, err := fmt.Fprintln(tw, "NAME\tINSTALLED\tHIDDEN\tCONFIG DIR\tOFF SWITCH"); err != nil {
 		return err
 	}
 	for _, r := range rows {
-		cells := []string{r.Name, harnessCheck(r.Installed), r.ConfigDir, yesNo(r.CanOff)}
+		cells := []string{r.Name, harnessCheck(r.Installed), yesNo(r.Hidden), r.ConfigDir, yesNo(r.CanOff)}
 		if _, err := fmt.Fprintln(tw, strings.Join(cells, "\t")); err != nil {
 			return err
 		}

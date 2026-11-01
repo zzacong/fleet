@@ -433,3 +433,34 @@ func TestNormalizeKeyIncludesSkillsDirs(t *testing.T) {
 		t.Errorf("NormalizeKey(skillsDirs) = %q, want skills-dirs", got)
 	}
 }
+
+func TestHiddenHarnessesSurviveRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	f, _ := Load(path)
+	if !f.Hide("bob") {
+		t.Fatal("Hide(bob) = false, want true on first hide")
+	}
+	if f.Hide("bob") {
+		t.Error("Hide(bob) = true on second hide, want false (idempotent)")
+	}
+	if err := Save(path, f); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if h := got.HiddenHarnesses(); len(h) != 1 || h[0] != "bob" {
+		t.Errorf("HiddenHarnesses() = %q, want [bob]", h)
+	}
+	if !got.Unhide("bob") {
+		t.Error("Unhide(bob) = false, want true")
+	}
+	if got.Unhide("bob") {
+		t.Error("Unhide(bob) = true on second unhide, want false (idempotent)")
+	}
+	if len(got.HiddenHarnesses()) != 0 {
+		t.Errorf("HiddenHarnesses() = %q after unhide, want empty", got.HiddenHarnesses())
+	}
+}

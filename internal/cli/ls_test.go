@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1098,4 +1099,24 @@ func tableRow(t *testing.T, out, name string) string {
 
 type skillRowJSON struct {
 	Name string `json:"name"`
+}
+
+func TestSkillLsOmitsHiddenHarness(t *testing.T) {
+	p := fakeHome(t)
+	if _, err := runHarnessCmd(t, p, "hide", "bob"); err != nil {
+		t.Fatalf("hide bob: %v", err)
+	}
+
+	var report struct {
+		Harnesses []string `json:"harnesses"`
+	}
+	if err := json.Unmarshal([]byte(runLs(t, p, "--json")), &report); err != nil {
+		t.Fatalf("ls --json: %v", err)
+	}
+	if !slices.Contains(report.Harnesses, "opencode") {
+		t.Errorf("harnesses = %v, want opencode to stay", report.Harnesses)
+	}
+	if slices.Contains(report.Harnesses, "bob") {
+		t.Errorf("harnesses = %v, want hidden bob omitted", report.Harnesses)
+	}
 }
