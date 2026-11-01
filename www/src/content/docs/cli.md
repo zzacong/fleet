@@ -15,7 +15,7 @@ Examples were run against a sandbox home (`FLEET_HOME=$(mktemp -d)`) with two sk
 fleet
 ```
 
-Opens the skill × harness matrix: one row per skill, one column per installed harness. Toggles are staged with `space` and applied together with `enter` — the same state-file-then-sync write path the `on`/`off` verbs run.
+Opens the skill × harness matrix: one row per skill, one column per managed harness (installed and not hidden). Toggles are staged with `space` and applied together with `enter` — the same state-file-then-sync write path the `on`/`off` verbs run.
 
 Keys:
 
@@ -50,7 +50,7 @@ The hero banner appears on launch only. `fleet --quiet` (or `-q`) keeps the matr
 fleet skill ls [--json] [--quiet]
 ```
 
-Lists every skill fleet discovers — the canonical store (`~/.agents/skills`) plus custom skills from the tracked set (the `skillsDirs` collection dirs in list order, and the unversioned fleet-home fallback `~/.config/fleet/skills`) — with a column per installed harness. A name present in more than one source appears once with precedence `skillsDirs` order, then the fallback, then the canonical store; the other copies are doctor drift, not a silent overwrite. Custom skills come first, then installed skills grouped by source repo.
+Lists every skill fleet discovers — the canonical store (`~/.agents/skills`) plus custom skills from the tracked set (the `skillsDirs` collection dirs in list order, and the unversioned fleet-home fallback `~/.config/fleet/skills`) — with a column per managed harness. A name present in more than one source appears once with precedence `skillsDirs` order, then the fallback, then the canonical store; the other copies are doctor drift, not a silent overwrite. Custom skills come first, then installed skills grouped by source repo.
 
 ```sh
 $ fleet skill ls
@@ -131,7 +131,7 @@ skill: bob: no per-skill disable mechanism — disable "tdd" is a no-op
 ```
 
 - The outcome is one line per harness (`skill: opencode: disabled "tdd"`). On a terminal the `skill:` prefix is dim, the harness cyan, the verb green.
-- Without `--harness`, every installed harness is targeted. `--harness` is repeatable and takes a harness ID: `opencode`, `pi`, `codex`, `claude`, `cursor`, `bob`.
+- Without `--harness`, every managed harness is targeted: installed and not hidden. `--harness` is repeatable and takes a harness ID: `opencode`, `pi`, `codex`, `claude`, `cursor`, `bob`. Naming a hidden harness fails with the `fleet harness unhide` hint.
 - Cursor and Bob have no config per-skill disable. For a stored skill there is no lever at all, so toggling prints the no-op line and records nothing. A custom skill is different: their managed link (in `~/.cursor/skills` / `~/.bob/skills`) is the only path to it, so `off` removes that link and `on` restores it. The state file remembers the choice and sync never recreates a hidden link. `ls` then reports the custom `absent` for that harness.
 - OpenCode, Codex, and Pi use the same link lever for a custom skill, because they link skills and scan the canonical store natively. `off` removes the managed link and `on` recreates it, and no config off-entry is written for a custom. Their config lever (OpenCode deny rule, Codex `[[skills.config]]`, Pi force-exclude) still applies to canonical-store skills. Claude Code is the exception: it links skills but does not scan the store, so it toggles both custom and canonical skills through `skillOverrides`.
 - A harness where something else overrode the write (a foreign config entry that keeps the skill enabled) is left out of the outcome list; its flag line prints instead — `sync: codex/tdd: a skills.config entry fleet doesn't manage overrides fleet's disable — left alone`.
@@ -438,7 +438,7 @@ fleet config unset <key>
 fleet config list [--json]
 ```
 
-Manages fleet's machine-local config at `~/.config/fleet/config.json` (`FLEET_HOME`-aware). The file holds the tracked dirs (the `skillsDirs` list, managed by `fleet skill add-dir` and `fleet skill remove-dir`) and the adopt-target collection dir. One settable key: `adopt-target` (alias `adoptTarget`), an absolute path to the collection dir where `fleet skill adopt` lands; unset means the fleet-home fallback. The tracked dir list is shown by `list` and managed by `add-dir`/`remove-dir`, never by `set`.
+Manages fleet's machine-local config at `~/.config/fleet/config.json` (`FLEET_HOME`-aware). The file holds the tracked dirs (the `skillsDirs` list, managed by `fleet skill add-dir` and `fleet skill remove-dir`), the adopt-target collection dir, and the hidden harnesses (managed by `fleet harness hide` and `unhide`, never by `set`). One settable key: `adopt-target` (alias `adoptTarget`), an absolute path to the collection dir where `fleet skill adopt` lands; unset means the fleet-home fallback. The tracked dir list is shown by `list` and managed by `add-dir`/`remove-dir`, never by `set`.
 
 ```sh
 $ fleet skill add-dir ~/Developer/projects/agent-skills/skills
@@ -473,22 +473,23 @@ The file `~/.config/fleet/config.json` sits beside `state.json` and `tree-cache.
 fleet harness ls [--json]
 ```
 
-Lists the six harnesses fleet supports, marking each installed (its config directory exists, the same probe every command uses) or not, with the directory itself and whether fleet can write a per-skill off switch into its config. Cursor and Bob have no config off switch; for a custom skill they disable by removing its managed link instead, the same link lever OpenCode, Codex, and Pi use for customs. A canonical-store skill keeps each harness's own config lever where one exists.
+Lists the six harnesses fleet supports, marking each installed (its config directory exists, the same probe every command uses) or not, whether it is hidden, the directory itself, and whether fleet can write a per-skill off switch into its config. Cursor and Bob have no config off switch; for a custom skill they disable by removing its managed link instead, the same link lever OpenCode, Codex, and Pi use for customs. A canonical-store skill keeps each harness's own config lever where one exists.
 
 Read-only: unlike most fleet commands, no sync runs — listing what is installed must not converge anything. Nothing is filtered: you see all six even when none is installed.
 
 ```sh
 $ fleet harness ls
-NAME      INSTALLED  CONFIG DIR                      OFF SWITCH
-opencode  ✓          /home/you/.config/opencode      yes
-pi        ✓          /home/you/.pi                   yes
-codex     ✓          /home/you/.codex                yes
-claude    -          /home/you/.claude               yes
-cursor    ✓          /home/you/.cursor               no
-bob       ✓          /home/you/.bob                  no
+NAME      INSTALLED  HIDDEN  CONFIG DIR                      OFF SWITCH
+opencode  ✓          no      /home/you/.config/opencode      yes
+pi        ✓          no      /home/you/.pi                   yes
+codex     ✓          no      /home/you/.codex                yes
+claude    -          no      /home/you/.claude               yes
+cursor    ✓          no      /home/you/.cursor               no
+bob       ✓          yes     /home/you/.bob                  no
 ```
 
 - `INSTALLED` is `✓` when the harness's config directory exists, `-` when it does not. A `-` harness is skipped by every other command.
+- `HIDDEN` is `yes` for a harness hidden with [`fleet harness hide`](#fleet-harness-hide). A hidden harness still appears here with its real installed state, but every other command ignores it.
 - `CONFIG DIR` is the probed directory itself.
 - `OFF SWITCH` is `yes` when fleet can write a per-skill disable into that harness's config, `no` where no config lever exists. It describes canonical-store skills. A custom skill has a second lever on OpenCode, Codex, Pi, Cursor, and Bob: its managed link.
 - On a terminal a one-line summary prints above the table (`fleet · 5 of 6 harnesses installed`). Piped output skips it.
@@ -505,6 +506,7 @@ $ fleet harness ls --json
     {
       "name": "opencode",
       "installed": true,
+      "hidden": false,
       "configDir": "/home/you/.config/opencode",
       "canDisable": true
     }
@@ -514,6 +516,29 @@ $ fleet harness ls --json
 
 - Rows appear in fleet's fixed harness order: opencode, pi, codex, claude, cursor, bob.
 - `canDisable` is false exactly for cursor and bob: no config lever. Both still toggle a custom skill through its managed link.
+
+## fleet harness hide
+
+```sh
+fleet harness hide <harness>
+```
+
+Hides an installed harness on this machine. Hidden means fleet ignores it everywhere: no column in `skill ls` or the TUI, no sync links or config writes, no toggles, no doctor findings, and no prune. Existing links and state entries stay on disk, and [`fleet harness unhide`](#fleet-harness-unhide) brings them back. The mark lives in `config.json`; enablement in `state.json` is untouched.
+
+Only a supported, installed harness can be hidden. A typo or a harness that is not installed is refused, so no dead key is written. Hiding an already-hidden harness changes nothing and says so.
+
+```sh
+$ fleet harness hide bob
+bob is now hidden; fleet ignores it until `fleet harness unhide bob`
+```
+
+## fleet harness unhide
+
+```sh
+fleet harness unhide <harness>
+```
+
+Clears the hidden mark and syncs, so the harness's links and state projections come back in the same run. Unhiding a harness that is not hidden changes nothing and says so.
 
 ## fleet completion
 
