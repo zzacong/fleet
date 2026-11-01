@@ -573,3 +573,16 @@ func TestOffAndOnToggleACustomSkillThroughBobsLink(t *testing.T) {
 		t.Errorf("bob link after on = %q (err %v), want %q", got, err, target)
 	}
 }
+
+func TestToggleRefusesHiddenHarnessWithUnhideHint(t *testing.T) {
+	p := harnessHome(t)
+	writeSkillDir(t, p.FleetHomeSkills(), "notes", "Notes.")
+	if _, err := runHarnessCmd(t, p, "hide", "bob"); err != nil {
+		t.Fatalf("hide bob: %v", err)
+	}
+
+	err := runToggleErr(t, p, "off", "notes", "--harness", "bob")
+	if err == nil || !strings.Contains(err.Error(), "fleet harness unhide bob") {
+		t.Errorf("toggle --harness bob error = %v, want the unhide hint", err)
+	}
+}

@@ -1,10 +1,10 @@
-// Package sync makes each installed harness's config match the state
+// Package sync makes each managed harness's config match the state
 // file. It runs on every fleet command: read each config, diff against
 // the state, repair what fleet owns, and flag what it doesn't recognize
 // instead of touching it. A disable for a skill installed nowhere is
 // dormant: the state keeps the intent but sync creates no new off entry
 // for it, leaving any rule it already owns byte-for-byte. It makes every
-// custom home visible (linking every skill it holds into every installed
+// custom home visible (linking every skill it holds into every managed
 // harness) so customs stay discoverable without an adopt run. It
 // also removes redundant per-agent links — symlinks into the canonical
 // store in harnesses that scan the store natively — so the skills CLI's
@@ -51,7 +51,7 @@ func (r Report) Empty() bool {
 		len(r.Removed) == 0 && len(r.Cleaned) == 0
 }
 
-// Run projects the state file into every installed harness that can be
+// Run projects the state file into every managed harness that can be
 // written to, and cleans up redundant links. The state file is read fresh
 // each time so commands that just updated it sync their own change.
 func Run(p *paths.Paths) ([]Report, error) {
@@ -108,7 +108,11 @@ func Run(p *paths.Paths) ([]Report, error) {
 	// untouched, as does every non-symlink entry.
 	// Claude is not a native scanner: its links are its only discovery
 	// path, so none of them are redundant by construction.
-	for _, d := range harness.SkillDirs(p) {
+	dirs, err := harness.SkillDirs(p)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range dirs {
 		if !d.NativeScan {
 			continue
 		}
@@ -130,7 +134,7 @@ func Run(p *paths.Paths) ([]Report, error) {
 
 	// Custom visibility: every scanned custom home — each tracked
 	// collection plus the fleet-home fallback — is linked into every
-	// installed harness, so customs stay discoverable without an adopt
+	// managed harness, so customs stay discoverable without an adopt
 	// run. Idempotent: a home that is already visible reports nothing.
 	vis, err := customs.EnsureVisible(p)
 	if err != nil {
@@ -154,7 +158,11 @@ func Run(p *paths.Paths) ([]Report, error) {
 		r.Unlinked = append(r.Unlinked, u)
 	}
 
-	for _, a := range harness.Installed(p) {
+	managed, err := harness.Managed(p)
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range managed {
 		if !a.CanProject() {
 			continue
 		}

@@ -411,3 +411,33 @@ func TestArchiveNamesSkillByFrontmatterNameAndArchivesUnderDirName(t *testing.T)
 		t.Errorf("skill still in the collection: %v", serr)
 	}
 }
+
+func TestArchiveKeepsHiddenHarnessStateEntry(t *testing.T) {
+	// Archive forgets a skill on every harness fleet still manages. A hidden
+	// harness keeps its entry, because fleet does not write into it.
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	writeSkillDir(t, collection, "alpha", "Alpha.")
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+	runToggle(t, p, "off", "alpha", "--harness", "opencode", "--harness", "bob")
+	if _, err := runHarnessCmd(t, p, "hide", "bob"); err != nil {
+		t.Fatalf("hide bob: %v", err)
+	}
+
+	if _, err := runArchive(t, p, "alpha"); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	if !st.IsDisabled("alpha", "bob") {
+		t.Error("hidden bob lost its state entry")
+	}
+	if st.IsDisabled("alpha", "opencode") {
+		t.Error("managed opencode kept its state entry")
+	}
+}

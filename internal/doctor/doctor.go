@@ -184,14 +184,18 @@ func Analyze(p *paths.Paths) (Report, error) {
 		})
 	}
 
-	// Links: what's in each installed harness's skills dir.
+	// Links: what's in each managed harness's skills dir.
 	// Custom skills are recognized across every custom home (fallback and
 	// tracked dirs) so managed links into any of them are filtered from
 	// unknown entries.
 	customHomes, customByDir, customByName := customLinkIndex(p)
 	present := map[harness.Harness]map[string]bool{}
 	managed := map[harness.Harness]map[string]bool{}
-	for _, d := range harness.SkillDirs(p) {
+	skillDirs, err := harness.SkillDirs(p)
+	if err != nil {
+		return Report{}, err
+	}
+	for _, d := range skillDirs {
 		entries, err := harness.ScanSkillDir(d, p.SkillsStore())
 		if err != nil {
 			return Report{}, fmt.Errorf("scan %s skills dir: %w", d.Harness, err)
@@ -420,7 +424,11 @@ func analyzeConfigs(p *paths.Paths, customByName map[string]bool) ([]Conflict, [
 				strings.Join(blocked, ", ")),
 		})
 	}
-	for _, a := range harness.Installed(p) {
+	adapters, err := harness.Managed(p)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, a := range adapters {
 		if !a.CanProject() {
 			continue // no config lever: nothing to disagree with
 		}
@@ -522,14 +530,14 @@ func analyzeConfigs(p *paths.Paths, customByName map[string]bool) ([]Conflict, [
 					Harness: h,
 					Skill:   name,
 					Reason:  DriftDisabledUnlinked,
-					Dir:     skillsDirFor(p, a.Harness()),
+					Dir:     harness.SkillDirPath(p, a.Harness()),
 					Message: fmt.Sprintf("%q is disabled in fleet's state, but %s cannot discover it (no link in %s) — the disable is moot until the link returns",
-						name, h, skillsDirFor(p, a.Harness())),
+						name, h, harness.SkillDirPath(p, a.Harness())),
 				})
 			}
 		}
 	}
-	findings = append(findings, staleStateFindings(p, st, idx, complete)...)
+	findings = append(findings, staleStateFindings(adapters, st, idx, complete)...)
 	return conflicts, findings, nil
 }
 
@@ -539,7 +547,7 @@ func analyzeConfigs(p *paths.Paths, customByName map[string]bool) ([]Conflict, [
 // yields none. Each finding names the skill and harness and points at
 // prune, warning that removing the entry loses the disable-on-reinstall
 // behavior.
-func staleStateFindings(p *paths.Paths, st *state.File, idx *skillindex.Index, complete bool) []Finding {
+func staleStateFindings(adapters []harness.Adapter, st *state.File, idx *skillindex.Index, complete bool) []Finding {
 	if !complete {
 		return nil
 	}
@@ -548,7 +556,7 @@ func staleStateFindings(p *paths.Paths, st *state.File, idx *skillindex.Index, c
 		if idx.IsInstalled(name) {
 			continue
 		}
-		for _, a := range harness.All(p) {
+		for _, a := range adapters {
 			if !st.IsDisabled(name, string(a.Harness())) {
 				continue
 			}
@@ -581,7 +589,11 @@ func analyzeLinkToggles(p *paths.Paths, customByDir map[string]string, present, 
 	}
 
 	toggle := map[harness.Harness]bool{}
-	for _, a := range harness.Installed(p) {
+	adapters, err := harness.Managed(p)
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range adapters {
 		if harness.LinkToggleable(a) {
 			toggle[a.Harness()] = true
 		}
@@ -594,7 +606,11 @@ func analyzeLinkToggles(p *paths.Paths, customByDir map[string]string, present, 
 	sort.Strings(dirs)
 
 	var findings []Finding
-	for _, d := range harness.SkillDirs(p) {
+	skillDirs, err := harness.SkillDirs(p)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range skillDirs {
 		if !toggle[d.Harness] {
 			continue
 		}
@@ -753,7 +769,11 @@ func analyzeRepoSkills(p *paths.Paths) ([]Finding, error) {
 	// the store, so it is excluded. Empty when no such harness is installed;
 	// the CLI then reports the collision without a harness column.
 	var scanners []string
-	for _, d := range harness.SkillDirs(p) {
+	skillDirs, err := harness.SkillDirs(p)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range skillDirs {
 		if d.NativeScan {
 			scanners = append(scanners, string(d.Harness))
 		}
@@ -1024,8 +1044,12 @@ func brokenConfigFinding(harnessName string, err error) Finding {
 
 // restoreConflict projects the state's intent back into the harness config.
 func restoreConflict(p *paths.Paths, c Conflict) (harness.WriteReport, error) {
+	adapters, err := harness.Managed(p)
+	if err != nil {
+		return harness.WriteReport{}, err
+	}
 	var adapter harness.Adapter
-	for _, a := range harness.All(p) {
+	for _, a := range adapters {
 		if string(a.Harness()) == c.Harness {
 			adapter = a
 			break
@@ -1044,17 +1068,6 @@ func restoreConflict(p *paths.Paths, c Conflict) (harness.WriteReport, error) {
 		return harness.WriteReport{}, fmt.Errorf("restore %q in %s: %w", c.Skill, c.Harness, err)
 	}
 	return rep, nil
-}
-
-// skillsDirFor names the skills dir a harness discovers links through (for
-// messages only).
-func skillsDirFor(p *paths.Paths, h harness.Harness) string {
-	for _, d := range harness.SkillDirs(p) {
-		if d.Harness == h {
-			return d.Path
-		}
-	}
-	return string(h) + " skills dir"
 }
 
 func sortedNames(set map[string]bool) []string {

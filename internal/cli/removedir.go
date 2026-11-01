@@ -1,5 +1,5 @@
 // The remove-dir command: unregister an explicit collection dir and unlink
-// its managed skills from every installed harness. The inverse of add-dir,
+// its managed skills from every managed harness. The inverse of add-dir,
 // not of adopt: the disk is never touched. Every rule lives in the
 // tracked-set module; this layer unlinks, prints, and syncs.
 package cli
@@ -19,7 +19,7 @@ func newSkillRemoveDirCmd(p *paths.Paths) *cobra.Command {
 	return &cobra.Command{
 		Use:   "remove-dir <path>",
 		Short: "Untrack a directory of skills and unlink it from every harness",
-		Long: "Unregister a collection dir with `fleet skill remove-dir <path>`, removing it from the tracked list and unlinking its managed skills from every installed harness. The inverse of `add-dir`, not of `adopt`: fleet never deletes the directory or any file in it.\n\n" +
+		Long: "Unregister a collection dir with `fleet skill remove-dir <path>`, removing it from the tracked list and unlinking its managed skills from every managed harness. The inverse of `add-dir`, not of `adopt`: fleet never deletes the directory or any file in it.\n\n" +
 			"`~` expands to the home directory and a relative path resolves against the working directory, exactly like `add-dir`. A tracked path that is missing from disk still unlists cleanly; an untracked path is an error that lists the tracked dirs.\n\n" +
 			"After the unlink, sync runs as on every command. Fleet consults no git binary.",
 		Example: "  fleet skill remove-dir ~/Developer/projects/agent-skills/skills\n" +

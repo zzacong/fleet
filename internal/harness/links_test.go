@@ -238,7 +238,10 @@ func symlink(t *testing.T, target, link string) {
 func TestSkillDirsCoversInstalledHarnessesWithNativeScanFlags(t *testing.T) {
 	p, _ := linkHome(t, "opencode", "claude", "bob")
 
-	dirs := SkillDirs(p)
+	dirs, err := SkillDirs(p)
+	if err != nil {
+		t.Fatalf("SkillDirs() error = %v", err)
+	}
 	if len(dirs) != 3 {
 		t.Fatalf("SkillDirs() = %v, want 3 installed harnesses", dirs)
 	}

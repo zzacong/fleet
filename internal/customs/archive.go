@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/paths"
@@ -108,8 +109,9 @@ func loadScanned(p *paths.Paths) (*skillindex.Index, error) {
 
 // Archive moves one custom skill copy into the archived/ folder beside its
 // collection dir (the fleet-home fallback's goes to the fleet home's
-// archived/), unlinks its managed link from every installed harness, drops
-// its state entries, and clears Claude's "off" skillOverrides entry for it.
+// archived/), unlinks its managed link from every managed harness, drops
+// its state entries except a hidden harness's, and clears Claude's "off"
+// skillOverrides entry for it when Claude is managed.
 // It refuses a copy whose name shadows a canonical skill or whose target
 // already exists in archived/, before anything changes. Every step that can
 // fail on existing data — the state load and the Claude settings parse —
@@ -131,9 +133,20 @@ func Archive(p *paths.Paths, hit skillindex.Hit) (*ArchiveResult, error) {
 		return nil, ShadowError(name, canon)
 	}
 
-	claude := harness.NewClaude(p)
-	if err := claude.CheckOverrideConfig(); err != nil {
+	hidden, err := harness.HiddenNames(p)
+	if err != nil {
 		return nil, err
+	}
+	managed, err := harness.Managed(p)
+	if err != nil {
+		return nil, err
+	}
+	claude := harness.NewClaude(p)
+	claudeManaged := !slices.Contains(hidden, string(harness.Claude))
+	if claudeManaged {
+		if err := claude.CheckOverrideConfig(); err != nil {
+			return nil, err
+		}
 	}
 
 	archivedDir := filepath.Join(filepath.Dir(hit.Home), "archived")
@@ -156,27 +169,29 @@ func Archive(p *paths.Paths, hit skillindex.Hit) (*ArchiveResult, error) {
 		return nil, fmt.Errorf("archive %s: %w", name, err)
 	}
 
-	unlinked, err := unlinkSkill(p, name, hit.Home)
+	unlinked, err := unlinkSkill(p, managed, name, hit.Home)
 	if err != nil {
 		return nil, err
 	}
-	if err := claude.RemoveOff(name); err != nil {
-		return nil, err
+	if claudeManaged {
+		if err := claude.RemoveOff(name); err != nil {
+			return nil, err
+		}
 	}
 
-	st.RemoveSkill(name)
+	st.RemoveSkillExcept(name, hidden)
 	if err := state.Save(p.FleetStateFile(), st); err != nil {
 		return nil, err
 	}
 	return &ArchiveResult{To: to, Unlinked: unlinked}, nil
 }
 
-// unlinkSkill removes name's managed link from every installed harness that
+// unlinkSkill removes name's managed link from each managed harness that
 // links skills. Only links that resolve into home are touched, the same
 // rule remove-dir applies, so links to other copies or the store stay.
-func unlinkSkill(p *paths.Paths, name, home string) ([]harness.UnlinkResult, error) {
+func unlinkSkill(p *paths.Paths, managed []harness.Adapter, name, home string) ([]harness.UnlinkResult, error) {
 	var out []harness.UnlinkResult
-	for _, a := range harness.Installed(p) {
+	for _, a := range managed {
 		res, removed, err := harness.RemoveCustomSkillLink(p, a, name, []string{home})
 		if err != nil {
 			return nil, err
