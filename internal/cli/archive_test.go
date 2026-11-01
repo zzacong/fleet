@@ -1,0 +1,413 @@
+package cli
+
+import (
+	"bytes"
+	"encoding/json"
+	"io/fs"
+	"maps"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/zzacong/fleet/internal/paths"
+	"github.com/zzacong/fleet/internal/state"
+)
+
+// runArchive runs `fleet skill archive` against a fake home and returns
+// stdout and the error.
+func runArchive(t *testing.T, p *paths.Paths, args ...string) (string, error) {
+	t.Helper()
+	out := &bytes.Buffer{}
+	root := NewRoot(p)
+	root.SetOut(out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs(append([]string{"skill", "archive"}, args...))
+	t.Cleanup(func() { stdoutTTY = func() bool { return false } })
+	err := root.Execute()
+	return out.String(), err
+}
+
+func TestArchiveMovesSkillUnlinksEveryHarnessAndDropsState(t *testing.T) {
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	writeSkillDir(t, collection, "alpha", "Alpha.")
+	writeSkillDir(t, collection, "beta", "Beta.")
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+	// Claude holds a state entry for alpha, which archive must drop.
+	runToggle(t, p, "off", "alpha", "--harness", "claude")
+
+	out, err := runArchive(t, p, "alpha")
+	if err != nil {
+		t.Fatalf("archive: %v\nout=%s", err, out)
+	}
+
+	archived := filepath.Join(filepath.Dir(collection), "archived", "alpha")
+	if _, serr := os.Stat(filepath.Join(archived, "SKILL.md")); serr != nil {
+		t.Errorf("alpha not moved to %s: %v", archived, serr)
+	}
+	if _, serr := os.Lstat(filepath.Join(collection, "alpha")); !os.IsNotExist(serr) {
+		t.Errorf("alpha still in collection: %v", serr)
+	}
+	if _, serr := os.Stat(filepath.Join(collection, "beta", "SKILL.md")); serr != nil {
+		t.Errorf("beta was disturbed: %v", serr)
+	}
+	if !strings.Contains(out, `archive: archived "`+archived+`"`) {
+		t.Errorf("output missing headline:\n%s", out)
+	}
+
+	harnessDirs := map[string]string{
+		"opencode": p.OpenCodeSkills(),
+		"pi":       p.PiSkills(),
+		"codex":    p.CodexSkills(),
+		"claude":   p.ClaudeSkills(),
+		"cursor":   p.CursorSkills(),
+		"bob":      p.BobSkills(),
+	}
+	for h, dir := range harnessDirs {
+		want := h + `: unlinked "alpha" → ` + filepath.Join(collection, "alpha")
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+		if _, rerr := os.Lstat(filepath.Join(dir, "alpha")); !os.IsNotExist(rerr) {
+			t.Errorf("link %s/alpha not removed: %v", dir, rerr)
+		}
+		if _, rerr := os.Lstat(filepath.Join(dir, "beta")); rerr != nil {
+			t.Errorf("beta link in %s was disturbed: %v", dir, rerr)
+		}
+	}
+
+	st, err := state.Load(p.FleetStateFile())
+	if err != nil {
+		t.Fatalf("state file: %v", err)
+	}
+	if slices.Contains(st.Names(), "alpha") {
+		t.Errorf("state still holds alpha: %v", st.Names())
+	}
+
+	if ls := runLs(t, p); strings.Contains(ls, "alpha") {
+		t.Errorf("ls still lists the archived skill:\n%s", ls)
+	}
+}
+
+func TestArchiveClearsClaudeOffOverrideAndDropsEmptyObject(t *testing.T) {
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	writeSkillDir(t, collection, "alpha", "Alpha.")
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+	if err := os.WriteFile(p.ClaudeSettings(), []byte(`{"model": "sonnet"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runToggle(t, p, "off", "alpha", "--harness", "claude")
+
+	if _, err := runArchive(t, p, "alpha"); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+
+	settings := readClaudeSettings(t, p)
+	if _, ok := settings["skillOverrides"]; ok {
+		t.Errorf("skillOverrides survived with only the archived entry: %s", settings["skillOverrides"])
+	}
+	if string(settings["model"]) != `"sonnet"` {
+		t.Errorf("unrelated setting changed: model = %s", settings["model"])
+	}
+}
+
+func TestArchiveKeepsOtherClaudeOverridesAndValues(t *testing.T) {
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	writeSkillDir(t, collection, "alpha", "Alpha.")
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+	fixture := `{"skillOverrides": {"alpha": "user-invocable-only", "gamma": "off"}}`
+	if err := os.WriteFile(p.ClaudeSettings(), []byte(fixture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := runArchive(t, p, "alpha"); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+
+	var overrides map[string]string
+	if err := json.Unmarshal(readClaudeSettings(t, p)["skillOverrides"], &overrides); err != nil {
+		t.Fatalf("skillOverrides: %v", err)
+	}
+	want := map[string]string{"alpha": "user-invocable-only", "gamma": "off"}
+	if !maps.Equal(overrides, want) {
+		t.Errorf("skillOverrides = %v, want %v", overrides, want)
+	}
+}
+
+// readClaudeSettings decodes ~/.claude/settings.json into its top-level keys.
+func readClaudeSettings(t *testing.T, p *paths.Paths) map[string]json.RawMessage {
+	t.Helper()
+	var settings map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(readFile(t, p.ClaudeSettings())), &settings); err != nil {
+		t.Fatalf("claude settings: %v", err)
+	}
+	return settings
+}
+
+func TestArchiveFallbackSkillGoesToFleetHomeArchived(t *testing.T) {
+	p := harnessHome(t)
+	writeSkillDir(t, p.FleetHomeSkills(), "notes", "Notes.")
+	if _, _, err := runSync(t, p); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	if _, err := runArchive(t, p, "notes"); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+
+	archived := filepath.Join(p.FleetConfigDir(), "archived", "notes")
+	if _, serr := os.Stat(filepath.Join(archived, "SKILL.md")); serr != nil {
+		t.Errorf("notes not moved to %s: %v", archived, serr)
+	}
+	if _, serr := os.Lstat(filepath.Join(p.FleetHomeSkills(), "notes")); !os.IsNotExist(serr) {
+		t.Errorf("notes still in the fallback: %v", serr)
+	}
+	if _, rerr := os.Lstat(filepath.Join(p.OpenCodeSkills(), "notes")); !os.IsNotExist(rerr) {
+		t.Errorf("fallback link not removed: %v", rerr)
+	}
+}
+
+// snapshotTree records every path under roots with its kind, link target, or
+// file body, so a refused archive can be shown to leave the disk unchanged.
+func snapshotTree(t *testing.T, roots ...string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, root := range roots {
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			switch {
+			case d.Type()&fs.ModeSymlink != 0:
+				target, err := os.Readlink(path)
+				if err != nil {
+					return err
+				}
+				out[path] = "link → " + target
+			case d.IsDir():
+				out[path] = "dir"
+			default:
+				body, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				out[path] = "file " + string(body)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	return out
+}
+
+func assertTreeUnchanged(t *testing.T, before, after map[string]string) {
+	t.Helper()
+	for path, want := range before {
+		if got, ok := after[path]; !ok || got != want {
+			t.Errorf("refused archive changed %s: before %q, after %q", path, want, got)
+		}
+	}
+	for path := range after {
+		if _, ok := before[path]; !ok {
+			t.Errorf("refused archive created %s", path)
+		}
+	}
+}
+
+func TestArchiveRefusesUnknownName(t *testing.T) {
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	writeSkillDir(t, collection, "alpha", "Alpha.")
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+	before := snapshotTree(t, p.Home, filepath.Dir(collection))
+
+	_, err := runArchive(t, p, "nope")
+	if err == nil || !strings.Contains(err.Error(), `"nope" not found`) {
+		t.Fatalf("archive unknown name error = %v, want not found", err)
+	}
+	assertTreeUnchanged(t, before, snapshotTree(t, p.Home, filepath.Dir(collection)))
+}
+
+func TestArchiveRefusesInstalledSkillNamingCanonical(t *testing.T) {
+	p := harnessHome(t)
+	writeSkillDir(t, p.SkillsStore(), "gamma", "Gamma.")
+	before := snapshotTree(t, p.Home)
+
+	_, err := runArchive(t, p, "gamma")
+	canonical := filepath.Join(p.SkillsStore(), "gamma")
+	if err == nil || !strings.Contains(err.Error(), canonical) || !strings.Contains(err.Error(), "skills CLI") {
+		t.Fatalf("archive installed skill error = %v, want canonical %s and the skills CLI", err, canonical)
+	}
+	assertTreeUnchanged(t, before, snapshotTree(t, p.Home))
+}
+
+func TestArchiveRefusesShadowingCanonicalSkillNamingIt(t *testing.T) {
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	writeSkillDir(t, collection, "alpha", "Alpha.")
+	writeSkillDir(t, p.SkillsStore(), "alpha", "Canonical alpha.")
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+	before := snapshotTree(t, p.Home, filepath.Dir(collection))
+
+	_, err := runArchive(t, p, "alpha")
+	canonical := filepath.Join(p.SkillsStore(), "alpha")
+	if err == nil || !strings.Contains(err.Error(), canonical) {
+		t.Fatalf("archive shadowing skill error = %v, want canonical %s", err, canonical)
+	}
+	assertTreeUnchanged(t, before, snapshotTree(t, p.Home, filepath.Dir(collection)))
+}
+
+func TestArchiveRefusesWhenArchivedAlreadyHoldsName(t *testing.T) {
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	writeSkillDir(t, collection, "alpha", "Alpha.")
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+	archived := filepath.Join(filepath.Dir(collection), "archived", "alpha")
+	writeSkillDir(t, filepath.Dir(archived), "alpha", "Old alpha.")
+	before := snapshotTree(t, p.Home, filepath.Dir(collection))
+
+	_, err := runArchive(t, p, "alpha")
+	if err == nil || !strings.Contains(err.Error(), archived) || !strings.Contains(err.Error(), "rename or remove") {
+		t.Fatalf("archive into an occupied archived/ error = %v, want %s and rename-or-remove advice", err, archived)
+	}
+	assertTreeUnchanged(t, before, snapshotTree(t, p.Home, filepath.Dir(collection)))
+}
+
+func TestArchiveRefusesAmbiguousNameListingEveryPath(t *testing.T) {
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	writeSkillDir(t, collection, "alpha", "Alpha.")
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+	// add-dir refuses a name clash between tracked dirs, so the second copy
+	// lands in the fleet-home fallback after the collection is tracked.
+	writeSkillDir(t, p.FleetHomeSkills(), "alpha", "Fallback alpha.")
+	before := snapshotTree(t, p.Home, filepath.Dir(collection))
+
+	_, err := runArchive(t, p, "alpha")
+	fallback := filepath.Join(p.FleetHomeSkills(), "alpha")
+	if err == nil || !strings.Contains(err.Error(), filepath.Join(collection, "alpha")) || !strings.Contains(err.Error(), fallback) {
+		t.Fatalf("archive ambiguous name error = %v, want both %s and %s", err, collection, fallback)
+	}
+	assertTreeUnchanged(t, before, snapshotTree(t, p.Home, filepath.Dir(collection)))
+}
+
+func TestArchiveFailedMoveLeavesLinksAndStateAlone(t *testing.T) {
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	writeSkillDir(t, collection, "alpha", "Alpha.")
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+	runToggle(t, p, "off", "alpha", "--harness", "claude")
+	stateBefore := readFile(t, p.FleetStateFile())
+	// A file where archived/ must go makes the move impossible.
+	if err := os.WriteFile(filepath.Join(filepath.Dir(collection), "archived"), []byte("in the way"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := runArchive(t, p, "alpha"); err == nil {
+		t.Fatal("archive into a blocked archived/ should fail")
+	}
+	if _, serr := os.Stat(filepath.Join(collection, "alpha", "SKILL.md")); serr != nil {
+		t.Errorf("failed archive lost alpha from the collection: %v", serr)
+	}
+	for _, dir := range []string{p.OpenCodeSkills(), p.PiSkills(), p.CodexSkills(), p.ClaudeSkills(), p.CursorSkills(), p.BobSkills()} {
+		if _, rerr := os.Lstat(filepath.Join(dir, "alpha")); rerr != nil {
+			t.Errorf("failed archive unlinked %s/alpha: %v", dir, rerr)
+		}
+	}
+	if got := readFile(t, p.FleetStateFile()); got != stateBefore {
+		t.Errorf("failed archive changed the state file:\nbefore:\n%s\nafter:\n%s", stateBefore, got)
+	}
+}
+
+// An unparseable Claude settings file fails the archive before the move, so
+// the half-archived state story 23 forbids never happens.
+func TestArchiveUnparseableClaudeSettingsChangesNothing(t *testing.T) {
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	writeSkillDir(t, collection, "alpha", "Alpha.")
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+	runToggle(t, p, "off", "alpha", "--harness", "claude")
+	if err := os.WriteFile(p.ClaudeSettings(), []byte(`{"skillOverrides": `), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTree(t, p.Home, filepath.Dir(collection))
+
+	if _, err := runArchive(t, p, "alpha"); err == nil {
+		t.Fatal("archive with unparseable claude settings should fail")
+	}
+	assertTreeUnchanged(t, before, snapshotTree(t, p.Home, filepath.Dir(collection)))
+}
+
+// A move that fails after archived/ was created takes that folder with it,
+// so a retry starts from the same state as the first attempt.
+func TestArchiveFailedMoveRemovesArchivedFolderItCreated(t *testing.T) {
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	writeSkillDir(t, collection, "alpha", "Alpha.")
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+	// A read-only collection dir still allows archived/ to be created
+	// beside it, but not the move that empties it.
+	if err := os.Chmod(collection, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(collection, 0o755) })
+	before := snapshotTree(t, p.Home, filepath.Dir(collection))
+
+	if _, err := runArchive(t, p, "alpha"); err == nil {
+		t.Fatal("archive out of a read-only collection should fail")
+	}
+	assertTreeUnchanged(t, before, snapshotTree(t, p.Home, filepath.Dir(collection)))
+}
+
+func TestArchiveNamesSkillByFrontmatterNameAndArchivesUnderDirName(t *testing.T) {
+	p := harnessHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	dir := filepath.Join(collection, "alpha-dir")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: alpha-notes\ndescription: Alpha.\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+
+	if _, err := runArchive(t, p, "alpha-notes"); err != nil {
+		t.Fatalf("archive by frontmatter name: %v", err)
+	}
+
+	archived := filepath.Join(filepath.Dir(collection), "archived", "alpha-dir")
+	if _, serr := os.Stat(filepath.Join(archived, "SKILL.md")); serr != nil {
+		t.Errorf("skill not moved to %s: %v", archived, serr)
+	}
+	if _, serr := os.Lstat(dir); !os.IsNotExist(serr) {
+		t.Errorf("skill still in the collection: %v", serr)
+	}
+}

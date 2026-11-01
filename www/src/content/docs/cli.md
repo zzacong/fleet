@@ -27,6 +27,7 @@ Keys:
 | `enter`           | apply staged changes                                                   |
 | `u`               | update all installed skills (wrapped skills CLI, then sync)            |
 | `U`               | update the selected skill (wrapped `skills update <skill>`, then sync) |
+| `A`               | archive the selected custom skill (asks first)                         |
 | `esc`             | discard staged changes, clear the filter, or close help                |
 | `/`               | filter by name or description                                          |
 | `r`               | refresh, re-checking every repo                                        |
@@ -38,6 +39,8 @@ Cells read `●` on, `○` off, `-` absent. Columns for Cursor and Bob render fa
 `u` is the one-key update-all: it runs the same wrapped `skills update -g -y` the [update verb](#fleet-skill-update) runs, then sync, then reloads the matrix so the new badges and states show. `U` does the same for the selected skill only (`skills update -g -y <skill>`). A busy line takes over while either runs, the outcome notice reports fleet's own post-run state — the store scan and lockfile, never the skills CLI's prose — and a failed run shows the CLI's captured output raw.
 
 The matrix opens at once and never waits on GitHub. Badges the cache can answer show right away; the rest show `…` while their check runs in the background, and the status line reads `checking updates…` until the last one lands. `r` re-checks every repo, so each badge shows `…` until its check lands.
+
+`A` archives the selected custom skill, the same move as [`fleet skill archive`](#fleet-skill-archive). It asks first: the notice names the path, `y` confirms, and any other key cancels. The move is the copy the row shows. An installed row gets a notice and nothing happens, since the skills CLI owns installed skills. A refusal from the core shows inline under the row. Like `q`, `A` is text while the filter holds input.
 
 The hero banner appears on launch only. `fleet --quiet` (or `-q`) keeps the matrix without it. With piped output fleet never enters the TUI: it prints the same listing as `fleet skill ls` instead, so `fleet | grep tdd` does what you mean.
 
@@ -234,6 +237,30 @@ remove-dir: codex: unlinked "my-notes" → ~/Developer/projects/agent-skills/ski
 - An untracked path fails listing the tracked dirs (`remove-dir: "<path>" is not tracked: tracked dirs:` then one `- <path>` line each, or `no dirs are tracked`), so a typo never silently succeeds.
 - After the unlink every managed link resolving under the dir is removed from all six harnesses, then sync runs. The headline (`remove-dir: removed "<path>"`) prints, then one line per unlinked managed link; on a terminal the `remove-dir:` prefix is dim, the verb green, harness names cyan.
 - There is no bare mode: `remove-dir` always takes the path, since it addresses a directory by path only, never by a derived name.
+
+## fleet skill archive
+
+```sh
+fleet skill archive <name>
+```
+
+Moves a custom skill out of its collection dir into an `archived/` folder beside that dir, unlinks its managed link from every installed harness, drops its enablement entries, and syncs. `<name>` is the skill's directory name, or its frontmatter name:
+
+```sh
+$ fleet skill archive my-notes
+archive: archived "~/Developer/projects/agent-skills/archived/my-notes"
+archive: opencode: unlinked "my-notes" → ~/Developer/projects/agent-skills/skills/my-notes
+archive: pi: unlinked "my-notes" → ~/Developer/projects/agent-skills/skills/my-notes
+archive: codex: unlinked "my-notes" → ~/Developer/projects/agent-skills/skills/my-notes
+```
+
+- **One-way.** Archive is the only verb that moves a custom skill's files, and nothing moves it back. Restoring is a manual move; see [undo](undo.md#restore-an-archived-skill).
+- **Where it goes.** The folder lands in `archived/` beside the collection dir, so it stays in the same repo. In a git-tracked collection it shows as a deletion plus an untracked folder until you commit it. A fallback skill goes to the fleet home's `archived/` (`~/.config/fleet/archived/`).
+- **Ignored by `ls` and doctor.** The archived folder is not scanned, so archived skills never appear in `ls` and never show up in doctor as missing or unlinked.
+- **Claude's override.** Fleet's `skillOverrides` entry for the skill is removed from Claude Code's config only when it holds fleet's `off` marker. Any other value stays, so a future skill with the same name is not silently disabled.
+- **Refusals.** Every refusal leaves the disk and the state file untouched. See the error table for the messages. Archive refuses a name with no custom copy, an installed skill, a custom copy that shadows a canonical skill, a name already in `archived/`, and, in the CLI only, a name that matches more than one custom copy. The ambiguity error lists each path, since archive never picks a copy you didn't name.
+- **Nothing partial.** Archive parses the state file and Claude's settings before it moves anything. A refusal, an unreadable Claude settings file, or a failed move leaves the folder, the links, and the state exactly as they were — a failed move also removes the `archived/` folder it created.
+- The TUI's `A` key runs the same move on the copy the row shows, so it has no ambiguity refusal.
 
 ## fleet skill doctor
 
@@ -542,6 +569,11 @@ Sync runs on every fleet command and after every wrapped `skills` call, and [`fl
 | `add-dir` nested                         | `add-dir: "<path>" is inside tracked dir "<dir>"` (or `contains tracked dir "<dir>"`)                                                 | 1    |
 | `add-dir` name collision                 | `add-dir: "<path>" collides with already tracked skills: <name> (in <home>), …`                                                       | 1    |
 | `remove-dir` untracked                   | `remove-dir: "<path>" is not tracked: tracked dirs:` + one `- <path>` line each (or `no dirs are tracked`)                            | 1    |
+| `archive` not found                      | `archive: "<name>" not found among custom skills; pass the skill's directory name`                                                    | 1    |
+| `archive` installed                      | `archive: "<name>" is installed as canonical skill "<dir>" at <path>; …` (remove it with the skills CLI)                              | 1    |
+| `archive` shadows canonical              | `archive: "<name>" shadows canonical skill "<dir>" at <path>; archiving it would expose the installed copy in every harness`          | 1    |
+| `archive` already archived               | `archive: "<name>" already exists at <path>; rename or remove the existing archived folder first`                                     | 1    |
+| `archive` ambiguous (CLI)                | `archive: "<name>" matches N custom copies; archive one by hand:` + one `- <path>` line each                                          | 1    |
 | Unknown config key                       | `unknown config key "foo" (want adopt-target)`                                                                                        | 1    |
 | Retired config key                       | `unknown config key "skills-repos" (the repo-root list is retired; tracked dirs live in the `skillsDirs` list …)`                     | 1    |
 | `config set` with non-absolute path      | `path must be absolute: "relative/path"`                                                                                              | 1    |

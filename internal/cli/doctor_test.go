@@ -829,3 +829,23 @@ func TestDoctorReportsTrackedSetProblems(t *testing.T) {
 		t.Errorf("output missing the count summary:\n%s", out)
 	}
 }
+
+// An archived skill is invisible: with another skill left in the collection
+// the home stays clean, so doctor neither lists nor misses the archived one.
+func TestDoctorIgnoresArchivedSkill(t *testing.T) {
+	p := doctorHome(t)
+	collection := filepath.Join(t.TempDir(), "customs")
+	writeSkillDir(t, collection, "alpha", "Alpha.")
+	writeSkillDir(t, collection, "beta", "Beta.")
+	if _, _, err := runAddDir(t, p, collection); err != nil {
+		t.Fatalf("add-dir: %v", err)
+	}
+	if _, err := runArchive(t, p, "alpha"); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+
+	out := runDoctor(t, p, "")
+	if !strings.Contains(out, "no problems found") {
+		t.Errorf("archived skill reported by doctor:\n%s", out)
+	}
+}

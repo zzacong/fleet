@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/zzacong/fleet/internal/customs"
 	"github.com/zzacong/fleet/internal/harness"
 	"github.com/zzacong/fleet/internal/outdated"
 	"github.com/zzacong/fleet/internal/paths"
@@ -142,6 +143,10 @@ var (
 	keySlash = tea.KeyPressMsg{Code: '/'}
 	keyR     = tea.KeyPressMsg{Code: 'r'}
 	keyU     = tea.KeyPressMsg{Code: 'u'}
+	keyA     = tea.KeyPressMsg{Code: 'A', Text: "A"}
+	keyY     = tea.KeyPressMsg{Code: 'y', Text: "y"}
+	keyN     = tea.KeyPressMsg{Code: 'n', Text: "n"}
+	keyHelp  = tea.KeyPressMsg{Code: '?', Text: "?"}
 )
 
 func sendKey(m model, k tea.KeyPressMsg) model {
@@ -221,6 +226,13 @@ func requireMissing(t *testing.T, path, what string) {
 	t.Helper()
 	if _, err := os.Lstat(path); !os.IsNotExist(err) {
 		t.Errorf("%s exists after the operation (%s)", what, path)
+	}
+}
+
+func requireExists(t *testing.T, path, what string) {
+	t.Helper()
+	if _, err := os.Lstat(path); err != nil {
+		t.Errorf("%s missing (%s): %v", what, path, err)
 	}
 }
 
@@ -984,5 +996,83 @@ func TestReleaseCheckKeepsTheStatusLineChecking(t *testing.T) {
 	landed, _ := m.Update(releaseMsg{})
 	if v := landed.(model).View().Content; strings.Contains(v, "checking updates…") {
 		t.Errorf("status line still checking after the release check landed:\n%s", v)
+	}
+}
+
+func TestArchiveKeyAsksThenArchivesTheCustomRow(t *testing.T) {
+	p := tuiHome(t)
+	copies, err := customs.CustomCopies(p, "my-notes")
+	if err != nil || len(copies) != 1 {
+		t.Fatalf("my-notes copies: %v (%d found)", err, len(copies))
+	}
+	source := filepath.Join(copies[0].Home, "my-notes")
+	archived := filepath.Join(filepath.Dir(copies[0].Home), "archived", "my-notes")
+	m := newTestModel(t, p)
+
+	// A asks first: the prompt names the copy, and nothing moves until y.
+	m = sendKey(m, keyA)
+	if !strings.Contains(m.notice.text, "y confirms") || !strings.Contains(m.notice.text, source) {
+		t.Fatalf("A on a custom row: notice %q, want a confirmation naming %s", m.notice.text, source)
+	}
+	requireExists(t, source, "custom copy")
+	requireMissing(t, archived, "archived copy")
+
+	// Any key but y cancels, and changes nothing.
+	m = sendKey(m, keyN)
+	if m.notice.text != "archive cancelled" {
+		t.Errorf("cancel notice: %q", m.notice.text)
+	}
+	requireExists(t, source, "custom copy after cancel")
+	requireMissing(t, archived, "archived copy after cancel")
+	requireMissing(t, p.FleetStateFile(), "state file")
+
+	// A refusal from the core shows on the row it names.
+	writeSkillDir(t, filepath.Dir(archived), "my-notes", "An earlier archive.")
+	m = sendKey(m, keyA)
+	m2, _ := m.Update(keyY)
+	m = m2.(model)
+	if view := stripANSI(m.View().Content); !strings.Contains(view, "already exists") {
+		t.Errorf("refusal missing from the row:\n%s", view)
+	}
+	requireExists(t, source, "custom copy after refusal")
+	if err := os.RemoveAll(archived); err != nil {
+		t.Fatal(err)
+	}
+
+	// An installed row gets a notice and nothing else.
+	m = selectSkill(m, "tdd")
+	m = sendKey(m, keyA)
+	if !strings.Contains(m.notice.text, "skills CLI") {
+		t.Errorf("installed row notice: %q", m.notice.text)
+	}
+	requireExists(t, filepath.Join(p.SkillsStore(), "tdd"), "installed copy")
+
+	// Confirming archives the displayed copy and refreshes the list.
+	m = selectSkill(m, "my-notes")
+	m = sendKey(m, keyA)
+	m2, cmd := m.Update(keyY)
+	m = settle(t, m2.(model), cmd)
+	requireMissing(t, source, "custom copy after archive")
+	requireExists(t, archived, "archived copy")
+	for _, r := range m.rows {
+		if r.Name == "my-notes" {
+			t.Error("my-notes still listed after archive")
+		}
+	}
+	if !strings.Contains(m.notice.text, `archived "my-notes"`) {
+		t.Errorf("archive notice: %q", m.notice.text)
+	}
+
+	// While the filter has focus, A is text.
+	m = sendKey(m, keySlash)
+	m = typeText(m, "A")
+	if m.filter.Value() != "A" || m.notice.text != "" {
+		t.Errorf("A in the filter: value %q, notice %q", m.filter.Value(), m.notice.text)
+	}
+	m = sendKey(m, keyEsc)
+
+	m = sendKey(m, keyHelp)
+	if help := stripANSI(m.helpOverlay()); !strings.Contains(help, "A              archive the selected custom skill") {
+		t.Errorf("help overlay missing the A key:\n%s", help)
 	}
 }

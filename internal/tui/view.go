@@ -26,9 +26,10 @@ type layout struct {
 }
 
 const (
-	minCellW = 3  // state columns never narrow below one padded glyph
-	descCap  = 60 // the description yields long before the screen edge
-	cellGap  = "  "
+	minCellW     = 3  // state columns never narrow below one padded glyph
+	descCap      = 60 // the description yields long before the screen edge
+	cellGap      = "  "
+	inlineIndent = 4 // a refusal under a row sits this far in from the left
 )
 
 // harnessAbbrev maps harness names to the short labels the matrix header
@@ -162,13 +163,18 @@ func (m model) View() tea.View {
 	prev := ""
 	for i := m.offset; i < m.endFrom(m.offset); i++ {
 		g := groupOf(fs[i])
-		if g != prev && lines+2 <= budget {
+		inline := m.inlineLines(fs[i])
+		if g != prev && lines+2+len(inline) <= budget {
 			b.WriteString(groupHeader(g) + "\n")
 			lines++
 			prev = g
 		}
 		b.WriteString(m.renderRow(fs[i], i == m.row) + "\n")
 		lines++
+		for _, l := range inline {
+			b.WriteString(strings.Repeat(" ", inlineIndent) + styErr.Render(l) + "\n")
+			lines++
+		}
 	}
 	for ; lines < budget; lines++ {
 		b.WriteString("\n")
@@ -183,28 +189,39 @@ func (m model) View() tea.View {
 }
 
 // endFrom returns the first row index at or after start that does not fit
-// in the body's line budget, counting group headers. The view and the
-// scroll math share it, so a cursor the scroll math considers visible is
-// one the view actually renders.
+// in the body's line budget, counting group headers and any refusal drawn
+// under a row. The view and the scroll math share it, so a cursor the scroll
+// math considers visible is one the view actually renders.
 func (m model) endFrom(start int) int {
 	fs := m.filtered()
 	budget := m.visibleRows()
 	lines, prev := 0, ""
 	for i := start; i < len(fs); i++ {
 		g := groupOf(fs[i])
-		need := 1
-		if g != prev && lines+2 <= budget {
-			need = 2 // the header line and the row
+		rows := 1 + len(m.inlineLines(fs[i]))
+		need := rows
+		header := g != prev && lines+1+rows <= budget
+		if header {
+			need++ // the group header line
 		}
 		if lines+need > budget {
 			return i
 		}
 		lines += need
-		if need == 2 {
+		if header {
 			prev = g
 		}
 	}
 	return len(fs)
+}
+
+// inlineLines wraps the refusal drawn under row r, or returns none when the
+// refusal belongs to another row.
+func (m model) inlineLines(r snapshot.SkillRow) []string {
+	if m.inlineErr.text == "" || m.inlineErr.skill != r.Name {
+		return nil
+	}
+	return wrapLines(m.inlineErr.text, m.width-inlineIndent)
 }
 
 // groupOf names the section a row renders under.
@@ -440,6 +457,7 @@ func (m model) helpOverlay() string {
 		"enter          apply staged changes (state file, then sync)",
 		"u              update all installed skills (skills update, then sync)",
 		"U              update the selected skill (skills update <skill>, then sync)",
+		"A              archive the selected custom skill",
 		"esc            discard staged, clear filter, or close this help",
 		"/              focus filter",
 		"r              refresh",
