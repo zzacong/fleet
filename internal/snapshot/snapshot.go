@@ -272,7 +272,7 @@ func readDraft(p *paths.Paths) (*draft, error) {
 		harnessNames[i] = string(a.Harness())
 	}
 
-	// Checkable managed skills carry their lockfile provenance; customs
+	// Checkable installed skills carry their lockfile provenance; customs
 	// stay the zero entry (unknown by definition, no API call). Tracked-set
 	// and fleet-home customs are zero entries — a lingering lock entry from a
 	// pre-adoption install must not make fleet check (or misreport) a

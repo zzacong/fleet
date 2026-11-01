@@ -111,7 +111,7 @@ func loadScanned(p *paths.Paths) (*skillindex.Index, error) {
 // collection dir (the fleet-home fallback's goes to the fleet home's
 // archived/), unlinks its managed link from every managed harness, drops
 // its state entries except a hidden harness's, and clears Claude's "off"
-// skillOverrides entry for it when Claude is managed.
+// skillOverrides entry for it unless Claude is hidden.
 // It refuses a copy whose name shadows a canonical skill or whose target
 // already exists in archived/, before anything changes. Every step that can
 // fail on existing data — the state load and the Claude settings parse —
@@ -142,8 +142,8 @@ func Archive(p *paths.Paths, hit skillindex.Hit) (*ArchiveResult, error) {
 		return nil, err
 	}
 	claude := harness.NewClaude(p)
-	claudeManaged := !slices.Contains(hidden, string(harness.Claude))
-	if claudeManaged {
+	claudeHidden := slices.Contains(hidden, string(harness.Claude))
+	if !claudeHidden {
 		if err := claude.CheckOverrideConfig(); err != nil {
 			return nil, err
 		}
@@ -173,7 +173,7 @@ func Archive(p *paths.Paths, hit skillindex.Hit) (*ArchiveResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if claudeManaged {
+	if !claudeHidden {
 		if err := claude.RemoveOff(name); err != nil {
 			return nil, err
 		}

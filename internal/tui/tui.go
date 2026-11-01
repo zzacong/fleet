@@ -145,15 +145,14 @@ func (m *model) rebuildColumns(names []string) {
 	m.linkToggle = map[string]bool{}
 	all := harness.All(m.p)
 	for _, name := range names {
-		for _, a := range all {
-			if string(a.Harness()) != name {
-				continue
-			}
-			m.adapters = append(m.adapters, a)
-			m.harnesses = append(m.harnesses, name)
-			m.writable[name] = a.CanProject()
-			m.linkToggle[name] = harness.LinkToggleable(a)
+		a, ok := harness.ByName(all, name)
+		if !ok {
+			continue
 		}
+		m.adapters = append(m.adapters, a)
+		m.harnesses = append(m.harnesses, name)
+		m.writable[name] = a.CanProject()
+		m.linkToggle[name] = harness.LinkToggleable(a)
 	}
 	if m.col >= len(m.harnesses) {
 		m.col = 0

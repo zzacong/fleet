@@ -91,7 +91,7 @@ func pruneHarnessNames(p *paths.Paths, flags []string) ([]string, error) {
 		if !known[f] {
 			return nil, fmt.Errorf("unknown harness %q (want one of: %s)", f, harnessList(all))
 		}
-		if err := harness.RequireManaged(p, f); err != nil {
+		if err := harness.RefuseHidden(p, f); err != nil {
 			return nil, err
 		}
 		if seen[f] {

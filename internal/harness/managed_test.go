@@ -41,11 +41,11 @@ func TestManagedExcludesHiddenInstalledHarness(t *testing.T) {
 	if len(got) != 1 || got[0].Harness() != OpenCode {
 		t.Errorf("Managed() = %v, want only opencode", harnessNames(got))
 	}
-	if err := RequireManaged(p, "bob"); err == nil || !strings.Contains(err.Error(), "fleet harness unhide bob") {
-		t.Errorf("RequireManaged(bob) = %v, want an error pointing at fleet harness unhide bob", err)
+	if err := RefuseHidden(p, "bob"); err == nil || !strings.Contains(err.Error(), "fleet harness unhide bob") {
+		t.Errorf("RefuseHidden(bob) = %v, want an error pointing at fleet harness unhide bob", err)
 	}
-	if err := RequireManaged(p, "opencode"); err != nil {
-		t.Errorf("RequireManaged(opencode) = %v, want nil", err)
+	if err := RefuseHidden(p, "opencode"); err != nil {
+		t.Errorf("RefuseHidden(opencode) = %v, want nil", err)
 	}
 }
 

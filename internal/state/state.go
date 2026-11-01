@@ -304,8 +304,8 @@ func (f *File) SetEnabled(name, harness string) {
 }
 
 // RemoveSkillExcept drops the entries the state holds for skill, except for
-// the kept harnesses, along with its unknown fields: archive retires the
-// skill, so nothing may keep referring to its name. A kept harness's entry
+// the kept harnesses. Archive retires the whole skill, so its skill-level
+// unknown fields go too, as they always have. Only a kept harness's entry
 // survives, which is how a hidden harness keeps its enablement; the skill
 // entry goes once no harness entry is left.
 func (f *File) RemoveSkillExcept(name string, kept []string) {

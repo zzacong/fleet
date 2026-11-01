@@ -537,7 +537,11 @@ func analyzeConfigs(p *paths.Paths, customByName map[string]bool) ([]Conflict, [
 			}
 		}
 	}
-	findings = append(findings, staleStateFindings(adapters, st, idx, complete)...)
+	notHidden, err := harness.NotHidden(p)
+	if err != nil {
+		return nil, nil, err
+	}
+	findings = append(findings, staleStateFindings(notHidden, st, idx, complete)...)
 	return conflicts, findings, nil
 }
 
@@ -547,7 +551,7 @@ func analyzeConfigs(p *paths.Paths, customByName map[string]bool) ([]Conflict, [
 // yields none. Each finding names the skill and harness and points at
 // prune, warning that removing the entry loses the disable-on-reinstall
 // behavior.
-func staleStateFindings(adapters []harness.Adapter, st *state.File, idx *skillindex.Index, complete bool) []Finding {
+func staleStateFindings(notHidden []harness.Adapter, st *state.File, idx *skillindex.Index, complete bool) []Finding {
 	if !complete {
 		return nil
 	}
@@ -556,7 +560,7 @@ func staleStateFindings(adapters []harness.Adapter, st *state.File, idx *skillin
 		if idx.IsInstalled(name) {
 			continue
 		}
-		for _, a := range adapters {
+		for _, a := range notHidden {
 			if !st.IsDisabled(name, string(a.Harness())) {
 				continue
 			}

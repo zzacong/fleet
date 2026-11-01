@@ -151,7 +151,7 @@ func resolveTargets(p *paths.Paths, harnessFlags []string) ([]harness.Adapter, e
 		if !match.Installed() {
 			return nil, fmt.Errorf("%s is not installed on this machine", flag)
 		}
-		if err := harness.RequireManaged(p, flag); err != nil {
+		if err := harness.RefuseHidden(p, flag); err != nil {
 			return nil, err
 		}
 		targets = append(targets, match)

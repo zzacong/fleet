@@ -155,11 +155,11 @@ func pruneConfig(p *paths.Paths, st *state.File, idx *skillindex.Index, filter m
 func pruneState(p *paths.Paths, st *state.File, idx *skillindex.Index, filter map[string]bool, apply bool, rep *Report) error {
 	type pair struct{ harness, skill string }
 	var pairs []pair
-	managed, err := harness.Managed(p)
+	notHidden, err := harness.NotHidden(p)
 	if err != nil {
 		return err
 	}
-	for _, a := range managed {
+	for _, a := range notHidden {
 		h := string(a.Harness())
 		if !inScope(filter, h) {
 			continue

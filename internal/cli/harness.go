@@ -76,58 +76,48 @@ func newHarnessUnhideCmd(p *paths.Paths) *cobra.Command {
 	}
 }
 
-// setHarnessHidden records or clears a hidden harness in the fleet config,
-// then syncs when something changed. Hiding refuses a name that is not a
-// supported harness, or one that is not installed, so a typo never leaves a
-// dead key behind. Both directions are idempotent and say so.
+// setHarnessHidden records or clears a hidden harness in the fleet config.
+// Hiding writes nothing into any harness, so it never syncs. It refuses a
+// name that is not a supported harness, or one that is not installed, so a
+// typo never leaves a dead key behind; an already-hidden harness is reported
+// as such first. Unhiding syncs, which restores the harness in the same run.
 func setHarnessHidden(out io.Writer, p *paths.Paths, name string, hide bool) error {
-	adapters := harness.All(p)
-	if hide {
-		target, ok := adapterNamed(adapters, name)
-		if !ok {
-			return fmt.Errorf("unknown harness %q (want one of: %s)", name, harnessList(adapters))
-		}
-		if !target.Installed() {
-			return fmt.Errorf("%s is not installed on this machine", name)
-		}
-	}
-
 	f, err := config.Load(p.FleetConfigFile())
 	if err != nil {
 		return err
 	}
-	var changed bool
-	var noop, done string
-	if hide {
-		changed = f.Hide(name)
-		noop = name + " is already hidden"
-		done = name + " is now hidden; fleet ignores it until `fleet harness unhide " + name + "`"
-	} else {
-		changed = f.Unhide(name)
-		noop = name + " is not hidden"
-		done = name + " is managed again"
+	if !hide {
+		if !f.Unhide(name) {
+			_, err := fmt.Fprintf(out, "%s is not hidden\n", name)
+			return err
+		}
+		if err := config.Save(p.FleetConfigFile(), f); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(out, "%s is managed again\n", name); err != nil {
+			return err
+		}
+		return runSyncTo(out, p)
 	}
-	if !changed {
-		_, err := fmt.Fprintln(out, noop)
+
+	if slices.Contains(f.HiddenHarnesses(), name) {
+		_, err := fmt.Fprintf(out, "%s is already hidden\n", name)
 		return err
 	}
+	adapters := harness.All(p)
+	target, ok := harness.ByName(adapters, name)
+	if !ok {
+		return fmt.Errorf("unknown harness %q (want one of: %s)", name, harnessList(adapters))
+	}
+	if !target.Installed() {
+		return fmt.Errorf("%s is not installed on this machine", name)
+	}
+	f.Hide(name)
 	if err := config.Save(p.FleetConfigFile(), f); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintln(out, done); err != nil {
-		return err
-	}
-	return runSyncTo(out, p)
-}
-
-// adapterNamed returns the adapter for a supported harness name.
-func adapterNamed(adapters []harness.Adapter, name string) (harness.Adapter, bool) {
-	for _, a := range adapters {
-		if string(a.Harness()) == name {
-			return a, true
-		}
-	}
-	return nil, false
+	_, err = fmt.Fprintf(out, "%s is now hidden; fleet ignores it until `fleet harness unhide %s`\n", name, name)
+	return err
 }
 
 // harnessRow is one supported harness's status on this machine. The
