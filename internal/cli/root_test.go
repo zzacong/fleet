@@ -18,7 +18,7 @@ func runBare(t *testing.T, p *paths.Paths, args ...string) (string, error) {
 	t.Helper()
 	out := &bytes.Buffer{}
 	prev := newTreeClient
-	newTreeClient = func(*paths.Paths) outdated.TreeClient { return &fakeTrees{} }
+	newTreeClient = func(*paths.Paths) outdated.CachedTreeClient { return &fakeTrees{} }
 	t.Cleanup(func() { newTreeClient = prev })
 	root := NewRoot(p)
 	root.SetOut(out)

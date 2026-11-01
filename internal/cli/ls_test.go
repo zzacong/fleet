@@ -121,7 +121,7 @@ func runLsCapture(t *testing.T, p *paths.Paths, trees *fakeTrees, args ...string
 	t.Helper()
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	prev := newTreeClient
-	newTreeClient = func(*paths.Paths) outdated.TreeClient { return trees }
+	newTreeClient = func(*paths.Paths) outdated.CachedTreeClient { return trees }
 	t.Cleanup(func() { newTreeClient = prev })
 	root := NewRoot(p)
 	root.SetOut(out)
@@ -148,6 +148,15 @@ func (f *fakeTrees) FetchTree(_ context.Context, owner, repo, ref, _ string) (ou
 		return outdated.TreeResponse{}, err
 	}
 	return f.trees[key], nil
+}
+
+// Fresh never answers from a cache: ls runs the synchronous Build path.
+func (f *fakeTrees) Fresh(string, string, string) (outdated.TreeResponse, bool) {
+	return outdated.TreeResponse{}, false
+}
+
+func (f *fakeTrees) Revalidate(ctx context.Context, owner, repo, ref string) (outdated.TreeResponse, error) {
+	return f.FetchTree(ctx, owner, repo, ref, "")
 }
 
 // scriptTree answers owner/repo@ref with the given folder tree SHA.

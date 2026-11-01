@@ -11,6 +11,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -99,6 +100,16 @@ type model struct {
 
 	width, height int
 	seq           int // guards against late snapshot messages
+
+	// checks is the background update work the current snapshot left
+	// pending; checking marks the skills whose badge is still waiting on it,
+	// and checkWarnings collects its failures for one notice at the end.
+	checks        *snapshot.Checks
+	checking      map[string]bool
+	checkWarnings []string
+	// releasing is true until the Releases footer check lands; it keeps the
+	// status line saying checks are running.
+	releasing bool
 }
 
 // newModel builds the model from an already-loaded snapshot. Columns come
@@ -139,28 +150,46 @@ func (m *model) rebuildColumns() {
 	}
 }
 
-// loadSnapshot builds a fresh snapshot through the core: the canonical
-// store, the repo's customs, every installed harness's config, and the
-// update check. Update-check warnings are dropped here on purpose — the
-// badge already shows ? for anything unchecked, and the notice line holds
-// one message at a time.
-//
 // newTreeClient is a var so tests can script the GitHub seam.
 var newTreeClient = snapshot.DefaultTreeClient
 
-func loadSnapshot(p *paths.Paths) (*snapshot.Report, error) {
-	report, _, err := snapshot.Build(context.Background(), p, newTreeClient(p))
-	return report, err
+// loadSnapshot builds the matrix's snapshot without waiting on GitHub: the
+// cache fills the badges it can, and the rest come back as Checks for the
+// background run. force makes every repo pending (the manual refresh).
+func loadSnapshot(p *paths.Paths, force bool) (*snapshot.Loaded, error) {
+	return snapshot.Load(p, newTreeClient(p), force)
 }
+
+// reloadMode says whether a reload trusts the update cache or re-checks
+// every repo.
+type reloadMode int
+
+const (
+	reloadCached reloadMode = iota // only stale or missing repos go to the network
+	reloadFresh                    // manual refresh: every repo is re-checked
+)
 
 // snapshotMsg carries a finished reload. notice is shown on success; empty
 // keeps whatever notice is already up (an apply confirmation must survive
 // the refresh that follows it).
 type snapshotMsg struct {
 	seq    int
-	report *snapshot.Report
+	loaded *snapshot.Loaded
 	notice string
 	err    error
+}
+
+// checkMsg is one repo tree's finished background check. index is its
+// position in the checks, so the next group can start when this one lands.
+type checkMsg struct {
+	seq    int
+	index  int
+	result snapshot.Result
+}
+
+// releaseMsg is the Releases footer check, finished in the background.
+type releaseMsg struct {
+	line string
 }
 
 // Run launches the TUI. quiet suppresses the hero banner.
@@ -174,31 +203,88 @@ func Run(p *paths.Paths, quiet bool) error {
 }
 
 // prepare is the launch sequence: sync first — it runs on every fleet
-// command — then the snapshot the matrix renders.
+// command — then the snapshot the matrix renders. Nothing here waits on
+// GitHub or the Releases API: Init starts those in the background.
 func prepare(p *paths.Paths, quiet bool) (model, error) {
 	reports, err := fleetsync.Run(p)
 	if err != nil {
 		return model{}, fmt.Errorf("sync: %w", err)
 	}
-	report, err := loadSnapshot(p)
+	loaded, err := loadSnapshot(p, false)
 	if err != nil {
 		return model{}, err
 	}
-	m := newModel(p, report, quiet)
+	m := newModel(p, loaded.Report, quiet)
+	m.adoptChecks(loaded.Checks, loaded.Warnings)
+	m.releasing = true
 	if s := syncNotice(reports); s != "" {
 		m.notice = notice{text: s, kind: noticeInfo}
 	}
-	// The fleet update notice as a footer line: same Releases check the
-	// CLI verbs run (24h cache, silent on failure), appended to any sync
-	// line so launch still speaks with one voice.
-	if line := fleetUpdateLine(p); line != "" {
-		if m.notice.text != "" {
-			m.notice.text += " · " + line
-		} else {
-			m.notice = notice{text: line, kind: noticeInfo}
-		}
-	}
+	m.flushWarnings()
 	return m, nil
+}
+
+// adoptChecks swaps in the update work a load left behind, marks its skills
+// as waiting on a result, and queues the load's own warnings to surface once
+// those checks finish.
+func (m *model) adoptChecks(checks *snapshot.Checks, warnings []string) {
+	m.checks = checks
+	m.checking = make(map[string]bool, len(checks.Pending()))
+	for _, name := range checks.Pending() {
+		m.checking[name] = true
+	}
+	m.checkWarnings = slices.Clone(warnings)
+}
+
+// dropChecks abandons the pending update work after a failed reload: its
+// results can never land, so the skills stop waiting on them.
+func (m *model) dropChecks() {
+	m.checks = nil
+	m.checking = nil
+	m.checkWarnings = nil
+}
+
+// flushWarnings puts the queued update problems on the notice line once no
+// skill is still waiting on a check. Repeated lines collapse into one.
+func (m *model) flushWarnings() {
+	if len(m.checking) > 0 || len(m.checkWarnings) == 0 {
+		return
+	}
+	lines := slices.Clone(m.checkWarnings)
+	slices.Sort(lines)
+	m.appendNotice(strings.Join(slices.Compact(lines), " · "), noticeErr)
+	m.checkWarnings = nil
+}
+
+// appendNotice adds line to the notice line, joined to any notice already
+// up so launch still speaks with one voice.
+func (m *model) appendNotice(line string, kind noticeKind) {
+	if m.notice.text == "" {
+		m.notice = notice{text: line, kind: kind}
+		return
+	}
+	m.notice.text += " · " + line
+}
+
+// checkCmd runs group i of the pending checks in the background. The result
+// comes back as a checkMsg tagged with the current reload's seq, so a run a
+// newer reload superseded is dropped when it lands.
+func (m model) checkCmd(i int) tea.Cmd {
+	if m.checks == nil || i >= m.checks.Len() {
+		return nil
+	}
+	seq, checks := m.seq, m.checks
+	return func() tea.Msg {
+		return checkMsg{seq: seq, index: i, result: checks.Run(context.Background(), i)}
+	}
+}
+
+// releaseCmd runs the Releases footer check in the background. The line is
+// empty when there is nothing to say.
+func releaseCmd(p *paths.Paths) tea.Cmd {
+	return func() tea.Msg {
+		return releaseMsg{line: fleetUpdateLine(p)}
+	}
 }
 
 // newReleaseClient is the Releases seam for the TUI footer: tests stub it
@@ -208,8 +294,8 @@ var newReleaseClient = selfupdate.NewHTTPReleaseClient
 
 // fleetUpdateLine returns the one-line TUI update notice, or "" when the
 // binary is current, a dev build, or the check fails. Best-effort with a
-// short timeout: launch must not hang on the network (the 24h cache makes
-// the common case instant).
+// short timeout; the TUI runs it in the background (releaseCmd), and the
+// 24h cache makes the common case instant.
 func fleetUpdateLine(p *paths.Paths) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -267,7 +353,11 @@ func pick(n int, one, many string) string {
 
 // ---- update ----
 
-func (m model) Init() tea.Cmd { return nil }
+// Init starts the work the first frame did not wait for: the update checks
+// the cache could not answer, and the Releases footer check.
+func (m model) Init() tea.Cmd {
+	return tea.Batch(m.checkCmd(0), releaseCmd(m.p))
+}
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -281,6 +371,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case updateMsg:
 		return m.applyUpdate(msg)
+
+	case checkMsg:
+		return m.applyCheck(msg)
+
+	case releaseMsg:
+		m.releasing = false
+		if msg.line != "" {
+			m.appendNotice(msg.line, noticeInfo)
+		}
+		return m, nil
 
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
@@ -305,12 +405,37 @@ func (m model) applySnapshot(msg snapshotMsg) (tea.Model, tea.Cmd) {
 			text += " (cells not re-read: " + err.Error() + ")"
 		}
 		m.notice = notice{text: text, kind: noticeErr}
+		m.dropChecks()
 		return m, nil
 	}
-	m.setSnapshot(msg.report)
+	m.setSnapshot(msg.loaded.Report)
+	m.adoptChecks(msg.loaded.Checks, msg.loaded.Warnings)
 	if msg.notice != "" {
 		m.notice = notice{text: msg.notice, kind: noticeGood}
 	}
+	m.flushWarnings()
+	return m, m.checkCmd(0)
+}
+
+// applyCheck lands one repo tree's badges. A result from a superseded
+// reload is dropped. Each landed group starts the next; the last one also
+// surfaces the failures it collected, once.
+func (m model) applyCheck(msg checkMsg) (tea.Model, tea.Cmd) {
+	if msg.seq != m.seq {
+		return m, nil
+	}
+	for i := range m.rows {
+		name := m.rows[i].Name
+		if badge, ok := msg.result.Outdated[name]; ok {
+			m.rows[i].Outdated = badge
+			delete(m.checking, name)
+		}
+	}
+	m.checkWarnings = append(m.checkWarnings, msg.result.Warnings...)
+	if next := m.checkCmd(msg.index + 1); next != nil {
+		return m, next
+	}
+	m.flushWarnings()
 	return m, nil
 }
 
@@ -366,14 +491,15 @@ func (m *model) pruneStaged() {
 }
 
 // startRefresh begins a snapshot reload; the notice line shows a
-// "refreshing…" label while it runs.
-func startRefresh(m *model, onDone string) tea.Cmd {
+// "refreshing…" label while it runs. The load itself is quick, so the
+// phase ends with it; any repos still checking fill in afterwards.
+func startRefresh(m *model, onDone string, mode reloadMode) tea.Cmd {
 	m.seq++
 	m.phase = phaseRefreshing
-	seq, p := m.seq, m.p
+	seq, p, force := m.seq, m.p, mode == reloadFresh
 	return func() tea.Msg {
-		report, err := loadSnapshot(p)
-		return snapshotMsg{seq: seq, report: report, notice: onDone, err: err}
+		loaded, err := loadSnapshot(p, force)
+		return snapshotMsg{seq: seq, loaded: loaded, notice: onDone, err: err}
 	}
 }
 
@@ -460,7 +586,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, startUpdateOne(&m, m.selectedName())
 		}
 	case "r":
-		return m, startRefresh(&m, "refreshed")
+		return m, startRefresh(&m, "refreshed", reloadFresh)
 	case "?":
 		m.helpOpen = true
 	case "esc":
@@ -635,5 +761,5 @@ func (m model) applyStaged() (tea.Model, tea.Cmd) {
 			applied, plural(applied)),
 		kind: noticeGood,
 	}
-	return m, startRefresh(&m, "")
+	return m, startRefresh(&m, "", reloadCached)
 }

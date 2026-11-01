@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -23,6 +24,20 @@ const (
 // now is injectable so tests can age the cache without sleeping.
 var now = time.Now
 
+// CachedTreeClient is a TreeClient backed by fleet's TTL cache. Fresh
+// answers from the stored trees alone, so a caller can paint badges before
+// any network call; Revalidate fetches even inside the TTL, for a manual
+// refresh.
+type CachedTreeClient interface {
+	TreeClient
+	// Fresh returns a stored tree that is a success within the TTL. ok is
+	// false when the tree must come from the network (or was a failure).
+	Fresh(owner, repo, ref string) (TreeResponse, bool)
+	// Revalidate fetches the tree from the network, skipping the TTL but
+	// still sending the stored ETag.
+	Revalidate(ctx context.Context, owner, repo, ref string) (TreeResponse, error)
+}
+
 // NewCachingClient wraps client with a persistent TTL cache stored at
 // cachePath (fleet's own config dir; never the skills CLI lockfile). Two
 // separate fleet processes pointing at the same file — two `fleet skill ls`
@@ -30,15 +45,19 @@ var now = time.Now
 // hammer the API. The cache is best-effort; an unwritable or corrupt file
 // degrades to "no cache", never to a wrong answer.
 //
-// FetchTree expects sequential use, which is what Check gives it: a
-// concurrent caller would race the in-memory cache.
-func NewCachingClient(client TreeClient, cachePath string) TreeClient {
+// The cache is safe for concurrent use: its state is guarded, and a
+// network fetch never runs under that guard.
+func NewCachingClient(client TreeClient, cachePath string) CachedTreeClient {
 	return &cachingClient{client: client, path: cachePath}
 }
 
 type cachingClient struct {
 	client TreeClient
 	path   string
+
+	// mu guards loaded and cache. It is never held across a network call,
+	// so a Fresh read stays instant while a fetch is in flight.
+	mu     sync.Mutex
 	loaded bool
 	cache  treeCache
 }
@@ -64,17 +83,38 @@ type cacheEntry struct {
 	Err      string    `json:"err,omitempty"`
 }
 
+// FetchTree serves a stored tree within its TTL, replays a recent failure,
+// and otherwise asks the network with the stored ETag.
 func (c *cachingClient) FetchTree(ctx context.Context, owner, repo, ref, _ string) (TreeResponse, error) {
 	// The caller never passes an ETag: the cache owns the conditional
 	// request, so whatever the caller cached is what gets revalidated.
-	c.load()
+	return c.fetch(ctx, owner, repo, ref, false)
+}
 
-	key := owner + "/" + repo + "@" + ref
-	entry, ok := c.cache.Entries[key]
-	if ok {
+// Revalidate goes to the network even when the stored tree is still within
+// its TTL.
+func (c *cachingClient) Revalidate(ctx context.Context, owner, repo, ref string) (TreeResponse, error) {
+	return c.fetch(ctx, owner, repo, ref, true)
+}
+
+// Fresh answers from the store alone: a success still inside the TTL.
+func (c *cachingClient) Fresh(owner, repo, ref string) (TreeResponse, bool) {
+	entry, ok := c.lookup(cacheKey(owner, repo, ref))
+	if !ok || entry.Err != "" || now().Sub(entry.FetchedAt) >= successTTL {
+		return TreeResponse{}, false
+	}
+	return serve(entry), true
+}
+
+// fetch is the one path both FetchTree and Revalidate take. force skips the
+// stored answer, success or failure, and goes straight to the network.
+func (c *cachingClient) fetch(ctx context.Context, owner, repo, ref string, force bool) (TreeResponse, error) {
+	k := cacheKey(owner, repo, ref)
+	entry, ok := c.lookup(k)
+	if ok && !force {
 		if entry.Err == "" {
 			if now().Sub(entry.FetchedAt) < successTTL {
-				return c.serve(entry), nil
+				return serve(entry), nil
 			}
 		} else if now().Sub(entry.FailedAt) < failureTTL {
 			// A remembered failure replays its original error so the
@@ -85,14 +125,14 @@ func (c *cachingClient) FetchTree(ctx context.Context, owner, repo, ref, _ strin
 
 	resp, err := c.client.FetchTree(ctx, owner, repo, ref, entry.ETag)
 	if err != nil {
-		c.store(key, cacheEntry{FailedAt: now(), Err: err.Error()})
+		c.store(k, cacheEntry{FailedAt: now(), Err: err.Error()})
 		return TreeResponse{}, err
 	}
 	if resp.NotModified {
 		// Unchanged upstream: keep the stored tree, restart the TTL.
 		entry.FetchedAt = now()
-		c.store(key, entry)
-		return c.serve(entry), nil
+		c.store(k, entry)
+		return serve(entry), nil
 	}
 	entry = cacheEntry{
 		ETag:      resp.ETag,
@@ -101,13 +141,17 @@ func (c *cachingClient) FetchTree(ctx context.Context, owner, repo, ref, _ strin
 		Truncated: resp.Truncated,
 		Tree:      resp.Entries,
 	}
-	c.store(key, entry)
+	c.store(k, entry)
 	return resp, nil
+}
+
+func cacheKey(owner, repo, ref string) string {
+	return owner + "/" + repo + "@" + ref
 }
 
 // serve turns a stored entry into the response Check would have gotten
 // from the network.
-func (c *cachingClient) serve(e cacheEntry) TreeResponse {
+func serve(e cacheEntry) TreeResponse {
 	return TreeResponse{
 		ETag:      e.ETag,
 		RootSHA:   e.RootSHA,
@@ -116,6 +160,16 @@ func (c *cachingClient) serve(e cacheEntry) TreeResponse {
 	}
 }
 
+// lookup reads one stored entry, loading the file on first use.
+func (c *cachingClient) lookup(k string) (cacheEntry, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.load()
+	entry, ok := c.cache.Entries[k]
+	return entry, ok
+}
+
+// load reads the cache file once. Callers hold c.mu.
 func (c *cachingClient) load() {
 	if c.loaded {
 		return
@@ -137,8 +191,11 @@ func (c *cachingClient) load() {
 // store merges one entry and persists the file. Write failures are
 // silently ignored: the cache is an optimization, and a warning about it
 // would only drown the warnings that matter.
-func (c *cachingClient) store(key string, entry cacheEntry) {
-	c.cache.Entries[key] = entry
+func (c *cachingClient) store(k string, entry cacheEntry) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.load()
+	c.cache.Entries[k] = entry
 
 	if err := os.MkdirAll(filepath.Dir(c.path), 0o755); err != nil {
 		return

@@ -198,11 +198,8 @@ func TestUpdateAllHoldsTheCoreKeysWhileItRuns(t *testing.T) {
 	if m.phase != phaseRefreshing {
 		t.Fatalf("phase %v after the update landed, want refreshing", m.phase)
 	}
-	m2, cmd = m.Update(cmd())
+	m2, _ = m.Update(cmd())
 	m = m2.(model)
-	if cmd != nil {
-		t.Fatal("unexpected follow-up after the refresh")
-	}
 	if !strings.Contains(m.notice.text, "updated all") {
 		t.Errorf("update notice: %q", m.notice.text)
 	}

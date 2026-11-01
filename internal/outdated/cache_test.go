@@ -203,3 +203,38 @@ func TestCacheToleratesUnwritableCacheDir(t *testing.T) {
 		t.Errorf("status = %q, calls = %v; want a working check despite the unwritable cache", got.Statuses["tdd"], client.calls)
 	}
 }
+
+// TestCacheFreshAnswersOnlyWithinTheTTL: Fresh serves a warm tree with no
+// network call and refuses it once the TTL lapses. Revalidate goes to the
+// network even inside the TTL.
+func TestCacheFreshAnswersOnlyWithinTheTTL(t *testing.T) {
+	dir := newStubCacheDir(t)
+	base := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	setClock(t, base)
+
+	seed := &stubClient{reply: map[string]reply{
+		"o/r@": {resp: tree(TreeEntry{Path: "skills/tdd", Type: "tree", SHA: hashOld})},
+	}}
+	Check(context.Background(), NewCachingClient(seed, cachePath(dir)), entry("tdd", tddEntry(hashOld)))
+
+	cache := NewCachingClient(&stubClient{}, cachePath(dir))
+	if _, ok := cache.Fresh("o", "r", ""); !ok {
+		t.Fatal("warm tree: Fresh = false, want true")
+	}
+
+	setClock(t, base.Add(2*time.Hour))
+	if _, ok := cache.Fresh("o", "r", ""); ok {
+		t.Error("stale tree: Fresh = true, want false")
+	}
+
+	setClock(t, base)
+	revalidating := &stubClient{reply: map[string]reply{
+		"o/r@": {resp: TreeResponse{NotModified: true}},
+	}}
+	if _, err := NewCachingClient(revalidating, cachePath(dir)).Revalidate(context.Background(), "o", "r", ""); err != nil {
+		t.Fatalf("revalidate: %v", err)
+	}
+	if len(revalidating.calls) != 1 {
+		t.Errorf("revalidate inside the TTL made %d calls, want 1", len(revalidating.calls))
+	}
+}

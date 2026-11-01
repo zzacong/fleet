@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -102,10 +103,19 @@ func (noNetwork) FetchTree(context.Context, string, string, string, string) (out
 	return outdated.TreeResponse{}, errors.New("tests must not reach the network")
 }
 
+// Fresh has nothing cached, so every repo is pending.
+func (noNetwork) Fresh(string, string, string) (outdated.TreeResponse, bool) {
+	return outdated.TreeResponse{}, false
+}
+
+func (noNetwork) Revalidate(context.Context, string, string, string) (outdated.TreeResponse, error) {
+	return outdated.TreeResponse{}, errors.New("tests must not reach the network")
+}
+
 func stubTreeClient(t *testing.T) {
 	t.Helper()
 	prev := newTreeClient
-	newTreeClient = func(*paths.Paths) outdated.TreeClient { return noNetwork{} }
+	newTreeClient = func(*paths.Paths) outdated.CachedTreeClient { return noNetwork{} }
 	t.Cleanup(func() { newTreeClient = prev })
 }
 
@@ -114,11 +124,11 @@ func stubTreeClient(t *testing.T) {
 func newTestModel(t *testing.T, p *paths.Paths) model {
 	t.Helper()
 	stubTreeClient(t)
-	report, err := loadSnapshot(p)
+	loaded, err := loadSnapshot(p, false)
 	if err != nil {
 		t.Fatalf("load snapshot: %v", err)
 	}
-	return newModel(p, report, false)
+	return newModel(p, loaded.Report, false)
 }
 
 // The keys the tests drive the model with.
@@ -164,17 +174,16 @@ func moveRight(m model, times int) model {
 }
 
 // settle runs a command and feeds its message back into the model — the
-// same loop tea.Run would drive, without a terminal.
+// same loop tea.Run would drive, without a terminal. A reload hands back
+// its background update checks as a follow-up; these tests stub the network
+// and do not drive them, so the follow-up is dropped here. Tests that need a
+// check result send checkMsg directly.
 func settle(t *testing.T, m model, cmd tea.Cmd) model {
 	t.Helper()
 	if cmd == nil {
 		t.Fatal("no command to settle")
 	}
-	msg := cmd()
-	m2, next := m.Update(msg)
-	if next != nil {
-		t.Fatalf("unexpected follow-up command after %T", msg)
-	}
+	m2, _ := m.Update(cmd())
 	return m2.(model)
 }
 
@@ -602,12 +611,12 @@ func TestSyncNoticeCountsLegacyCleanup(t *testing.T) {
 func TestViewCarriesBannerStatusAndHelp(t *testing.T) {
 	p := tuiHome(t)
 	stubTreeClient(t)
-	report, err := loadSnapshot(p)
+	loaded, err := loadSnapshot(p, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	loud := newModel(p, report, false)
-	quiet := newModel(p, report, true)
+	loud := newModel(p, loaded.Report, false)
+	quiet := newModel(p, loaded.Report, true)
 
 	// The hero banner belongs to the TUI launch; --quiet suppresses it.
 	if v := loud.View().Content; !strings.Contains(v, "███████╗") {
@@ -830,5 +839,150 @@ func TestStagingACustomSkillOnBobsCellTogglesTheLink(t *testing.T) {
 	m = settle(t, m, cmd)
 	if got := findRow(t, m, "my-notes").States["bob"]; got != string(harness.StateOn) {
 		t.Errorf("bob=%s after re-enable, want on", got)
+	}
+}
+
+// TestCheckResultFillsItsBadgeAndDropsSupersededRuns: a landed check sets its
+// skill's badge and clears the pending mark. A result from a reload that has
+// since been superseded is dropped.
+func TestCheckResultFillsItsBadgeAndDropsSupersededRuns(t *testing.T) {
+	m := newTestModel(t, tuiHome(t))
+	name := m.rows[0].Name
+	m.seq = 3
+	m.checking = map[string]bool{name: true}
+	outdated := true
+
+	stale, _ := m.Update(checkMsg{seq: 2, result: snapshot.Result{Outdated: map[string]*bool{name: &outdated}}})
+	if got := stale.(model); got.rows[0].Outdated != nil || !got.checking[name] {
+		t.Fatalf("superseded result landed: badge %v, checking %v", got.rows[0].Outdated, got.checking)
+	}
+
+	landed, _ := m.Update(checkMsg{seq: 3, result: snapshot.Result{Outdated: map[string]*bool{name: &outdated}}})
+	got := landed.(model)
+	if got.rows[0].Outdated == nil || !*got.rows[0].Outdated {
+		t.Errorf("badge = %v, want outdated", got.rows[0].Outdated)
+	}
+	if got.checking[name] {
+		t.Error("landed skill is still marked pending")
+	}
+}
+
+// TestPendingBadgeShowsEllipsisUntilChecked: a skill waiting on its
+// background check shows the pending glyph, not the unknown mark, and the
+// status line says checks are running.
+func TestPendingBadgeShowsEllipsisUntilChecked(t *testing.T) {
+	m := newTestModel(t, tuiHome(t))
+	m.checking = map[string]bool{m.rows[0].Name: true}
+	m.rows[0].Outdated = nil
+
+	if v := m.View().Content; !strings.Contains(v, "…") || !strings.Contains(v, "checking updates…") {
+		t.Errorf("pending view missing the pending glyph or status:\n%s", v)
+	}
+}
+
+// hungNetwork is a GitHub that never answers until release closes. A launch
+// that waited on it would never return.
+type hungNetwork struct{ release <-chan struct{} }
+
+func (h hungNetwork) Fresh(string, string, string) (outdated.TreeResponse, bool) {
+	return outdated.TreeResponse{}, false
+}
+
+func (h hungNetwork) FetchTree(context.Context, string, string, string, string) (outdated.TreeResponse, error) {
+	<-h.release
+	return outdated.TreeResponse{}, errors.New("released")
+}
+
+func (h hungNetwork) Revalidate(context.Context, string, string, string) (outdated.TreeResponse, error) {
+	<-h.release
+	return outdated.TreeResponse{}, errors.New("released")
+}
+
+// TestLaunchDoesNotWaitOnGitHub: the first frame is built while GitHub never
+// answers. prepare returns, and the repos the cache could not answer are
+// marked pending for the background run.
+func TestLaunchDoesNotWaitOnGitHub(t *testing.T) {
+	p := tuiHome(t)
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	prev := newTreeClient
+	newTreeClient = func(*paths.Paths) outdated.CachedTreeClient { return hungNetwork{release: release} }
+	t.Cleanup(func() { newTreeClient = prev })
+
+	var m model
+	var err error
+	done := make(chan struct{})
+	go func() {
+		m, err = prepare(p, false)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("launch waited on GitHub")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.checking) == 0 {
+		t.Error("cold repos not marked pending for the background check")
+	}
+}
+
+// TestFailedReloadStopsWaitingOnChecks: a reload that fails can never land
+// its checks, so the skills it left pending stop waiting instead of showing
+// the pending glyph until the next successful reload.
+func TestFailedReloadStopsWaitingOnChecks(t *testing.T) {
+	m := newTestModel(t, tuiHome(t))
+	m.seq = 4
+	m.phase = phaseRefreshing
+	m.checking = map[string]bool{m.rows[0].Name: true}
+
+	failed, _ := m.Update(snapshotMsg{seq: 4, err: errors.New("boom")})
+	if got := failed.(model); len(got.checking) != 0 {
+		t.Errorf("checking after a failed reload = %v, want none", got.checking)
+	}
+}
+
+// TestWarningsWaitForTheChecks: a load's own warnings stay off the notice
+// line while any skill is still checking, and land once the last check does,
+// with repeated lines collapsed.
+func TestWarningsWaitForTheChecks(t *testing.T) {
+	m := newTestModel(t, tuiHome(t))
+	if len(m.rows) < 2 {
+		t.Fatal("fixture needs two skills")
+	}
+	first, second := m.rows[0].Name, m.rows[1].Name
+	m.seq = 1
+	m.checking = map[string]bool{first: true, second: true}
+	m.checkWarnings = []string{"cannot check x", "update check failed", "update check failed"}
+
+	mid, _ := m.Update(checkMsg{seq: 1, result: snapshot.Result{Outdated: map[string]*bool{first: nil}}})
+	if got := mid.(model); strings.Contains(got.notice.text, "cannot check x") {
+		t.Fatalf("warnings surfaced while %q was still checking: %q", second, got.notice.text)
+	}
+
+	done, _ := mid.Update(checkMsg{seq: 1, result: snapshot.Result{Outdated: map[string]*bool{second: nil}}})
+	got := done.(model)
+	if !strings.Contains(got.notice.text, "cannot check x") {
+		t.Errorf("warnings never surfaced: %q", got.notice.text)
+	}
+	if n := strings.Count(got.notice.text, "update check failed"); n != 1 {
+		t.Errorf("repeated warning shown %d times, want once: %q", n, got.notice.text)
+	}
+}
+
+// TestReleaseCheckKeepsTheStatusLineChecking: the Releases footer check counts
+// as a running check, so the status line stays up until it lands.
+func TestReleaseCheckKeepsTheStatusLineChecking(t *testing.T) {
+	m := newTestModel(t, tuiHome(t))
+	m.releasing = true
+	if v := m.View().Content; !strings.Contains(v, "checking updates…") {
+		t.Fatalf("status line not checking while the release check runs:\n%s", v)
+	}
+
+	landed, _ := m.Update(releaseMsg{})
+	if v := landed.(model).View().Content; strings.Contains(v, "checking updates…") {
+		t.Errorf("status line still checking after the release check landed:\n%s", v)
 	}
 }

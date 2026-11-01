@@ -61,7 +61,7 @@ A skill in the current checkout's `.agents/skills/` (e.g. `.agents/skills/watche
 _Avoid_: local skill, repo skill
 
 **Outdated badge**:
-The tri-state update marker per skill: outdated (the source repo's current tree hash differs from the lockfile's `skillFolderHash`), current, or unknown. Fleet checks GitHub directly — one call per source repo, cached under fleet's config dir — and reports unknown for customs (anything resolved through a tracked dir renders `—`, never checked by definition) and non-GitHub sources rather than guessing. The skills CLI is not involved (`check` there is an alias of `update`).
+The tri-state update marker per skill: outdated (the source repo's current tree hash differs from the lockfile's `skillFolderHash`), current, or unknown. Fleet checks GitHub directly — one call per source repo, cached under fleet's config dir — and reports unknown for customs (anything resolved through a tracked dir renders `—`, never checked by definition) and non-GitHub sources rather than guessing. The skills CLI is not involved (`check` there is an alias of `update`). The TUI never waits on these checks. A badge still waiting on its check shows `…`: at launch, that is every repo the cache cannot answer; after `r`, every repo until it is re-checked. `…` is display-only; the tri-state stays three.
 _Avoid_: stale marker, version check
 
 **Fleet update notice**:

@@ -223,8 +223,9 @@ func groupHeader(group string) string {
 	return styDim.Render("· " + group)
 }
 
-// statusLine: total, installed, custom, outdated — plus the staged count
-// when something is staged, per the prototype spec.
+// statusLine: total, installed, custom, outdated — plus a note while
+// background update checks are pending and the staged count when something
+// is staged, per the prototype spec.
 func (m model) statusLine() string {
 	installed, custom, outdated := 0, 0, 0
 	for _, r := range m.rows {
@@ -239,6 +240,9 @@ func (m model) statusLine() string {
 	}
 	line := styBold.Render("fleet") + styDim.Render(" · ") +
 		fmt.Sprintf("%d skills · %d installed · %d custom · %d outdated", len(m.rows), installed, custom, outdated)
+	if len(m.checking) > 0 || m.releasing {
+		line += styDim.Render(" · checking updates…")
+	}
 	if n := len(m.staged); n > 0 {
 		line += styDim.Render(" · ") + styStaged.Render(fmt.Sprintf("%d staged", n))
 	}
@@ -315,6 +319,8 @@ func (m model) renderRow(r snapshot.SkillRow, selected bool) string {
 	}
 
 	switch {
+	case m.checking[r.Name]:
+		line += styDim.Render("…") // a background check is still deciding this badge
 	case r.Outdated == nil:
 		line += styDim.Render("?")
 	case *r.Outdated:
