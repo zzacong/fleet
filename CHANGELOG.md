@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.5](https://github.com/zzacong/fleet/compare/v0.3.4...v0.3.5) (2026-11-01)
+
+
+### Features
+
+* **cli:** archive a custom skill and unlink it from every harness ([#30](https://github.com/zzacong/fleet/issues/30)) ([e6b4acc](https://github.com/zzacong/fleet/commit/e6b4acc1803317993831d2b663a5b6fa42cc50a1))
+* **cli:** open the TUI instantly and check updates in the background ([#31](https://github.com/zzacong/fleet/issues/31)) ([bffa913](https://github.com/zzacong/fleet/commit/bffa913547f363766dc25b54d7f4876f386df507))
+
 ## [0.3.4](https://github.com/zzacong/fleet/compare/v0.3.3...v0.3.4) (2026-10-05)
 
 
