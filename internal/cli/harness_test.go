@@ -186,3 +186,64 @@ func TestHarnessLsSummaryOnlyOnTTY(t *testing.T) {
 		t.Errorf("--json should omit the summary line:\n%s", out)
 	}
 }
+
+// runHarnessCmd runs `fleet harness <args...>` and returns stdout and the
+// error, for the verbs that change state.
+func runHarnessCmd(t *testing.T, p *paths.Paths, args ...string) (string, error) {
+	t.Helper()
+	out := &bytes.Buffer{}
+	root := NewRoot(p)
+	root.SetOut(out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs(append([]string{"harness"}, args...))
+	t.Cleanup(func() { stdoutTTY = func() bool { return false } })
+	err := root.Execute()
+	return out.String(), err
+}
+
+func TestHarnessHideRefusesUnknownAndUninstalledHarnesses(t *testing.T) {
+	p := fakeHome(t)
+
+	if _, err := runHarnessCmd(t, p, "hide", "bobb"); err == nil || !strings.Contains(err.Error(), "unknown harness") {
+		t.Errorf("hide bobb error = %v, want unknown harness", err)
+	}
+	if _, err := runHarnessCmd(t, p, "hide", "claude"); err == nil || !strings.Contains(err.Error(), "not installed") {
+		t.Errorf("hide claude error = %v, want not installed (claude is absent in fakeHome)", err)
+	}
+	if _, err := os.Stat(p.FleetConfigFile()); !os.IsNotExist(err) {
+		t.Errorf("a refused hide wrote the config: %v", err)
+	}
+}
+
+func TestHarnessHideAndUnhideRoundTripThroughLs(t *testing.T) {
+	p := fakeHome(t)
+
+	if _, err := runHarnessCmd(t, p, "hide", "bob"); err != nil {
+		t.Fatalf("hide bob: %v", err)
+	}
+	if out, err := runHarnessCmd(t, p, "hide", "bob"); err != nil || !strings.Contains(out, "already hidden") {
+		t.Errorf("second hide bob = %q (err %v), want an already-hidden no-op", out, err)
+	}
+
+	var got struct {
+		Harnesses []struct {
+			Name   string `json:"name"`
+			Hidden bool   `json:"hidden"`
+		} `json:"harnesses"`
+	}
+	if err := json.Unmarshal([]byte(runHarnessLs(t, p, "--json")), &got); err != nil {
+		t.Fatalf("ls --json: %v", err)
+	}
+	for _, h := range got.Harnesses {
+		if want := h.Name == "bob"; h.Hidden != want {
+			t.Errorf("ls --json %s hidden = %v, want %v", h.Name, h.Hidden, want)
+		}
+	}
+
+	if _, err := runHarnessCmd(t, p, "unhide", "bob"); err != nil {
+		t.Fatalf("unhide bob: %v", err)
+	}
+	if out, err := runHarnessCmd(t, p, "unhide", "bob"); err != nil || !strings.Contains(out, "not hidden") {
+		t.Errorf("second unhide bob = %q (err %v), want a not-hidden no-op", out, err)
+	}
+}

@@ -5,7 +5,8 @@
 // means nothing is set. The path-tracked collection-dir list (skillsDirs)
 // is the tracked set: an ordered array of absolute dirs scanned directly,
 // with no `skills/` derivation. The adopt-target collection dir
-// (adoptTarget) is unchanged. Two retired keys are preserved verbatim as
+// (adoptTarget) is unchanged. The hidden-harness list (hiddenHarnesses) names
+// the harnesses fleet ignores on this machine. Two retired keys are preserved verbatim as
 // unknown fields and never interpreted, so old-key-only configs behave as
 // unset: the legacy repo-root list (skillsRepos) and the older single
 // repo-root pointer (skillsRepo). There is no automatic migration in this
@@ -18,15 +19,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
 
 // File is the parsed config file.
 type File struct {
-	skillsDirs  []string
-	adoptTarget string
-	unknown     map[string]json.RawMessage
+	skillsDirs      []string
+	adoptTarget     string
+	hiddenHarnesses []string
+	unknown         map[string]json.RawMessage
 }
 
 // Load reads the config file. A missing file is an empty config, not an
@@ -67,8 +70,15 @@ func Load(path string) (*File, error) {
 		}
 		f.adoptTarget = target
 	}
+	if hiddenRaw, ok := raw["hiddenHarnesses"]; ok {
+		var hidden []string
+		if err := json.Unmarshal(hiddenRaw, &hidden); err != nil {
+			return nil, fmt.Errorf("%s: \"hiddenHarnesses\" must be an array of strings: %w", path, err)
+		}
+		f.hiddenHarnesses = hidden
+	}
 	for k, v := range raw {
-		if k == "skillsDirs" || k == "adoptTarget" {
+		if k == "skillsDirs" || k == "adoptTarget" || k == "hiddenHarnesses" {
 			continue
 		}
 		f.unknown[k] = v
@@ -125,6 +135,35 @@ func (f *File) SetAdoptTarget(p string) { f.adoptTarget = p }
 
 // UnsetAdoptTarget clears the adopt target.
 func (f *File) UnsetAdoptTarget() { f.adoptTarget = "" }
+
+// HiddenHarnesses returns a copy of the hidden harness names, in the order
+// they were hidden. Empty means every installed harness is managed.
+func (f *File) HiddenHarnesses() []string {
+	out := make([]string, len(f.hiddenHarnesses))
+	copy(out, f.hiddenHarnesses)
+	return out
+}
+
+// Hide adds name to the hidden list and reports whether it was newly added.
+// Hiding an already-hidden harness is a no-op.
+func (f *File) Hide(name string) bool {
+	if slices.Contains(f.hiddenHarnesses, name) {
+		return false
+	}
+	f.hiddenHarnesses = append(f.hiddenHarnesses, name)
+	return true
+}
+
+// Unhide removes name from the hidden list and reports whether it was
+// present. Unhiding a harness that is not hidden is a no-op.
+func (f *File) Unhide(name string) bool {
+	i := slices.Index(f.hiddenHarnesses, name)
+	if i < 0 {
+		return false
+	}
+	f.hiddenHarnesses = slices.Delete(f.hiddenHarnesses, i, i+1)
+	return true
+}
 
 // Unknown returns a copy of unknown fields (for testing).
 func (f *File) Unknown() map[string]json.RawMessage {
@@ -232,6 +271,9 @@ func (f *File) render() ([]byte, error) {
 			return nil, err
 		}
 		b.Write(vb)
+	}
+	if err := writeList("hiddenHarnesses", f.hiddenHarnesses); err != nil {
+		return nil, err
 	}
 	for _, k := range sortedKeys(f.unknown) {
 		sep()

@@ -19,7 +19,7 @@ func newSkillArchiveCmd(p *paths.Paths) *cobra.Command {
 	return &cobra.Command{
 		Use:   "archive <name>",
 		Short: "Archive a custom skill and unlink it from every harness",
-		Long: "Move a custom skill's folder into an `archived/` folder beside its collection dir, unlink its managed links from every installed harness, and drop its enablement entries, Claude's included.\n\n" +
+		Long: "Move a custom skill's folder into an `archived/` folder beside its collection dir, unlink its managed links from every managed harness, and drop its enablement entries, Claude's included.\n\n" +
 			"`<name>` is the skill's directory name or its frontmatter name. A skill in the fleet-home fallback archives into the fleet home's `archived/`. Archive is one-way: restoring a skill is a manual move back. A refusal or a failed move changes nothing, so a retry starts from the same state.\n\n" +
 			"After the move, sync runs as on every command. Fleet consults no git binary, so committing the move is yours.",
 		Example: "  fleet skill archive my-notes",

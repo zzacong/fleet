@@ -102,13 +102,17 @@ func Run(p *paths.Paths, opts Options) (Report, error) {
 	return rep, nil
 }
 
-// pruneConfig removes, for every projectable installed harness in scope,
+// pruneConfig removes, for every projectable managed harness in scope,
 // the stale rules for skills the state disables and the index cannot find.
 // The removal runs through the adapter's StateOn projection, so only
 // fleet's own exact shapes go; a pattern, blanket, or foreign shape is
 // reported as skipped. A dry run previews the same report without writing.
 func pruneConfig(p *paths.Paths, st *state.File, idx *skillindex.Index, filter map[string]bool, apply bool, rep *Report) error {
-	for _, a := range harness.Installed(p) {
+	managed, err := harness.Managed(p)
+	if err != nil {
+		return err
+	}
+	for _, a := range managed {
 		h := string(a.Harness())
 		if !a.CanProject() || !inScope(filter, h) {
 			continue
@@ -151,7 +155,11 @@ func pruneConfig(p *paths.Paths, st *state.File, idx *skillindex.Index, filter m
 func pruneState(p *paths.Paths, st *state.File, idx *skillindex.Index, filter map[string]bool, apply bool, rep *Report) error {
 	type pair struct{ harness, skill string }
 	var pairs []pair
-	for _, a := range harness.All(p) {
+	notHidden, err := harness.NotHidden(p)
+	if err != nil {
+		return err
+	}
+	for _, a := range notHidden {
 		h := string(a.Harness())
 		if !inScope(filter, h) {
 			continue

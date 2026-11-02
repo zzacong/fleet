@@ -779,3 +779,36 @@ func TestRunProjectsDisableWhenTrackedDirScanFails(t *testing.T) {
 		t.Errorf("pi settings missing the fallback projection:\n%s", got)
 	}
 }
+
+// hideHarness hides name in the fleet config, as `fleet harness hide` does.
+func hideHarness(t *testing.T, p *paths.Paths, name string) {
+	t.Helper()
+	f, err := config.Load(p.FleetConfigFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Hide(name)
+	if err := config.Save(p.FleetConfigFile(), f); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunLeavesHiddenHarnessUntouched(t *testing.T) {
+	// A hidden harness is fleet's to ignore: sync links customs into the
+	// managed harnesses and writes nothing into the hidden one.
+	p := fakeHome(t, "opencode", "bob")
+	collection := filepath.Join(t.TempDir(), "team", "skills")
+	trackDirs(t, p, collection)
+	writeFile(t, filepath.Join(collection, "my-notes", "SKILL.md"), "---\nname: my-notes\ndescription: notes\n---\n")
+	hideHarness(t, p, "bob")
+
+	if _, err := Run(p); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(p.BobSkills(), "my-notes")); !os.IsNotExist(err) {
+		t.Errorf("hidden bob got a link: %v", err)
+	}
+	if target, err := os.Readlink(filepath.Join(p.OpenCodeSkills(), "my-notes")); err != nil || target != filepath.Join(collection, "my-notes") {
+		t.Errorf("managed opencode link = %q (err %v), want the checkout", target, err)
+	}
+}

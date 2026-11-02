@@ -252,7 +252,11 @@ func verifyDisables(out io.Writer, p *paths.Paths, skills []scan.Skill) error {
 
 	holds := map[string][]string{} // skill -> harnesses where the disable holds
 	pal := newPalette(stdoutIsTTY())
-	for _, a := range harness.Installed(p) {
+	managed, err := harness.Managed(p)
+	if err != nil {
+		return err
+	}
+	for _, a := range managed {
 		if !a.CanProject() {
 			continue
 		}

@@ -41,7 +41,7 @@ type SkillRow struct {
 	Outdated *bool `json:"outdated"`
 }
 
-// Report is the full picture: the installed harnesses found on this
+// Report is the full picture: the managed harnesses found on this
 // machine (in harness.All's column order), and every skill.
 type Report struct {
 	Harnesses []string   `json:"harnesses"`
@@ -176,7 +176,7 @@ func (c *Checks) Run(ctx context.Context, i int) Result {
 }
 
 // readDraft reads the canonical store, every tracked custom home, the fleet-home
-// fallback, and every installed harness's config. It returns the rows in
+// fallback, and every managed harness's config. It returns the rows in
 // display order, without update badges. Display precedence is explicit-list
 // order, then the unversioned fallback, then the canonical store. A name
 // present in more than one source appears once, from the highest-precedence
@@ -236,16 +236,19 @@ func readDraft(p *paths.Paths) (*draft, error) {
 		return nil, fmt.Errorf("read skills lockfile: %w", err)
 	}
 
-	installed := harness.Installed(p)
+	managed, err := harness.Managed(p)
+	if err != nil {
+		return nil, err
+	}
 
 	names := make([]string, len(skills))
 	for i, s := range skills {
 		names[i] = s.Name
 	}
-	reads := make([]harness.ReadResult, len(installed))
-	linkToggle := make([]bool, len(installed))
-	linkedNames := make([]map[string]bool, len(installed))
-	for i, a := range installed {
+	reads := make([]harness.ReadResult, len(managed))
+	linkToggle := make([]bool, len(managed))
+	linkedNames := make([]map[string]bool, len(managed))
+	for i, a := range managed {
 		read, err := a.Read(names)
 		if err != nil {
 			return nil, fmt.Errorf("read %s config: %w", a.Harness(), err)
@@ -264,8 +267,8 @@ func readDraft(p *paths.Paths) (*draft, error) {
 		}
 	}
 
-	harnessNames := make([]string, len(installed))
-	for i, a := range installed {
+	harnessNames := make([]string, len(managed))
+	for i, a := range managed {
 		harnessNames[i] = string(a.Harness())
 	}
 
@@ -297,8 +300,8 @@ func readDraft(p *paths.Paths) (*draft, error) {
 	rows := make([]SkillRow, len(skills))
 	for i, s := range skills {
 		dirOf[s.Name] = s.Dir
-		states := make(map[string]string, len(installed))
-		for j := range installed {
+		states := make(map[string]string, len(managed))
+		for j := range managed {
 			state := reads[j].States[s.Name]
 			if customHomeNames[s.Name] && linkToggle[j] {
 				if linkedNames[j][s.Name] {

@@ -15,7 +15,7 @@ Examples were run against a sandbox home (`FLEET_HOME=$(mktemp -d)`) with two sk
 fleet
 ```
 
-Opens the skill × harness matrix: one row per skill, one column per installed harness. Toggles are staged with `space` and applied together with `enter` — the same state-file-then-sync write path the `on`/`off` verbs run.
+Opens the skill × harness matrix: one row per skill, one column per managed harness (installed and not hidden). Toggles are staged with `space` and applied together with `enter` — the same state-file-then-sync write path the `on`/`off` verbs run.
 
 Keys:
 
@@ -50,7 +50,7 @@ The hero banner appears on launch only. `fleet --quiet` (or `-q`) keeps the matr
 fleet skill ls [--json] [--quiet]
 ```
 
-Lists every skill fleet discovers — the canonical store (`~/.agents/skills`) plus custom skills from the tracked set (the `skillsDirs` collection dirs in list order, and the unversioned fleet-home fallback `~/.config/fleet/skills`) — with a column per installed harness. A name present in more than one source appears once with precedence `skillsDirs` order, then the fallback, then the canonical store; the other copies are doctor drift, not a silent overwrite. Custom skills come first, then installed skills grouped by source repo.
+Lists every skill fleet discovers — the canonical store (`~/.agents/skills`) plus custom skills from the tracked set (the `skillsDirs` collection dirs in list order, and the unversioned fleet-home fallback `~/.config/fleet/skills`) — with a column per managed harness. A name present in more than one source appears once with precedence `skillsDirs` order, then the fallback, then the canonical store; the other copies are doctor drift, not a silent overwrite. Custom skills come first, then installed skills grouped by source repo.
 
 ```sh
 $ fleet skill ls
@@ -131,7 +131,7 @@ skill: bob: no per-skill disable mechanism — disable "tdd" is a no-op
 ```
 
 - The outcome is one line per harness (`skill: opencode: disabled "tdd"`). On a terminal the `skill:` prefix is dim, the harness cyan, the verb green.
-- Without `--harness`, every installed harness is targeted. `--harness` is repeatable and takes a harness ID: `opencode`, `pi`, `codex`, `claude`, `cursor`, `bob`.
+- Without `--harness`, every managed harness is targeted: installed and not hidden. `--harness` is repeatable and takes a harness ID: `opencode`, `pi`, `codex`, `claude`, `cursor`, `bob`. Naming a hidden harness fails with the `fleet harness unhide` hint.
 - Cursor and Bob have no config per-skill disable. For a stored skill there is no lever at all, so toggling prints the no-op line and records nothing. A custom skill is different: their managed link (in `~/.cursor/skills` / `~/.bob/skills`) is the only path to it, so `off` removes that link and `on` restores it. The state file remembers the choice and sync never recreates a hidden link. `ls` then reports the custom `absent` for that harness.
 - OpenCode, Codex, and Pi use the same link lever for a custom skill, because they link skills and scan the canonical store natively. `off` removes the managed link and `on` recreates it, and no config off-entry is written for a custom. Their config lever (OpenCode deny rule, Codex `[[skills.config]]`, Pi force-exclude) still applies to canonical-store skills. Claude Code is the exception: it links skills but does not scan the store, so it toggles both custom and canonical skills through `skillOverrides`.
 - A harness where something else overrode the write (a foreign config entry that keeps the skill enabled) is left out of the outcome list; its flag line prints instead — `sync: codex/tdd: a skills.config entry fleet doesn't manage overrides fleet's disable — left alone`.
@@ -169,7 +169,7 @@ skill: codex: enabled "tdd"
 fleet skill adopt <name> [--into <skills-dir>]
 ```
 
-Moves a custom skill from the canonical store (`~/.agents/skills`) into the adopt destination, where it stays versioned. The destination resolves as: `--into <skills-dir>` for this run, else the configured adopt target (`fleet config set adopt-target <skills-dir>`), else a numbered choice over the tracked collection dirs plus the always-offered fleet-home fallback (`~/.config/fleet/skills`). With no tracked dirs the fallback wins with no prompt. Then fleet links the skill into every installed harness:
+Moves a custom skill from the canonical store (`~/.agents/skills`) into the adopt destination, where it stays versioned. The destination resolves as: `--into <skills-dir>` for this run, else the configured adopt target (`fleet config set adopt-target <skills-dir>`), else a numbered choice over the tracked collection dirs plus the always-offered fleet-home fallback (`~/.config/fleet/skills`). With no tracked dirs the fallback wins with no prompt. Then fleet links the skill into every managed harness:
 
 ```sh
 $ fleet skill adopt git-helper
@@ -201,7 +201,7 @@ adopt: bob: linked "git-helper" → ~/Developer/projects/agent-skills/skills/git
 fleet skill add-dir <path>
 ```
 
-Registers an existing collection dir — a directory whose immediate children are skill dirs, each holding a `SKILL.md` — appending it to the `skillsDirs` list and linking every skill it holds into every installed harness:
+Registers an existing collection dir — a directory whose immediate children are skill dirs, each holding a `SKILL.md` — appending it to the `skillsDirs` list and linking every skill it holds into every managed harness:
 
 ```sh
 $ fleet skill add-dir ~/Developer/projects/agent-skills/skills
@@ -214,7 +214,7 @@ add-dir: codex: linked "my-notes" → ~/Developer/projects/agent-skills/skills/m
 - `~` expands to the home directory and a relative path resolves against the working directory; the cleaned absolute path is stored, so re-running on the same directory prints `add-dir: "<path>" is already tracked` and changes nothing. A new dir is appended once, at the end — the list is never reordered.
 - The path must exist, be a directory, and hold at least one skill. It refuses the canonical store (`~/.agents/skills`), the fleet-home fallback (`~/.config/fleet/skills`), any path inside fleet home, a path already tracked, a path nested inside or containing a tracked dir, and a skill name that collides with another tracked dir or the fallback — naming the collision and its existing home.
 - A name collision with the canonical store is allowed: custom outranks canonical, and `fleet skill doctor` reports the shadow. Fleet cannot rename an installed skill, so the shadow is deliberate rather than a refusal.
-- After the append every skill in the dir is linked into every installed harness (one managed link per skill per harness), then sync runs. On a terminal the `add-dir:` prefix is dim, the verb green, harness names cyan.
+- After the append every skill in the dir is linked into every managed harness (one managed link per skill per harness), then sync runs. On a terminal the `add-dir:` prefix is dim, the verb green, harness names cyan.
 
 ## fleet skill remove-dir
 
@@ -244,7 +244,7 @@ remove-dir: codex: unlinked "my-notes" → ~/Developer/projects/agent-skills/ski
 fleet skill archive <name>
 ```
 
-Moves a custom skill out of its collection dir into an `archived/` folder beside that dir, unlinks its managed link from every installed harness, drops its enablement entries, and syncs. `<name>` is the skill's directory name, or its frontmatter name:
+Moves a custom skill out of its collection dir into an `archived/` folder beside that dir, unlinks its managed link from every managed harness, drops its enablement entries, and syncs. `<name>` is the skill's directory name, or its frontmatter name:
 
 ```sh
 $ fleet skill archive my-notes
@@ -268,7 +268,7 @@ archive: codex: unlinked "my-notes" → ~/Developer/projects/agent-skills/skills
 fleet skill doctor
 ```
 
-The read-only report of what's wrong. It inspects every installed harness, the canonical store, and every tracked custom home, and reports:
+The read-only report of what's wrong. It inspects every managed harness, the canonical store, and every tracked custom home, and reports:
 
 - **redundant links** — per-agent symlinks into the canonical store in harnesses that scan it natively; sync removes them on the next command
 - **broken symlinks** — targets missing or looping; `fleet skill doctor -i` offers to remove them
@@ -381,7 +381,7 @@ prune: pi: removed "ui-ux-pro-max" (state)
 fleet skill sync
 ```
 
-The explicit form of the sync that runs on every fleet command: link every custom home's skills into every installed harness, converge harness configs with the state file, and clean redundant links now, as a scriptable step. Two scenarios drive it: a hand-run `skills update`, which re-creates per-agent symlinks and may resurrect enablement, and custom skills that were added with `add-dir` or hand-created without a later `adopt` (sync links them into every installed harness). A custom skill disabled on a native-scanning harness (OpenCode, Codex, Pi, Cursor, Bob) is the flip side: its managed link is that harness's only lever for a custom, so sync removes it and never recreates it. It prints one line per fix:
+The explicit form of the sync that runs on every fleet command: link every custom home's skills into every managed harness, converge harness configs with the state file, and clean redundant links now, as a scriptable step. Two scenarios drive it: a hand-run `skills update`, which re-creates per-agent symlinks and may resurrect enablement, and custom skills that were added with `add-dir` or hand-created without a later `adopt` (sync links them into every managed harness). A custom skill disabled on a native-scanning harness (OpenCode, Codex, Pi, Cursor, Bob) is the flip side: its managed link is that harness's only lever for a custom, so sync removes it and never recreates it. It prints one line per fix:
 
 ```sh
 $ fleet skill sync
@@ -438,7 +438,7 @@ fleet config unset <key>
 fleet config list [--json]
 ```
 
-Manages fleet's machine-local config at `~/.config/fleet/config.json` (`FLEET_HOME`-aware). The file holds the tracked dirs (the `skillsDirs` list, managed by `fleet skill add-dir` and `fleet skill remove-dir`) and the adopt-target collection dir. One settable key: `adopt-target` (alias `adoptTarget`), an absolute path to the collection dir where `fleet skill adopt` lands; unset means the fleet-home fallback. The tracked dir list is shown by `list` and managed by `add-dir`/`remove-dir`, never by `set`.
+Manages fleet's machine-local config at `~/.config/fleet/config.json` (`FLEET_HOME`-aware). The file holds the tracked dirs (the `skillsDirs` list, managed by `fleet skill add-dir` and `fleet skill remove-dir`), the adopt-target collection dir, and the hidden harnesses (managed by `fleet harness hide` and `unhide`, never by `set`). One settable key: `adopt-target` (alias `adoptTarget`), an absolute path to the collection dir where `fleet skill adopt` lands; unset means the fleet-home fallback. The tracked dir list is shown by `list` and managed by `add-dir`/`remove-dir`, never by `set`.
 
 ```sh
 $ fleet skill add-dir ~/Developer/projects/agent-skills/skills
@@ -473,22 +473,23 @@ The file `~/.config/fleet/config.json` sits beside `state.json` and `tree-cache.
 fleet harness ls [--json]
 ```
 
-Lists the six harnesses fleet supports, marking each installed (its config directory exists, the same probe every command uses) or not, with the directory itself and whether fleet can write a per-skill off switch into its config. Cursor and Bob have no config off switch; for a custom skill they disable by removing its managed link instead, the same link lever OpenCode, Codex, and Pi use for customs. A canonical-store skill keeps each harness's own config lever where one exists.
+Lists the six harnesses fleet supports, marking each installed (its config directory exists, the same probe every command uses) or not, whether it is hidden, the directory itself, and whether fleet can write a per-skill off switch into its config. Cursor and Bob have no config off switch; for a custom skill they disable by removing its managed link instead, the same link lever OpenCode, Codex, and Pi use for customs. A canonical-store skill keeps each harness's own config lever where one exists.
 
 Read-only: unlike most fleet commands, no sync runs — listing what is installed must not converge anything. Nothing is filtered: you see all six even when none is installed.
 
 ```sh
 $ fleet harness ls
-NAME      INSTALLED  CONFIG DIR                      OFF SWITCH
-opencode  ✓          /home/you/.config/opencode      yes
-pi        ✓          /home/you/.pi                   yes
-codex     ✓          /home/you/.codex                yes
-claude    -          /home/you/.claude               yes
-cursor    ✓          /home/you/.cursor               no
-bob       ✓          /home/you/.bob                  no
+NAME      INSTALLED  HIDDEN  CONFIG DIR                      OFF SWITCH
+opencode  ✓          no      /home/you/.config/opencode      yes
+pi        ✓          no      /home/you/.pi                   yes
+codex     ✓          no      /home/you/.codex                yes
+claude    -          no      /home/you/.claude               yes
+cursor    ✓          no      /home/you/.cursor               no
+bob       ✓          yes     /home/you/.bob                  no
 ```
 
 - `INSTALLED` is `✓` when the harness's config directory exists, `-` when it does not. A `-` harness is skipped by every other command.
+- `HIDDEN` is `yes` for a harness hidden with [`fleet harness hide`](#fleet-harness-hide). A hidden harness still appears here with its real installed state, but every other command ignores it.
 - `CONFIG DIR` is the probed directory itself.
 - `OFF SWITCH` is `yes` when fleet can write a per-skill disable into that harness's config, `no` where no config lever exists. It describes canonical-store skills. A custom skill has a second lever on OpenCode, Codex, Pi, Cursor, and Bob: its managed link.
 - On a terminal a one-line summary prints above the table (`fleet · 5 of 6 harnesses installed`). Piped output skips it.
@@ -505,6 +506,7 @@ $ fleet harness ls --json
     {
       "name": "opencode",
       "installed": true,
+      "hidden": false,
       "configDir": "/home/you/.config/opencode",
       "canDisable": true
     }
@@ -514,6 +516,29 @@ $ fleet harness ls --json
 
 - Rows appear in fleet's fixed harness order: opencode, pi, codex, claude, cursor, bob.
 - `canDisable` is false exactly for cursor and bob: no config lever. Both still toggle a custom skill through its managed link.
+
+## fleet harness hide
+
+```sh
+fleet harness hide <harness>
+```
+
+Hides an installed harness on this machine. Hidden means fleet ignores it everywhere: no column in `skill ls` or the TUI, no sync links or config writes, no toggles, no doctor findings, and no prune. Existing links and state entries stay on disk, and [`fleet harness unhide`](#fleet-harness-unhide) brings them back. The mark lives in `config.json`; enablement in `state.json` is untouched.
+
+Only a supported, installed harness can be hidden. A typo or a harness that is not installed is refused, so no dead key is written. Hiding an already-hidden harness changes nothing and says so.
+
+```sh
+$ fleet harness hide bob
+bob is now hidden; fleet ignores it until `fleet harness unhide bob`
+```
+
+## fleet harness unhide
+
+```sh
+fleet harness unhide <harness>
+```
+
+Clears the hidden mark and syncs, so the harness's links and state projections come back in the same run. Unhiding a harness that is not hidden changes nothing and says so.
 
 ## fleet completion
 
@@ -543,9 +568,9 @@ Sync runs on every fleet command and after every wrapped `skills` call, and [`fl
 1. Load the state file fresh.
 2. Clean up legacy entries: the first sync after an upgrade removes the fleet-owned collection paths and custom off-entries a previous fleet release wrote, scoped to current custom homes and names. Later syncs find nothing.
 3. Remove redundant links: symlinks that provably resolve into the canonical store in harnesses that scan it natively (`nativeScanHarnesses`: opencode, pi, codex, cursor, bob — never claude code). Links into any tracked collection or the fleet-home fallback are never redundant and are never removed; broken links, real dirs/files, and foreign links stay.
-4. Make customs visible: link every skill in every scanned custom home (each tracked collection and the fleet-home fallback; a configured adopt target counts when it is one of those) into every installed harness, one managed link per skill. Idempotent: an already-visible home reports nothing.
+4. Make customs visible: link every skill in every scanned custom home (each tracked collection and the fleet-home fallback; a configured adopt target counts when it is one of those) into every managed harness, one managed link per skill. Idempotent: an already-visible home reports nothing.
 5. Hide disabled customs: on a native-scanning harness (OpenCode, Codex, Pi, Cursor, Bob), remove the managed link of a custom the state disables, since there the link is the lever. A custom's disable never becomes a config off-entry.
-6. Project the disables: for each installed harness with a config write side (OpenCode, Pi, Codex, Claude Code), write the harness's own off-entry for each canonical-store disable the state records whose skill is installed somewhere. A disable for a skill installed nowhere is dormant: sync keeps the name in the state but creates no new config entry, and leaves any rule already there for `fleet skill prune` to remove. Claude Code writes `skillOverrides` for custom and canonical skills alike. Nothing else — an absent entry means on, and sync never writes "on" markers. When the scan is incomplete sync projects every disable anyway, since leaving an installed skill enabled is worse than a stale rule.
+6. Project the disables: for each managed harness with a config write side (OpenCode, Pi, Codex, Claude Code), write the harness's own off-entry for each canonical-store disable the state records whose skill is installed somewhere. A disable for a skill installed nowhere is dormant: sync keeps the name in the state but creates no new config entry, and leaves any rule already there for `fleet skill prune` to remove. Claude Code writes `skillOverrides` for custom and canonical skills alike. Nothing else — an absent entry means on, and sync never writes "on" markers. When the scan is incomplete sync projects every disable anyway, since leaving an installed skill enabled is worse than a stale rule.
 7. Flag (never touch) entries it doesn't recognize: patterns, blankets, foreign shapes.
 8. Never edit the state file.
 
@@ -557,6 +582,7 @@ Sync runs on every fleet command and after every wrapped `skills` call, and [`fl
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ---- |
 | Unknown `--harness` value                | `unknown harness "emacs" (want one of: opencode, pi, codex, claude, cursor, bob)`                                                     | 1    |
 | `--harness` names an uninstalled harness | `opencode is not installed on this machine`                                                                                           | 1    |
+| `--harness` names a hidden harness       | ``bob is hidden; run `fleet harness unhide bob` to manage it again``                                                                    | 1    |
 | `off` for a skill in no home             | `skill "typo-skill" not found in ~/.agents/skills or a custom home`                                                                   | 1    |
 | `adopt` for a missing skill              | `skill "git-helper" not found in ~/.agents/skills`                                                                                    | 1    |
 | `adopt` double presence                  | `skill "x" exists in … — resolve by hand before adopting` (names every copy)                                                          | 1    |

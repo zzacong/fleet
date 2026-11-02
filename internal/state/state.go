@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -302,10 +303,23 @@ func (f *File) SetEnabled(name, harness string) {
 	}
 }
 
-// RemoveSkill drops every entry the state holds for skill, across all
-// harnesses and unknown fields alike. Unlike SetEnabled it does not keep
-// values fleet doesn't recognize: archive retires the whole skill, so
-// nothing may keep referring to its name.
-func (f *File) RemoveSkill(name string) {
-	delete(f.skills, name)
+// RemoveSkillExcept drops the entries the state holds for skill, except for
+// the kept harnesses. Archive retires the whole skill, so its skill-level
+// unknown fields go too, as they always have. Only a kept harness's entry
+// survives, which is how a hidden harness keeps its enablement; the skill
+// entry goes once no harness entry is left.
+func (f *File) RemoveSkillExcept(name string, kept []string) {
+	s, ok := f.skills[name]
+	if !ok {
+		return
+	}
+	for h := range s.harnesses {
+		if !slices.Contains(kept, h) {
+			delete(s.harnesses, h)
+		}
+	}
+	s.unknown = map[string]json.RawMessage{}
+	if len(s.harnesses) == 0 {
+		delete(f.skills, name)
+	}
 }

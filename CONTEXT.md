@@ -5,8 +5,16 @@ Fleet manages agent skills across AI coding agents (harnesses): enable or disabl
 ## Language
 
 **Harness**:
-An AI coding agent that discovers and loads skills. Fleet targets: OpenCode, Pi, Codex, Claude Code, IBM Bob, Cursor. A harness is detected by its config directory on this machine; the UI only shows harnesses that are installed.
+An AI coding agent that discovers and loads skills. Fleet targets: OpenCode, Pi, Codex, Claude Code, IBM Bob, Cursor. A harness is detected by its config directory on this machine; the UI only shows harnesses that are installed and not hidden.
 _Avoid_: agent, client, platform
+
+**Hidden harness**:
+An installed harness the user hid on this machine with `fleet harness hide <name>`, recorded in `config.json`. Fleet writes nothing into it and acts on it nowhere; its existing links and state entries stay on disk until unhide restores them. `fleet harness ls` still lists it, marked hidden. Not the same as Disable (one skill on one harness) or as not installed (detection).
+_Avoid_: ignored harness, muted harness
+
+**Managed harness**:
+An installed harness that is not hidden. Sync, doctor, prune, toggle, the TUI, and `skill ls` act only on managed harnesses.
+_Avoid_: active harness, enabled harness
 
 **Skill**:
 A directory with a `SKILL.md` file describing an agent capability. The unit that gets enabled or disabled.
@@ -45,11 +53,11 @@ The precedence-ordered union of every skill source: the tracked set in order, th
 _Avoid_: skill list, source union
 
 **Fleet home**:
-`~/.config/fleet/` — fleet's own config dir. Holds `state.json` (enablement), `config.json` (machine-local: the explicit dir list plus the adopt target), and `skills/` (unversioned custom-skill fallback). `FLEET_HOME` overrides the home root.
+`~/.config/fleet/` — fleet's own config dir. Holds `state.json` (enablement), `config.json` (machine-local: the explicit dir list, the adopt target, and hidden harnesses), and `skills/` (unversioned custom-skill fallback). `FLEET_HOME` overrides the home root.
 _Avoid_: config dir, fleet dir
 
 **Fleet config**:
-`~/.config/fleet/config.json` — machine-local settings fleet reads on every command. Two keys: `skillsDirs` (array of absolute collection dirs, order significant, managed by `skill add-dir` and `skill remove-dir`) and `adoptTarget` (absolute adopt-target collection dir, absent means the fleet-home fallback). Both honor home expansion on set, absolute-path validation, atomic write, and unknown-field preservation. The retired `skillsRepos` key is preserved as an unknown and never read. Missing file means nothing is set; only fleet-home customs are scanned.
+`~/.config/fleet/config.json` — machine-local settings fleet reads on every command. Three keys: `skillsDirs` (array of absolute collection dirs, order significant, managed by `skill add-dir` and `skill remove-dir`) `adoptTarget` (absolute adopt-target collection dir, absent means the fleet-home fallback), and `hiddenHarnesses` (array of supported harness names hidden on this machine, managed by `harness hide` and `harness unhide`). The two path keys honor home expansion on set, absolute-path validation, atomic write, and unknown-field preservation. The retired `skillsRepos` key is preserved as an unknown and never read. Missing file means nothing is set; only fleet-home customs are scanned.
 _Avoid_: settings, prefs
 
 **Adopt target**:
@@ -73,7 +81,7 @@ A per-skill, per-harness state. The lever depends on the skill's source. On a ha
 _Avoid_: uninstall, hide, mute
 
 **Archive**:
-Move a custom skill out of its collection dir into a sibling `archived/` dir (`<parent>/archived/<name>` beside each collection dir; the fallback's goes to `~/.config/fleet/archived/`). The only verb that moves a custom skill's files. Refuses a name already present in `archived/`, and a name that shadows a canonical skill (naming it in the error). Refuses installed skills. Drops the skill's state entries on every harness, and clears Claude's `skillOverrides` entry for it when that entry is fleet's `off` marker — sync projects only live state, so it can never clear one for an archived skill; any other value stays. One-way: unarchiving is out of scope. Archived skills are invisible to `ls` and doctor. Available from the CLI (`fleet skill archive <name>`, where `<name>` is the directory or frontmatter name, refused when ambiguous across tracked dirs) and the TUI (an action on the selected custom skill row, which needs no name resolution).
+Move a custom skill out of its collection dir into a sibling `archived/` dir (`<parent>/archived/<name>` beside each collection dir; the fallback's goes to `~/.config/fleet/archived/`). The only verb that moves a custom skill's files. Refuses a name already present in `archived/`, and a name that shadows a canonical skill (naming it in the error). Refuses installed skills. Drops the skill's state entries on every harness except a hidden one (which keeps its entries), and clears Claude's `skillOverrides` entry for it unless Claude is hidden, when that entry is fleet's `off` marker — sync projects only live state, so it can never clear one for an archived skill; any other value stays. One-way: unarchiving is out of scope. Archived skills are invisible to `ls` and doctor. Available from the CLI (`fleet skill archive <name>`, where `<name>` is the directory or frontmatter name, refused when ambiguous across tracked dirs) and the TUI (an action on the selected custom skill row, which needs no name resolution).
 _Avoid_: delete, remove, trash, hide
 
 **State file**:
@@ -81,7 +89,7 @@ Fleet's record of intended per-harness enablement. The single source of truth. H
 _Avoid_: config, lockfile
 
 **Sync**:
-Making each harness's config match the state file, plus linking every tracked dir's and the fallback's skills into every installed harness, one managed custom link per skill. On a native-scanning harness it also removes the managed link of a custom the state disables, because there the link is the lever. On the first run after an upgrade it removes the legacy fleet-owned entries a previous release wrote, and it removes redundant store links. Runs on every fleet command and after every wrapped `skills` CLI call. Fixing a mismatched config is part of sync; there is no separate repair step.
+Making each harness's config match the state file, plus linking every tracked dir's and the fallback's skills into every managed harness, one managed custom link per skill. On a native-scanning harness it also removes the managed link of a custom the state disables, because there the link is the lever. On the first run after an upgrade it removes the legacy fleet-owned entries a previous release wrote, and it removes redundant store links. Runs on every fleet command and after every wrapped `skills` CLI call. Fixing a mismatched config is part of sync; there is no separate repair step.
 _Avoid_: reconcile, repair, apply
 
 **Doctor**:
@@ -89,15 +97,15 @@ The read-only report of what's wrong: manual edits that disagree with the state 
 _Avoid_: reconcile, audit
 
 **Adopt**:
-Move an existing custom skill from the canonical store into the adopt destination — `--into <skills-dir>` for the run, else the configured adopt target, else a terminal prompt over the tracked dirs plus the always-offered fleet-home fallback (the fallback alone with no prompt when nothing is tracked) — then link it into every installed harness. A one-time migration verb, also used when promoting a forked installed skill to custom.
+Move an existing custom skill from the canonical store into the adopt destination — `--into <skills-dir>` for the run, else the configured adopt target, else a terminal prompt over the tracked dirs plus the always-offered fleet-home fallback (the fallback alone with no prompt when nothing is tracked) — then link it into every managed harness. A one-time migration verb, also used when promoting a forked installed skill to custom.
 _Avoid_: import, register, take over
 
 **Add-dir**:
-Register an existing collection dir with `fleet skill add-dir <path>`, appending it to the explicit dir list and linking its skills into every installed harness. Validation is loud: the path must exist, be a directory of skills, and not duplicate, nest inside, or collide by name with a tracked dir. A collision with the canonical store is allowed and reported by doctor, because custom outranks canonical.
+Register an existing collection dir with `fleet skill add-dir <path>`, appending it to the explicit dir list and linking its skills into every managed harness. Validation is loud: the path must exist, be a directory of skills, and not duplicate, nest inside, or collide by name with a tracked dir. A collision with the canonical store is allowed and reported by doctor, because custom outranks canonical.
 _Avoid_: pull, track, import
 
 **Remove-dir**:
-Unregister a collection dir with `fleet skill remove-dir <path>`, removing it from the explicit dir list and its managed links from every installed harness. The disk is never touched. The inverse of add-dir, not of adopt.
+Unregister a collection dir with `fleet skill remove-dir <path>`, removing it from the explicit dir list and its managed links from every managed harness. The disk is never touched. The inverse of add-dir, not of adopt.
 _Avoid_: pull, drop, unpull, uninstall
 
 **Redundant link**:

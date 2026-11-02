@@ -74,7 +74,8 @@ func newSkillPruneCmd(p *paths.Paths) *cobra.Command {
 // pruneHarnessNames validates every --harness value against the supported
 // harnesses and dedupes in flag order. Unlike resolveTargets it does not
 // require the harness to be installed: prune can still clear its state
-// entries, and a missing config is simply nothing to remove.
+// entries, and a missing config is simply nothing to remove. A hidden
+// harness is refused with the unhide hint, as toggle refuses it.
 func pruneHarnessNames(p *paths.Paths, flags []string) ([]string, error) {
 	if len(flags) == 0 {
 		return nil, nil
@@ -89,6 +90,9 @@ func pruneHarnessNames(p *paths.Paths, flags []string) ([]string, error) {
 	for _, f := range flags {
 		if !known[f] {
 			return nil, fmt.Errorf("unknown harness %q (want one of: %s)", f, harnessList(all))
+		}
+		if err := harness.RefuseHidden(p, f); err != nil {
+			return nil, err
 		}
 		if seen[f] {
 			continue

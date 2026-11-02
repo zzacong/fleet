@@ -73,13 +73,17 @@ type LegacyCleaner interface {
 	CleanLegacy(scope LegacyScope) ([]LegacyRemoval, error)
 }
 
-// CleanLegacy removes legacy fleet-owned entries from every installed
+// CleanLegacy removes legacy fleet-owned entries from every managed
 // harness that had a config lever in the old model, in harness order.
 // Harnesses with nothing to remove report nothing. It fails fast on the
 // first harness error.
 func CleanLegacy(p *paths.Paths, scope LegacyScope) ([]LegacyRemoval, error) {
 	var out []LegacyRemoval
-	for _, a := range Installed(p) {
+	managed, err := Managed(p)
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range managed {
 		c, ok := a.(LegacyCleaner)
 		if !ok {
 			continue

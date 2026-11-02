@@ -72,17 +72,21 @@ type LinkResult struct {
 	Change  LinkChange
 }
 
-// LinkCustomSkill manages every installed harness's link for one custom
+// LinkCustomSkill manages every managed harness's link for one custom
 // skill: <harness skills dir>/<name> → target. keep, when non-nil, filters
 // harnesses: a harness it rejects is left entirely alone (no link created,
 // nothing removed), which is how a custom link toggle's "off" state keeps
 // its link from being recreated. Harnesses with nothing left to change are
 // omitted.
 func LinkCustomSkill(p *paths.Paths, name, target string, keep func(Harness) bool) ([]LinkResult, error) {
+	managed, err := Managed(p)
+	if err != nil {
+		return nil, err
+	}
 	var results []LinkResult
-	for _, a := range All(p) {
+	for _, a := range managed {
 		l, ok := a.(SkillLinker)
-		if !ok || !a.Installed() {
+		if !ok {
 			continue
 		}
 		if keep != nil && !keep(a.Harness()) {
@@ -212,23 +216,28 @@ type UnlinkResult struct {
 	Target string
 }
 
-// RemoveCustomLinks removes every symlink in each installed harness's
+// RemoveCustomLinks removes every symlink in each managed harness's
 // skills dir that resolves under collectionDir: the managed custom-skill
 // links of a dropped collection. Only symlinks are ever removed — real
 // directories and files are the user's and stay, as do foreign links,
 // redundant canonical-store links, claude's expected store links, and
 // dangling or looping links that point anywhere else. (A dangling link
 // whose written target sits under the collection is still the collection's,
-// so it goes.) Missing skills dirs and uninstalled harnesses are no-ops.
+// so it goes.) Missing skills dirs and harnesses that are not managed are
+// no-ops.
 // Results arrive in harness order, links sorted by name within each harness
 // (os.ReadDir returns entries sorted by filename, which is what the loop
 // below iterates).
 func RemoveCustomLinks(p *paths.Paths, collectionDir string) ([]UnlinkResult, error) {
 	collection := filepath.Clean(collectionDir)
 	dirs := skillDirPaths(p)
+	managed, err := Managed(p)
+	if err != nil {
+		return nil, err
+	}
 	var removed []UnlinkResult
-	for _, a := range All(p) {
-		if _, ok := a.(SkillLinker); !ok || !a.Installed() {
+	for _, a := range managed {
+		if _, ok := a.(SkillLinker); !ok {
 			continue
 		}
 		dir := dirs[a.Harness()]
@@ -341,6 +350,12 @@ var nativeScanHarnesses = map[Harness]bool{
 	Bob:      true,
 }
 
+// SkillDirPath returns the skills directory fleet links through for h,
+// whether or not h is installed or managed. Messages use it to name a dir.
+func SkillDirPath(p *paths.Paths, h Harness) string {
+	return skillDirPaths(p)[h]
+}
+
 // skillDirPaths maps each harness to its per-agent skills directory.
 func skillDirPaths(p *paths.Paths) map[Harness]string {
 	return map[Harness]string{
@@ -353,23 +368,24 @@ func skillDirPaths(p *paths.Paths) map[Harness]string {
 	}
 }
 
-// SkillDirs returns one SkillDir per installed harness, in the column order
-// the skill ls table uses. Uninstalled harnesses are skipped: their dirs
-// are not fleet's business.
-func SkillDirs(p *paths.Paths) []SkillDir {
+// SkillDirs returns one SkillDir per managed harness, in the column order
+// the skill ls table uses. Uninstalled and hidden harnesses are skipped:
+// their dirs are not fleet's business.
+func SkillDirs(p *paths.Paths) ([]SkillDir, error) {
+	managed, err := Managed(p)
+	if err != nil {
+		return nil, err
+	}
 	dirs := skillDirPaths(p)
 	var out []SkillDir
-	for _, a := range All(p) {
-		if !a.Installed() {
-			continue
-		}
+	for _, a := range managed {
 		out = append(out, SkillDir{
 			Harness:    a.Harness(),
 			Path:       dirs[a.Harness()],
 			NativeScan: nativeScanHarnesses[a.Harness()],
 		})
 	}
-	return out
+	return out, nil
 }
 
 // EntryClass is what fleet knows about one entry in a harness's skills dir.
