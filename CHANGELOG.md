@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.6](https://github.com/zzacong/fleet/compare/v0.3.5...v0.3.6) (2026-11-02)
+
+
+### Features
+
+* **cli:** hide a harness you no longer use from fleet ([#33](https://github.com/zzacong/fleet/issues/33)) ([6e9f95a](https://github.com/zzacong/fleet/commit/6e9f95a32cc75d78e31eaab0ab307482ecf459e7))
+
 ## [0.3.5](https://github.com/zzacong/fleet/compare/v0.3.4...v0.3.5) (2026-11-01)
 
 
