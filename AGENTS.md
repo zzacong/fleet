@@ -4,8 +4,8 @@
 
 ### Issue tracker
 
-Issues are tracked as local markdown files under
-`.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
+Issues are tracked as GitHub issues in `zzacong/fleet`, using the `gh`
+CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
@@ -14,7 +14,7 @@ Default triage label vocabulary (labels match role names exactly). See
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See
+Single-context: `GLOSSARY.md` + `docs/adr/` at the repo root. See
 `docs/agents/domain.md`.
 
 ## Commits
