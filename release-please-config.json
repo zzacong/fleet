@@ -11,7 +11,6 @@
         "www",
         ".agents",
         ".claude",
-        ".scratch",
         ".vscode",
         ".github",
         "scripts"
